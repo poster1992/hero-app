@@ -1,0 +1,518 @@
+﻿# HERO GraphQL Schema - Uebersicht
+
+Automatisch generiert per Introspection am 2026-06-10.
+Endpoint: `https://login.hero-software.de/api/external/v7/graphql`
+Vollstaendiges Schema (roh): [schema.json](./schema.json)
+
+## Queries (`PartnerQuery`) - 58 Felder
+
+- `echo(message: String): String`
+  - For testing. Echoes the given string
+- `user(): User`
+  - Returns the current user
+- `configuration(): Configuration`
+  - Returns the global platform configuration
+- `company(): Company`
+  - Returns the current company
+- `contacts(orderBy: String, first: Int, last: Int, offset: Int, ids: [Int], category: CustomerCategoryEnum, search: String, show_deleted: Boolean): [Customer]`
+  - Find contacts
+- `countries(): [Country]`
+  - Returns all countries
+- `project_match(project_match_id: Int): ProjectMatch`
+  - Find single project
+- `project_matches(orderBy: String, first: Int, last: Int, offset: Int, type: String, ids: [Int], customer_id: Int, search: String, statuses: [Int], step_ids: [Int], assigned_user_ids: [Int], relative_id: String, type_ids: [Int], measure_ids: [Int], overdue: Boolean): [ProjectMatch]`
+  - Find projects
+- `notifications(orderBy: String, first: Int, last: Int, offset: Int): [Notification]`
+  - Find notifications
+- `file_uploads(orderBy: String, first: Int, last: Int, offset: Int, uuids: [String!]): [FileUpload]`
+  - Get file uploads by UUID
+- `tasks(orderBy: String, first: Int, last: Int, offset: Int, project_match_id: Int, start: DateTime, end: DateTime, is_done: Boolean, show_deleted: Boolean, ids: [Int], target_user_ids: [Int], author_user_ids: [Int]): [Task]`
+  - Find tasks
+- `tracking_times(orderBy: String, first: Int, last: Int, offset: Int, project_match_id: Int, start: Date, end: Date, ids: [Int], show_all_partners: Boolean, partner_ids: [Int], statuses: [Employees_TrackingTimeStatusEnum], tracking_times_category_ids: [Int]): [Employees_TrackingTime]`
+  - Returns a list of timetracking entries for the current user
+- `tracking_times_categories(is_working_time: Boolean, is_active: Boolean, is_protected: Boolean, orderBy: String, first: Int, last: Int, offset: Int): [Employees_TrackingTimesCategory]`
+  - Find categories for time tracking entries
+- `upload_image_categories(orderBy: String, first: Int, last: Int, offset: Int, project_match_id: Int, target: LinkTargetEnum, target_id: Int): [String]`
+  - Find image categories for file uploads
+- `histories(orderBy: String, first: Int, last: Int, offset: Int): [History]`
+  - Find logbook history entries
+- `project_histories(orderBy: String, first: Int, last: Int, offset: Int, project_match_id: Int, user_ids: [Int], show_system_histories: Boolean, search_term: String): [History]`
+  - Find logbook history entries for a given project
+- `project_match_checklists(orderBy: String, first: Int, last: Int, offset: Int, project_match_id: Int): [FieldService_Checklist]`
+  - Find checklists for given project
+- `file_upload_folders(orderBy: String, first: Int, last: Int, offset: Int, show_deleted: Boolean): [FileUploadFolder]`
+  - Find file upload folders
+- `global_search(orderBy: String, first: Int, last: Int, offset: Int, category: SearchCategoryEnum, term: String): [SearchResult]`
+  - Search for project_matches, jobs, contacts, documents, partners
+- `project_types(orderBy: String, first: Int, last: Int, offset: Int, ids: [Int], is_active: Boolean): [ProjectType]`
+  - Get all active project pipeline types
+- `email_template(email_template_id: Int): EmailTemplate`
+  - Find single email template
+- `search_calendar_events(orderBy: String, first: Int, last: Int, offset: Int, search: String, startDate: String, showDeleted: Boolean): [CalendarEvent]`
+  - Search calendar events by event, customer or project name
+- `calendar_events(start: DateTime, end: DateTime, project_match_id: Int, partner_ids: [Int], resource_ids: [Int], show_deleted: Boolean, ids: [Int], orderBy: String, first: Int, last: Int, offset: Int): [CalendarEvent]`
+- `calendar_imports(): [CalendarImport]`
+- `calendar_event_categories(show_deleted: Boolean): [CalendarEventCategories]`
+- `holidays(start: Date, end: Date, state_ids: [Int]): [Holiday]`
+- `resources(show_deleted: Boolean): [CompanyResource]`
+  - Get the company resources
+- `customer_documents(ids: [Int], file_upload_folder_ids: [Int], document_type_ids: [Int], project_match_ids: [Int], status_codes: [Int], invoice_style: InvoiceStyle, orderBy: String, first: Int, last: Int, offset: Int): [CustomerDocument]`
+- `customer_document_types(): [CustomerDocumentType]`
+- `document_types(ids: [Int!], show_deleted: Boolean, user_write_allowed: Boolean, base_types: [String], context: String, orderBy: String, first: Int, last: Int, offset: Int): [Documents_DocumentType]`
+- `supply_texts(orderBy: String, first: Int, last: Int, offset: Int): [Documents_SupplyText]`
+- `field_service_jobs(project_match_id: Int, partner_id: Int, start: DateTime, end: DateTime, status: [Int], partners: [Int], contact_id: Int, search: String, orderBy: String, first: Int, last: Int, offset: Int): [FieldService_Job]`
+  - Note: partner_id argument is deprecated.
+- `job_checklists(job_id: Int, orderBy: String, first: Int, last: Int, offset: Int): [FieldService_Checklist]`
+- `field_service_job(id: Int): FieldService_Job`
+- `field_service_checklist_template(id: Int): FieldService_ChecklistTemplate`
+- `field_service_checklist_templates(ids: [Int], orderBy: String, first: Int, last: Int, offset: Int): [FieldService_ChecklistTemplate]`
+- `field_service_object(id: Int): FieldService_ServiceObject`
+- `absences(orderBy: String, first: Int, last: Int, offset: Int, start: Date, end: Date, ids: [Int], show_all_partners: Boolean, partner_ids: [Int], statuses: [Employees_AbsenceStatusEnum]): [Employees_Absence]`
+  - Get a list of filtered absences for the current user
+- `absence_balance(year: Int, partner_id: Int): AbsencesBalances`
+  - Fetch the absence balance for given year
+- `tracking_time_balance(start: Date, end: Date, partner_id: Int): Employees_TimeTrackingBalance`
+- `absence_budget(start: Date!, end: Date!, type: Employees_AbsenceTypeEnum!, start_budget: Employees_AbsenceBudgetTypeEnum, end_budget: Employees_AbsenceBudgetTypeEnum): Employees_Absence`
+- `partner_birthdays(nextDays: Int, orderBy: String, first: Int, last: Int, offset: Int): [Employees_PartnerBirthday]`
+  - Returns the list of the next upcoming birthdays
+- `project_leads(ids: [Int], orderBy: String, first: Int, last: Int, offset: Int): [Leads_ProjectLead]`
+- `supply_products(orderBy: String, first: Int, last: Int, offset: Int, search: String): [Documents_SupplyProduct]`
+  - Query to get supply products (deprecated, use supply_product_versions)
+- `supply_product_versions(orderBy: String, first: Int, last: Int, offset: Int, product_ids: [String], search: String): [Documents_SupplyProductVersion]`
+  - Query to get supply product versions
+- `new_supply_product_version(): [Documents_SupplyProductVersion]`
+  - Create a new supply product version template
+- `supply_services(orderBy: String, first: Int, last: Int, offset: Int, service_ids: [Int], search: String): [Documents_SupplyService]`
+  - Query to get supply services
+- `new_supply_service(): [Documents_SupplyService]`
+  - Create a new supply service template
+- `costcenters(orderBy: String, first: Int, last: Int, offset: Int, ids: [Int], number: String, skr_number: Int): [Accounting_CostCenter]`
+  - Query the cost centers
+- `bookaccounts(orderBy: String, first: Int, last: Int, offset: Int, ids: [Int], name: String, type: String): [Accounting_BookAccount]`
+  - Query bookaccounts
+- `receipts(orderBy: String, first: Int, last: Int, offset: Int, ids: [Int], status_code: Int, number: String, tax_id: Int, customer_id: Int): [Accounting_Receipt]`
+  - Query to get receipts
+- `aggregate_webhooks(providers: [String], is_active: Boolean!): Int`
+  - Aggregate webhooks
+- `webhooks(orderBy: String, first: Int, last: Int, offset: Int, providers: [String], ids: [Int]): [Webhooks_Webhook]`
+  - Find configured webhooks
+- `webhook_event_types(): [Webhooks_WebhookEventType]`
+  - List available webhook event types
+- `custom_fields_schemas(orderBy: String, first: Int, last: Int, offset: Int, schemaIds: [String]): [CustomFields_Schema]`
+  - Retrieve custom field schemas for company.
+- `custom_field_records(orderBy: String, first: Int, last: Int, offset: Int, relation: CustomFields_SchemaRelationTypeEnum!, schemaIds: [String], relationIds: [Int]): [CustomFields_Record]`
+  - Retrieve all custom field records a company and relation type.
+- `EmailTemplate_EmailTemplates(filters: EmailTemplate_EmailTemplateFiltersInput, before: String, after: String, first: Int, offset: Int, sortings: [EmailTemplate_EmailTemplateSortingInput!]): EmailTemplate_EmailTemplateConnection`
+  - Returns a list of email templates for the current partner
+- `Receipt_Receipts(filters: Receipt_ReceiptFiltersInput, before: String, after: String, first: Int, offset: Int, sortings: [Receipt_ReceiptSortingInput!]): Receipt_ReceiptConnection`
+  - Returns a paginated list of receipts.
+
+## Mutations (`PartnerMutation`) - 75 Felder
+
+- `add_logbook_entry(logbook_entry: LogbookEntryInput): History`
+  - Add an entry to the logbook
+- `add_partner(partner: PartnerInput): Partner`
+  - Add new add app user
+- `update_partner(partner: PartnerInput): Partner`
+  - Update employee
+- `add_project_match_assignments(project_match_id: Int, assigned_user_ids: [Int]): ProjectMatch`
+  - Add assigned employees to a project
+- `delete_project_match_assignments(project_match_id: Int, assigned_user_ids: [Int]): ProjectMatch`
+  - Delete assigned employees from a project
+- `update_project_match_assignments(project_match_id: Int, assigned_user_ids: [Int]): ProjectMatch`
+  - Updates a list of manual assigned user in project on base of given user ids
+- `read_notifications(ids: [Int]): [Notification]`
+  - Mark notifications as read
+- `unreadNotifications(ids: [Int]): [TopNavigationNotification]`
+  - Mark notifications as unread
+- `rotate_image(id: Int, direction: String): FileUpload`
+  - Rotates an image
+- `send_mail(email: EmailInput): OutboxMail`
+  - Sends an e-mail
+- `set_user_password(old: String!, new: String!): Boolean`
+  - Set the current user's password
+- `update_file_upload(id: Int, filename: String, image_category: String, delete: Boolean): FileUpload`
+  - Updates a file upload
+- `create_project_match(project_match: ProjectMatchInput, manual_assigned_user_ids: [Int]): ProjectMatch`
+  - Creates a new project
+- `update_project_match(project_match: ProjectMatchInput, manual_assigned_user_ids: [Int]): ProjectMatch`
+  - Updates a single project
+- `update_task(task: TaskInput): Task`
+  - Updates task for current user
+- `update_tracking_time(tracking_time: Employees_TrackingTimeInput): Employees_TrackingTime`
+  - Updates tracking times for current user
+- `update_user_data(user_data: UserDataInput): User`
+  - Updates the current user's contact data
+- `add_weather_logbook_entry(project_match_id: Int): History`
+  - Creates a weather entry
+- `create_project_export(match_id: Int, options: [ProjectExportOptionEnum]): Boolean`
+  - Requests a project export
+- `create_contact(findExisting: Boolean, contact: CustomerInput): Customer`
+  - Creates a new contact
+- `update_contact(contact: CustomerInput): Customer`
+  - Updates an existing contact
+- `update_company(data: CompanyInput): Company`
+  - Updates the company data
+- `upload_image(file_upload_uuid: String!, target: LinkTargetEnum, target_id: Int!): FileUpload`
+  - Add a previously uploaded image to a final target object. The image must be uploaded beforehand via the REST upload endpoint.
+- `create_absence(absence: Employees_AbsenceInput): Employees_Absence`
+  - Creates an absence
+- `update_absence(absence: Employees_AbsenceInput): Employees_Absence`
+  - Updates an absence
+- `delete_company_account(password: String!): Boolean`
+  - Deletes the company account and all data
+- `create_project_type(project_type: ProjectTypeInput): ProjectType`
+  - Creates a new project type
+- `update_project_type(project_type: ProjectTypeInput): ProjectType`
+  - Updates an existing project type
+- `delete_checklist(checklist_id: Int): FieldService_Checklist`
+  - Delete a checklist
+- `update_email_template(email_template: UpdateEmailTemplateInput!): EmailTemplate`
+  - Update single email template
+- `create_email_template(email_template: CreateEmailTemplateInput!, copy_from_template_id: Int): EmailTemplate`
+  - Create single email template
+- `create_calendar_event(calendar_event: CalendarEventInput): CalendarEvent`
+  - Creates calendar event
+- `update_calendar_event(calendar_event: CalendarEventInput): CalendarEvent`
+  - Updates calendar event
+- `create_calendar_import(calendar_import: CalendarImportInput, partner_ids: [Int]): CalendarImport`
+  - Creates an imported iCal calendar
+- `update_calendar_import(calendar_import: CalendarImportInput): CalendarImport`
+  - Update a calendar_import
+- `delete_calendar_import(uid: String): Boolean`
+  - Delete a calendar_import by its UID
+- `create_calendar_share_link(categories: CalendarCategoryEnum, events: CalendarEventSelection): CalendarShareLink`
+  - creates an iCal link
+- `delete_calendar_event(id: Int): CalendarEvent`
+  - Delete calendar_event
+- `create_payment(document_id: Int!, payment: PaymentInput!): CustomerDocument`
+  - Creates a new payment for the given document
+- `submit_document_signature(document_id: Int, signature_node: Documents_SignatureNodeInput): Documents_CustomerDocumentDraft`
+  - Sign an existing document
+- `delete_document(document_id: Int): CustomerDocument`
+  - Delete a document
+- `upload_document(document: CustomerDocumentInput!, file_upload_uuid: String!, target: LinkTargetEnum!, target_id: Int!): CustomerDocument`
+  - Upload a document
+- `create_document(input: Documents_CreateDocumentInput!, actions: [Documents_DocumentBuilderActionInput!]!): Documents_CustomerDocumentDraft`
+  - Create a document
+- `transition_customer_document_status(document_id: Int!, target_status_code: Documents_DocumentStatusCode!): CustomerDocument`
+  - Apply a user-allowed status transition to a customer document
+- `transition_payment_relevance_status(document_id: Int!, target_status: Documents_PaymentRelevanceStatusEnum!): CustomerDocument`
+  - Set or transition the payment relevance status of a customer document
+- `create_document_note(document_id: Int!, note: String!): Documents_CustomerDocumentNote`
+  - Create a note on a document
+- `update_document_note(document_id: Int!, note: String!): Documents_CustomerDocumentNote`
+  - Update a note on a document
+- `delete_document_note(document_id: Int!): Boolean`
+  - Delete a note from a document
+- `create_field_service_job(job: FieldService_JobInput): FieldService_Job`
+  - Creates job for current user
+- `update_field_service_job(job: FieldService_JobInput): FieldService_Job`
+  - Updates job for current user
+- `create_field_service_checklist(job_id: Int, project_match_id: Int, checklist: FieldService_ChecklistInput): FieldService_Checklist`
+  - Updates given checklist
+- `update_field_service_checklist(checklist: FieldService_ChecklistInput): FieldService_Checklist`
+  - Updates given checklist
+- `create_field_service_checklist_template(checklist_template: FieldService_ChecklistTemplateInput): FieldService_ChecklistTemplate`
+  - Creates checklist template
+- `update_field_service_checklist_template(checklist_template: FieldService_ChecklistTemplateInput): FieldService_ChecklistTemplate`
+  - Updates given checklist template
+- `add_field_service_job_assignment(job_id: Int, partner_id: Int): FieldService_Job`
+  - Add assigned employee to a job
+- `remove_field_service_job_assignment(job_id: Int, partner_id: Int): FieldService_Job`
+  - Remove assigned employee from a job
+- `update_field_service_object(service_object: FieldService_ServiceObjectInput): FieldService_ServiceObject`
+  - Updates service_object
+- `create_customer_address(customer_address: CustomerAddressInput, findExisting: Boolean): CustomerAddress`
+  - creates a new customer address
+- `update_customer_address(customer_address: CustomerAddressInput): CustomerAddress`
+  - edits a customer address
+- `create_stock_material(stock_material: Stock_StockMaterialInput!): Stock_StockMaterial`
+  - Creates a new stock material entity and sources if provided.
+- `create_webhook(webhook: Webhooks_CreateWebhookInput): Webhooks_Webhook`
+  - Create a new webhook
+- `update_webhook(webhook: Webhooks_UpdateWebhookInput): Webhooks_Webhook`
+  - Update a webhook
+- `delete_webhook(webhook_id: Int!): Boolean`
+  - Delete a webhook
+- `create_custom_field_schema(relates: CustomFields_SchemaRelationTypeEnum!): CustomFields_Schema`
+  - create a schema for custom fields
+- `add_custom_fields_to_schema(properties: [CustomFields_PropertyInput], schemaId: String!): CustomFields_Schema`
+  - Add a custom field to a schema
+- `remove_custom_field_from_schema(schemaId: String!, propertyUuid: String!): CustomFields_Schema`
+  - Remove custom field from schema
+- `update_custom_fields_in_schema(properties: [CustomFields_PropertyUpdate], schemaId: String!): CustomFields_Schema`
+  - Update one or more custom fields in schema
+- `set_custom_field_value(schemaId: String!, relationId: Int!, properties: [CustomFields_PropertyValueInput]): CustomFields_Record`
+  - Set the value of a custom field for a given relation. It can not exceed 10kb in size.
+- `create_supply_product_version(supply_product_version: Documents_SupplyProductVersionInput!): Documents_SupplyProductVersion`
+  - Creates a new supply product
+- `update_supply_product_version(supply_product_version: Documents_SupplyProductVersionInput!): Documents_SupplyProductVersion`
+  - Updates an existing supply product
+- `create_supply_service(supply_service: Documents_SupplyServiceInput!): Documents_SupplyService`
+  - Creates a new supply service
+- `update_supply_service(supply_service: Documents_SupplyServiceInput!): Documents_SupplyService`
+  - Updates an existing service
+- `Receipt_CreateReceipt(input: Receipt_CreateReceiptInput!): Receipt_Receipt`
+  - Create a new receipt with positions.
+- `Receipt_UpdateReceipt(input: Receipt_UpdateReceiptInput!): Receipt_Receipt`
+  - Update an existing receipt with positions.
+- `Receipt_DeleteReceipt(id: Int!): Receipt_Receipt`
+  - Soft-delete a receipt.
+
+## Typ-Index
+
+Alle weiteren Typen (Details siehe schema.json oder scripts/show-type.ps1):
+
+### ENUM (27)
+
+- **CalendarCategoryEnum**
+- **CalendarEventSelection**
+- **Customer_CustomerCategory**
+- **CustomerCategoryEnum**
+- **CustomerDocumentBookingCategoryEnum** - Possible values are `none` (Standard), `photovoltaic` (Umsatz für Photovoltaik) and `recipient_tax_debtor` (Umsatz nach §13b).
+- **CustomFields_PropertyTypeEnum**
+- **CustomFields_SchemaRelationTypeEnum**
+- **Documents_DocumentStatusCode** - Lifecycle statuses for customer documents. Values align with CustomerDocument status_code.
+- **Documents_PaymentRelevanceStatusEnum**
+- **Documents_SourceEnum** - Source tracking for analytics (origin of the operation)
+- **EmailTemplate_EmailTemplateContext**
+- **EmailTemplate_EmailTemplateSortingInput**
+- **Employees_AbsenceBudgetTypeEnum**
+- **Employees_AbsenceStatusEnum**
+- **Employees_AbsenceTypeEnum**
+- **Employees_TrackingTimeStatusEnum**
+- **HistoryTargetEnum**
+- **InvoiceStyle**
+- **LinkTargetEnum**
+- **PartnerRoleEnum**
+- **PartnerStatusEnum**
+- **ProjectExportOptionEnum**
+- **Receipt_ReceiptSortingInput**
+- **SearchCategoryEnum**
+- **Stock_AmountConflictResolutionEnum**
+- **Stock_AssignmentConflictResolutionEnum**
+- **ThumbnailFormat**
+
+### INPUT_OBJECT (70)
+
+- **AddressInput**
+- **CalendarEventInput**
+- **CalendarImportInput**
+- **CompanyInput**
+- **CreateEmailTemplateInput**
+- **CustomerAddressInput**
+- **CustomerDocumentInput**
+- **CustomerInput**
+- **CustomFields_PropertyInput**
+- **CustomFields_PropertyUpdate**
+- **CustomFields_PropertyValueInput**
+- **DateFilterInput**
+- **Documents_AddExistingServiceActionInput**
+- **Documents_AddExistingWageGroupActionInput**
+- **Documents_AddPositionsFromDocumentActionInput**
+- **Documents_AddProductPositionActionInput**
+- **Documents_AddProductPositionByIdActionInput**
+- **Documents_AddTextActionInput**
+- **Documents_AddTitleActionInput**
+- **Documents_ClearPositionsActionInput**
+- **Documents_CopySalesMetadataActionInput**
+- **Documents_CreateDocumentInput**
+- **Documents_CreateSupplyServiceActionInput**
+- **Documents_DeleteSupplyProductActionInput**
+- **Documents_DeleteSupplyServiceActionInput**
+- **Documents_DocumentBuilderActionInput**
+- **Documents_SetOptionsActionInput**
+- **Documents_SetRecipientActionInput**
+- **Documents_SetReferenceDocumentsActionInput**
+- **Documents_SignatureNodeInput**
+- **Documents_SupplyProductBaseDataInput**
+- **Documents_SupplyProductSalesPriceInput**
+- **Documents_SupplyProductVersionInput**
+- **Documents_SupplyServiceInput**
+- **Documents_SupplyServiceProductPositionInput**
+- **Documents_SupplyServiceWagePositionInput**
+- **Documents_UpdateSupplyProductActionInput**
+- **Documents_UpdateSupplyServiceActionInput**
+- **Documents_UpdateSupplyServiceProductPositionsInput**
+- **Documents_UpdateSupplyServiceWagePositionInput**
+- **EmailInput**
+- **EmailTemplate_EmailTemplateFiltersInput**
+- **Employees_AbsenceInput**
+- **Employees_TrackingTimeInput**
+- **FieldService_ChecklistInput**
+- **FieldService_ChecklistTemplateInput**
+- **FieldService_JobInput**
+- **FieldService_ServiceObjectInput**
+- **IntFilterInput**
+- **LogbookEntryInput**
+- **PartnerInput**
+- **PaymentInput**
+- **ProjectInput**
+- **ProjectMatchInput**
+- **ProjectMatchStatusInput**
+- **ProjectTypeInput**
+- **Receipt_CreateReceiptInput**
+- **Receipt_CreateReceiptPositionInput**
+- **Receipt_ReceiptFiltersInput**
+- **Receipt_UpdateReceiptInput**
+- **Receipt_UpdateReceiptPositionInput**
+- **Stock_ConflictResolutionInput**
+- **Stock_CreateSourceWithinMaterialInput**
+- **Stock_StockMaterialInput**
+- **StringFilterInput**
+- **TaskInput**
+- **UpdateEmailTemplateInput**
+- **UserDataInput**
+- **Webhooks_CreateWebhookInput**
+- **Webhooks_UpdateWebhookInput**
+
+### OBJECT (120)
+
+- **AbsencesBalances**
+- **Accounting_BookAccount**
+- **Accounting_CostCenter**
+- **Accounting_Receipt**
+- **Accounting_ReceiptPosition**
+- **Acl**
+- **Action**
+- **Address**
+- **Address_Address**
+- **CalendarEvent**
+- **CalendarEventCategories**
+- **CalendarEventCategory**
+- **CalendarImport**
+- **CalendarShareLink**
+- **Company**
+- **CompanyBranch**
+- **CompanyFeature**
+- **CompanyResource**
+- **CompanyResourceType**
+- **Configuration**
+- **Country**
+- **Country_Country**
+- **CountryState**
+- **Customer**
+- **Customer_Customer**
+- **CustomerAddress**
+- **CustomerDocument**
+- **CustomerDocumentBooking**
+- **CustomerDocumentLayoutOption**
+- **CustomerDocumentMetadata**
+- **CustomerDocumentPaymentRelevanceStatus**
+- **CustomerDocumentPosition**
+- **CustomerDocumentType**
+- **CustomFields_Property**
+- **CustomFields_PropertyValue**
+- **CustomFields_Record**
+- **CustomFields_Schema**
+- **DocumentLink**
+- **Documents_AvailableStatusTransition**
+- **Documents_CustomerDocumentDraft**
+- **Documents_CustomerDocumentNote**
+- **Documents_DocumentStatusCodeOption**
+- **Documents_DocumentType**
+- **Documents_PaymentRelevanceStatusValue**
+- **Documents_SupplyCatalog**
+- **Documents_SupplyOperator**
+- **Documents_SupplyProduct**
+- **Documents_SupplyProductBaseData**
+- **Documents_SupplyProductSalesPrice**
+- **Documents_SupplyProductVersion**
+- **Documents_SupplySalesPrice**
+- **Documents_SupplyService**
+- **Documents_SupplySurcharge**
+- **Documents_SupplyText**
+- **EmailTemplate**
+- **EmailTemplate_EmailTemplate**
+- **EmailTemplate_EmailTemplateConnection**
+- **EmailTemplate_EmailTemplateConnectionEdge**
+- **EmailTemplate_EmailTemplateConnectionPageInfo**
+- **Employee**
+- **Employees_Absence**
+- **Employees_PartnerBirthday**
+- **Employees_TimeTrackingBalance**
+- **Employees_TrackingTime**
+- **Employees_TrackingTimes**
+- **Employees_TrackingTimesCategory**
+- **Employees_TrackingWorkday**
+- **FieldService_Checklist**
+- **FieldService_ChecklistTemplate**
+- **FieldService_Job**
+- **FieldService_ServiceObject**
+- **FileUpload**
+- **FileUpload_FileUpload**
+- **FileUpload_Thumbnails**
+- **FileUploadFolder**
+- **FileUploadLink**
+- **FileUploadMatch**
+- **History**
+- **HistoryWeatherAttachment**
+- **Holiday**
+- **Leads_ProjectLead**
+- **Measure**
+- **Measure_Measure**
+- **Notification**
+- **OutboxMail**
+- **Partner**
+- **Payment**
+- **Project**
+- **Project_ProjectMatch**
+- **Project_ProjectMatchStatus**
+- **Project_ProjectStatusStep**
+- **Project_ProjectType**
+- **ProjectMatch**
+- **ProjectMatchAction**
+- **ProjectMatchAssignment**
+- **ProjectMatchStatus**
+- **ProjectStatus**
+- **ProjectStatusStep**
+- **ProjectType**
+- **Receipt_Receipt**
+- **Receipt_ReceiptBookAccount**
+- **Receipt_ReceiptConnection**
+- **Receipt_ReceiptConnectionEdge**
+- **Receipt_ReceiptConnectionPageInfo**
+- **Receipt_ReceiptCostCenter**
+- **Receipt_ReceiptPosition**
+- **Referral_ReferralCode**
+- **SearchableValue** - Represents aggregated searchable values for custom fields
+- **ServiceIntegrations_ServiceIntegration**
+- **Stock_StockMaterial**
+- **Stock_StockMaterialSource**
+- **Task**
+- **Thumbnail**
+- **TimeTracking_TrackingTimeLocation**
+- **TimeTracking_TrackingTimeLocationPosition**
+- **TopNavigationNotification**
+- **User**
+- **WageGroup**
+- **Webhooks_Webhook**
+- **Webhooks_WebhookEventType**
+
+### SCALAR (9)
+
+- **Boolean** - The `Boolean` scalar type represents `true` or `false`.
+- **Date**
+- **DateTime**
+- **Float** - The `Float` scalar type represents signed double-precision fractional
+values as specified by
+[IEEE 754](http://en.wikipedia.org/wiki/IEEE_floating_point). 
+- **ID** - The `ID` scalar type represents a unique identifier, often used to
+refetch an object or as key for a cache. The ID type appears in a JSON
+response as a String; however, it is not intended to be human-readable.
+When expected as an input type, any string (such as `"4"`) or integer
+(such as `4`) input value will be accepted as an ID.
+- **Int** - The `Int` scalar type represents non-fractional signed whole numeric
+values. Int can represent values between -(2^31) and 2^31 - 1. 
+- **JSON**
+- **Mixed**
+- **String** - The `String` scalar type represents textual data, represented as UTF-8
+character sequences. The String type is most often used by GraphQL to
+represent free-form human-readable text.
+
+### UNION (2)
+
+- **Documents_SupplyServicePosition**
+- **SearchResult**
+
