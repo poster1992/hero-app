@@ -16,6 +16,7 @@ const NAV_ITEMS = [
   { href: "/dashboard/arbeitszeiten", label: "Arbeitszeiten", icon: "arbeitszeiten" },
   { href: "/dashboard/abc-analyse", label: "ABC-Analyse", icon: "abc" },
   { href: "/dashboard/test", label: "Test", icon: "test" },
+  { href: "/dashboard/hilfe", label: "Hilfe", icon: "hilfe" },
 ];
 
 /** Monochrome Icons (folgen der Textfarbe via currentColor). */
@@ -94,6 +95,14 @@ function NavIcon({ name }: { name: string }) {
         <svg {...common}>
           <path d="M9 3h6M10 3v5.5L5.5 17a2 2 0 001.8 3h9.4a2 2 0 001.8-3L14 8.5V3" />
           <path d="M8 14h8" />
+        </svg>
+      );
+    case "hilfe":
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M9.5 9a2.5 2.5 0 113.5 2.3c-.8.4-1 1-1 1.7" />
+          <path d="M12 16.5h.01" />
         </svg>
       );
     default:
