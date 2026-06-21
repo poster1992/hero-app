@@ -15,5 +15,9 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!login|_next/static|_next/image|favicon.ico).*)"],
+  // Schützt alles außer der Login-Seite, Next-Internas und statischen Dateien
+  // (Bilder/Assets müssen auch auf der nicht eingeloggten Login-Seite laden).
+  matcher: [
+    "/((?!login|_next/static|_next/image|favicon.ico|.*\\.(?:png|jpe?g|gif|svg|webp|ico|geojson)$).*)",
+  ],
 };

@@ -6,16 +6,49 @@ import { usePathname } from "next/navigation";
 import Logo from "./Logo";
 import { logout } from "@/app/login/actions";
 
-const NAV_ITEMS = [
-  { href: "/dashboard", label: "Dashboard", icon: "dashboard" },
-  { href: "/dashboard/belege", label: "Belege", icon: "belege" },
-  { href: "/dashboard/rechnungen", label: "Rechnungen", icon: "rechnungen" },
+interface NavItem {
+  href: string;
+  label: string;
+  icon: string;
+  adminOnly?: boolean;
+  children?: { href: string; label: string }[];
+}
+
+const NAV_ITEMS: NavItem[] = [
+  { href: "/dashboard", label: "Dashboard", icon: "home" },
   { href: "/dashboard/projekte", label: "Projekte", icon: "projekte" },
+  {
+    href: "/dashboard/dokumente",
+    label: "Dokumente",
+    icon: "dokumente",
+    children: [
+      { href: "/dashboard/dokumente/angebote", label: "Angebote" },
+      { href: "/dashboard/dokumente/auftraege", label: "Aufträge" },
+      { href: "/dashboard/dokumente/rechnungen", label: "Rechnungen" },
+    ],
+  },
+  { href: "/dashboard/lager", label: "Lager", icon: "lager" },
   { href: "/dashboard/kunden", label: "Kunden", icon: "kunden" },
-  { href: "/dashboard/planung", label: "Auslastung", icon: "auslastung" },
-  { href: "/dashboard/arbeitszeiten", label: "Arbeitszeiten", icon: "arbeitszeiten" },
-  { href: "/dashboard/abc-analyse", label: "ABC-Analyse", icon: "abc" },
-  { href: "/dashboard/test", label: "Test", icon: "test" },
+  { href: "/dashboard/aufgaben", label: "Aufgaben", icon: "aufgaben" },
+  {
+    href: "/dashboard/cockpit",
+    label: "Cockpit",
+    icon: "dashboard",
+    children: [
+      { href: "/dashboard/belege", label: "Belege" },
+      { href: "/dashboard/rechnungen", label: "Rechnungen" },
+      { href: "/dashboard/arbeitszeiten", label: "Arbeitszeiten" },
+      { href: "/dashboard/abc-analyse", label: "ABC-Analyse" },
+    ],
+  },
+  { href: "/dashboard/planung", label: "Arbeitsplanung", icon: "auslastung" },
+  {
+    href: "/dashboard/benutzer",
+    label: "Konfiguration",
+    icon: "konfiguration",
+    adminOnly: true,
+    children: [{ href: "/dashboard/benutzer", label: "Benutzer anlegen" }],
+  },
   { href: "/dashboard/hilfe", label: "Hilfe", icon: "hilfe" },
 ];
 
@@ -32,6 +65,14 @@ function NavIcon({ name }: { name: string }) {
     "aria-hidden": true,
   };
   switch (name) {
+    case "home":
+      return (
+        <svg {...common}>
+          <path d="M3 11l9-7 9 7" />
+          <path d="M5 10v10h14V10" />
+          <path d="M10 20v-6h4v6" />
+        </svg>
+      );
     case "dashboard":
       return (
         <svg {...common}>
@@ -90,19 +131,48 @@ function NavIcon({ name }: { name: string }) {
           <path d="M8 20v-6M13 20V9M18 20v-9" />
         </svg>
       );
-    case "test":
-      return (
-        <svg {...common}>
-          <path d="M9 3h6M10 3v5.5L5.5 17a2 2 0 001.8 3h9.4a2 2 0 001.8-3L14 8.5V3" />
-          <path d="M8 14h8" />
-        </svg>
-      );
     case "hilfe":
       return (
         <svg {...common}>
           <circle cx="12" cy="12" r="9" />
           <path d="M9.5 9a2.5 2.5 0 113.5 2.3c-.8.4-1 1-1 1.7" />
           <path d="M12 16.5h.01" />
+        </svg>
+      );
+    case "benutzer":
+      return (
+        <svg {...common}>
+          <circle cx="9" cy="8" r="3" />
+          <path d="M3.5 20a5.5 5.5 0 0111 0" />
+          <path d="M18 8v6M21 11h-6" />
+        </svg>
+      );
+    case "aufgaben":
+      return (
+        <svg {...common}>
+          <rect x="6" y="4" width="12" height="17" rx="2" />
+          <path d="M9 4a1.5 1.5 0 011.5-1.5h3A1.5 1.5 0 0115 4M9 12l1.8 1.8L14 10" />
+        </svg>
+      );
+    case "dokumente":
+      return (
+        <svg {...common}>
+          <path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z" />
+          <path d="M14 3v5h5M9 13h6M9 17h6" />
+        </svg>
+      );
+    case "konfiguration":
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33h.09a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82v.09a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z" />
+        </svg>
+      );
+    case "lager":
+      return (
+        <svg {...common}>
+          <path d="M3 9l9-5 9 5v10a1 1 0 01-1 1H4a1 1 0 01-1-1V9z" />
+          <path d="M3 9h18M8 20v-6h8v6" />
         </svg>
       );
     default:
@@ -112,9 +182,10 @@ function NavIcon({ name }: { name: string }) {
 
 const STORAGE_KEY = "sidebar-collapsed";
 
-export default function Sidebar() {
+export default function Sidebar({ role }: { role?: string }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+  const navItems = NAV_ITEMS.filter((item) => !item.adminOnly || role === "administrator");
 
   useEffect(() => {
     setCollapsed(window.localStorage.getItem(STORAGE_KEY) === "1");
@@ -144,7 +215,9 @@ export default function Sidebar() {
       >
         {collapsed ? "›" : "‹"}
       </button>
-      <div
+      <Link
+        href="/start"
+        title="Zur Modulübersicht"
         className={`flex items-center px-3 py-5 ${collapsed ? "md:justify-center" : "justify-start"}`}
       >
         {collapsed ? (
@@ -154,29 +227,56 @@ export default function Sidebar() {
         ) : (
           <Logo />
         )}
-      </div>
+      </Link>
 
       <nav className="flex flex-1 flex-col gap-1 px-3 py-2">
-        {NAV_ITEMS.map((item) => {
-          const active =
+        {navItems.map((item) => {
+          const selfActive =
             item.href === "/dashboard" ? pathname === item.href : pathname?.startsWith(item.href);
+          const childActiveAny =
+            item.children?.some((c) => pathname?.startsWith(c.href)) ?? false;
+          const active = selfActive || childActiveAny;
+          const showChildren = !collapsed && item.children && active;
 
           return (
-            <Link
-              key={item.href}
-              href={item.href}
-              title={item.label}
-              className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                collapsed ? "md:justify-center" : "justify-start text-left"
-              } ${
-                active
-                  ? "bg-brand-red/10 text-brand-red ring-1 ring-brand-red/30"
-                  : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
-              }`}
-            >
-              <NavIcon name={item.icon} />
-              <span className={collapsed ? "md:hidden" : ""}>{item.label}</span>
-            </Link>
+            <div key={item.href}>
+              <Link
+                href={item.href}
+                title={item.label}
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                  collapsed ? "md:justify-center" : "justify-start text-left"
+                } ${
+                  active
+                    ? "bg-brand-red/10 text-brand-red ring-1 ring-brand-red/30"
+                    : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                }`}
+              >
+                <NavIcon name={item.icon} />
+                <span className={collapsed ? "md:hidden" : ""}>{item.label}</span>
+              </Link>
+
+              {showChildren && (
+                <div className="mt-1 ml-9 flex flex-col gap-1">
+                  {item.children!.map((child) => {
+                    const childActive = pathname?.startsWith(child.href);
+                    return (
+                      <Link
+                        key={child.href}
+                        href={child.href}
+                        className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm transition-colors ${
+                          childActive
+                            ? "bg-brand-red/10 font-medium text-brand-red"
+                            : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"
+                        }`}
+                      >
+                        <span className="text-xs">›</span>
+                        {child.label}
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           );
         })}
       </nav>

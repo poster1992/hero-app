@@ -229,14 +229,19 @@ const CUSTOMER_INVOICES_QUERY = `
 
 /** Fetches all customer invoices (document type "Rechnung"), paginated. */
 export async function getCustomerInvoices(): Promise<CustomerInvoice[]> {
+  return getCustomerDocumentsByType(INVOICE_DOCUMENT_TYPE_IDS);
+}
+
+/** Fetches all customer documents of the given document type ids, paginated. */
+export async function getCustomerDocumentsByType(typeIds: number[]): Promise<CustomerInvoice[]> {
   const pageSize = 200;
-  const maxPages = 30; // safety cap (~6000 invoices)
+  const maxPages = 30; // safety cap (~6000 documents)
   const result: CustomerInvoice[] = [];
 
   for (let page = 0; page < maxPages; page++) {
     const data = await heroGraphQL<{ customer_documents: RawCustomerDocument[] }>(
       CUSTOMER_INVOICES_QUERY,
-      { typeIds: INVOICE_DOCUMENT_TYPE_IDS, first: pageSize, offset: page * pageSize }
+      { typeIds, first: pageSize, offset: page * pageSize }
     );
     const docs = data.customer_documents ?? [];
     for (const d of docs) {
@@ -506,6 +511,159 @@ export async function getCalendarEvents(from: string, to: string): Promise<Calen
   return result;
 }
 
+/** All (non-deleted) calendar events linked to a project, any date. */
+export async function getCalendarEventsForProject(
+  projectMatchId: number
+): Promise<CalendarEventLite[]> {
+  const pageSize = 200;
+  const maxPages = 60;
+  const result: CalendarEventLite[] = [];
+
+  for (let page = 0; page < maxPages; page++) {
+    const data = await heroGraphQL<{
+      calendar_events: {
+        id: number;
+        title: string | null;
+        start: string | null;
+        end: string | null;
+        all_day: boolean | null;
+        deleted: boolean | null;
+        partners: { id: number; name: string | null; role: string | null }[] | null;
+        project_match: { relative_id: number | null; name: string | null } | null;
+      }[];
+    }>(
+      `query CalendarEventsForProject($pid: Int, $first: Int, $offset: Int) {
+        calendar_events(project_match_id: $pid, show_deleted: false, orderBy: "start", first: $first, offset: $offset) {
+          id
+          title
+          start
+          end
+          all_day
+          deleted
+          partners { id name role }
+          project_match { relative_id name }
+        }
+      }`,
+      { pid: projectMatchId, first: pageSize, offset: page * pageSize }
+    );
+    const events = data.calendar_events ?? [];
+    for (const e of events) {
+      if (e.deleted) continue;
+      result.push({
+        id: e.id,
+        title: e.title,
+        start: e.start,
+        end: e.end,
+        allDay: e.all_day ?? false,
+        partners: (e.partners ?? []).map((p) => ({
+          id: p.id,
+          name: p.name ?? "Unbekannt",
+          role: p.role ?? null,
+        })),
+        projectRelativeId: e.project_match?.relative_id ?? null,
+        projectName: e.project_match?.name ?? null,
+      });
+    }
+    if (events.length < pageSize) break;
+  }
+
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// Stock articles (Lager) — read-only stock from HERO (no write API available).
+// Stock materials are nested under supply_product_versions.
+// ---------------------------------------------------------------------------
+
+export interface StockArticle {
+  id: number;
+  name: string;
+  itemNumber: string;
+  qrId: string | null;
+  unit: string;
+  category: string | null;
+  totalStock: number;
+  minStock: number | null;
+  targetStock: number | null;
+  openConsignment: number;
+  openOrder: number;
+  /** Einkaufspreis (HERO base_price) – wird gespeichert, aber nicht angezeigt. */
+  purchasePrice: number | null;
+}
+
+/** All stock materials (articles with stock) from HERO, deduplicated by id. */
+export async function getStockArticles(): Promise<StockArticle[]> {
+  const pageSize = 200;
+  const maxPages = 60;
+  const byId = new Map<number, StockArticle>();
+
+  for (let page = 0; page < maxPages; page++) {
+    const data = await heroGraphQL<{
+      supply_product_versions: {
+        base_price: number | null;
+        stock_materials:
+          | {
+              id: number;
+              name: string | null;
+              item_number: string | null;
+              qr_id: string | null;
+              unit_type: string | null;
+              category: string | null;
+              total_stock: number | null;
+              min_stock: number | null;
+              target_stock: number | null;
+              open_consignment_items_amount: number | null;
+              open_order_items_amount: number | null;
+            }[]
+          | null;
+      }[];
+    }>(
+      `query StockArticles($first: Int, $offset: Int) {
+        supply_product_versions(first: $first, offset: $offset) {
+          base_price
+          stock_materials {
+            id
+            name
+            item_number
+            qr_id
+            unit_type
+            category
+            total_stock
+            min_stock
+            target_stock
+            open_consignment_items_amount
+            open_order_items_amount
+          }
+        }
+      }`,
+      { first: pageSize, offset: page * pageSize }
+    );
+    const versions = data.supply_product_versions ?? [];
+    for (const v of versions) {
+      for (const s of v.stock_materials ?? []) {
+        if (byId.has(s.id)) continue;
+        byId.set(s.id, {
+          id: s.id,
+          name: s.name ?? "—",
+          itemNumber: s.item_number ?? "",
+          qrId: s.qr_id ?? null,
+          unit: s.unit_type ?? "",
+          category: s.category ?? null,
+          totalStock: s.total_stock ?? 0,
+          minStock: s.min_stock ?? null,
+          targetStock: s.target_stock ?? null,
+          openConsignment: s.open_consignment_items_amount ?? 0,
+          openOrder: s.open_order_items_amount ?? 0,
+          purchasePrice: v.base_price ?? null,
+        });
+      }
+    }
+    if (versions.length < pageSize) break;
+  }
+
+  return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name, "de"));
+}
+
 // ---------------------------------------------------------------------------
 // Absences (Urlaub / Krankheit etc.) — reduce planned capacity.
 // ---------------------------------------------------------------------------
@@ -601,8 +759,10 @@ export interface TrackingTimeEntry {
   start: string | null;
   end: string | null;
   durationHours: number;
+  partnerId: number | null;
   partnerName: string;
   projectId: number | null;
+  projectRelativeId: number | null;
   projectName: string | null;
   comment: string;
 }
@@ -621,7 +781,7 @@ export async function getTrackingTimes(start: string, end: string): Promise<Trac
         end: string | null;
         comment: string | null;
         partner: { id: number; name: string | null } | null;
-        project_match: { id: number; name: string | null } | null;
+        project_match: { id: number; relative_id: number | null; name: string | null } | null;
       }[];
     }>(
       `query TrackingTimes($start: Date, $end: Date, $first: Int, $offset: Int) {
@@ -638,7 +798,7 @@ export async function getTrackingTimes(start: string, end: string): Promise<Trac
           end
           comment
           partner { id name }
-          project_match { id name }
+          project_match { id relative_id name }
         }
       }`,
       { start, end, first: pageSize, offset: page * pageSize }
@@ -652,8 +812,10 @@ export async function getTrackingTimes(start: string, end: string): Promise<Trac
         start: e.start,
         end: e.end,
         durationHours: durationMs > 0 ? Math.round((durationMs / 3_600_000) * 100) / 100 : 0,
+        partnerId: e.partner?.id ?? null,
         partnerName: e.partner?.name ?? "Unbekannt",
         projectId: e.project_match?.id ?? null,
+        projectRelativeId: e.project_match?.relative_id ?? null,
         projectName: e.project_match?.name ?? null,
         comment: e.comment ?? "",
       });
@@ -1187,6 +1349,41 @@ export async function getCalculatedByProject(): Promise<Map<number, ProjectCalcu
     });
   }
   return byProject;
+}
+
+/** Calculated (planned) labor hours for a single project, from its Auftragsbestätigung drafts. */
+export async function getCalculatedHoursForProject(projectMatchId: number): Promise<number> {
+  const data = await heroGraphQL<{
+    customer_documents: {
+      status_code: number | null;
+      published_customer_document_draft: { data: unknown } | null;
+    }[];
+  }>(
+    `query CalcHoursForProject($pids: [Int], $ids: [Int]) {
+      customer_documents(project_match_ids: $pids, document_type_ids: $ids, orderBy: "id", first: 100) {
+        status_code
+        published_customer_document_draft { data }
+      }
+    }`,
+    { pids: [projectMatchId], ids: [CONFIRMATION_DOCUMENT_TYPE_ID] }
+  );
+
+  let minutes = 0;
+  for (const d of data.customer_documents ?? []) {
+    if (d.status_code === 1000) continue; // deleted
+    const raw = d.published_customer_document_draft?.data;
+    if (raw == null) continue;
+    let json: unknown;
+    try {
+      json = typeof raw === "string" ? JSON.parse(raw) : raw;
+    } catch {
+      continue;
+    }
+    const acc = { minutes: 0, material: 0, laborCost: 0 };
+    sumDraft(json, acc);
+    minutes += acc.minutes;
+  }
+  return Math.round((minutes / 60) * 100) / 100;
 }
 
 /** Net sum of order confirmations (Auftragsbestätigungen) per project_match id. */

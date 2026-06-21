@@ -13,10 +13,11 @@ function getSecretKey(): Uint8Array {
 
 export interface SessionPayload {
   username: string;
+  role: string;
 }
 
 export async function createSessionToken(payload: SessionPayload): Promise<string> {
-  return new SignJWT({ username: payload.username })
+  return new SignJWT({ username: payload.username, role: payload.role })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime(`${SESSION_DURATION_SECONDS}s`)
@@ -27,7 +28,10 @@ export async function verifySessionToken(token: string): Promise<SessionPayload 
   try {
     const { payload } = await jwtVerify(token, getSecretKey());
     if (typeof payload.username !== "string") return null;
-    return { username: payload.username };
+    return {
+      username: payload.username,
+      role: typeof payload.role === "string" ? payload.role : "",
+    };
   } catch {
     return null;
   }

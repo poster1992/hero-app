@@ -1,4 +1,9 @@
-import { getCalendarEvents, getAbsences } from "./hero-api";
+import {
+  getCalendarEvents,
+  getCalendarEventsForProject,
+  getAbsences,
+  getTrackingTimes,
+} from "./hero-api";
 import { tradeOf, FORCE_MONTEUR, NO_CAPACITY, type EmployeeTrade } from "./employee-trades";
 
 /** Standard weekly capacity per employee in hours (5 days × 8 h). */
@@ -229,4 +234,571 @@ export async function getEmployeeUtilization(
   );
 
   return { weeks, employees, capacityPerWeek: WEEKLY_CAPACITY, weekTotals, weekAbsenceTotals };
+}
+
+// ---------------------------------------------------------------------------
+// Plantafel (HERO calendar) — weekly day-grid view of scheduled appointments.
+// ---------------------------------------------------------------------------
+
+/** FloorTec operates in Luxembourg; calendar times are shown in this zone. */
+const PLANBOARD_TZ = "Europe/Luxembourg";
+
+const localDateFmt = new Intl.DateTimeFormat("en-CA", {
+  timeZone: PLANBOARD_TZ,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+const localTimeFmt = new Intl.DateTimeFormat("de-DE", {
+  timeZone: PLANBOARD_TZ,
+  hour: "2-digit",
+  minute: "2-digit",
+});
+const dayLabelFmt = new Intl.DateTimeFormat("de-DE", {
+  timeZone: PLANBOARD_TZ,
+  weekday: "short",
+  day: "2-digit",
+  month: "2-digit",
+});
+const fullDayLabelFmt = new Intl.DateTimeFormat("de-DE", {
+  timeZone: PLANBOARD_TZ,
+  weekday: "long",
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+});
+const entryDateFmt = new Intl.DateTimeFormat("de-DE", {
+  timeZone: PLANBOARD_TZ,
+  weekday: "short",
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+});
+
+/** Work-hours window shown in the Plantafel day view. */
+export const DAY_START_HOUR = 6;
+export const DAY_END_HOUR = 18;
+
+/** Local (Luxembourg) calendar date of an instant, as yyyy-mm-dd. */
+function localDateOf(ms: number): string {
+  return localDateFmt.format(new Date(ms));
+}
+
+export type AbsenceCategory = "sick" | "vacation" | "other";
+
+export interface PlanboardAbsence {
+  category: AbsenceCategory;
+  /** German label, e.g. "Urlaub", "Krank". */
+  label: string;
+  /** Only a half day on this date. */
+  half: boolean;
+}
+
+function absenceCategory(type: string): AbsenceCategory {
+  if (SICK_TYPES.has(type)) return "sick";
+  if (type === "vacation") return "vacation";
+  return "other";
+}
+
+function absenceLabel(type: string): string {
+  if (SICK_TYPES.has(type)) return "Krank";
+  switch (type) {
+    case "vacation":
+      return "Urlaub";
+    case "parental_leave":
+      return "Elternzeit";
+    case "special_leave":
+      return "Sonderurlaub";
+    case "overtime_reduction":
+      return "Überstunden";
+    case "school":
+      return "Schule";
+    default:
+      return "Abwesend";
+  }
+}
+
+export interface PlanboardDayHeader {
+  /** yyyy-mm-dd (Luxembourg local date). */
+  date: string;
+  /** e.g. "Mo 16.06.". */
+  label: string;
+  isToday: boolean;
+  /** True for Saturday/Sunday. */
+  isWeekend: boolean;
+}
+
+export interface PlanboardCellEvent {
+  id: number;
+  title: string;
+  /** e.g. "07:00–16:00" or "Ganztägig". */
+  timeLabel: string;
+  projectName: string | null;
+  projectRelativeId: number | null;
+  /** Planned hours of this appointment on this day (weekday-capped, like Auslastung). */
+  hours: number;
+}
+
+/** A recorded working-time entry for a day (used in the week detail popup). */
+export interface PlanboardWorkedEntry {
+  id: number;
+  projectRelativeId: number | null;
+  projectName: string | null;
+  /** e.g. "07:12–15:48". */
+  timeLabel: string;
+  hours: number;
+}
+
+export interface PlanboardRow {
+  /** Partner id, or -1 for the "Ohne Zuordnung" row. */
+  employeeId: number;
+  employeeName: string;
+  /** Events per day, aligned to days[] (one array per day, length 7). */
+  cells: PlanboardCellEvent[][];
+  /** Recorded working times per day, aligned to days[] (length 7). */
+  workedCells: PlanboardWorkedEntry[][];
+  /** Absences per day, aligned to days[] (one array per day, length 7). */
+  absenceCells: PlanboardAbsence[][];
+}
+
+export interface PlanboardWeek {
+  days: PlanboardDayHeader[];
+  rows: PlanboardRow[];
+}
+
+/** Sort key: all-day first, then by time label, then title. */
+function sortCellEvents(events: PlanboardCellEvent[]): void {
+  events.sort((a, b) => {
+    const aAll = a.timeLabel === "Ganztägig" ? 0 : 1;
+    const bAll = b.timeLabel === "Ganztägig" ? 0 : 1;
+    return aAll - bAll || a.timeLabel.localeCompare(b.timeLabel) || a.title.localeCompare(b.title, "de");
+  });
+}
+
+const UNASSIGNED_ID = -1;
+
+/**
+ * The HERO Plantafel (calendar) for the week starting at `weekMonday`, as an
+ * employee × day matrix: one row per assigned employee (plus an "Ohne Zuordnung"
+ * row for unassigned appointments), seven day columns (Mon–Sun). Multi-day
+ * appointments appear on every day they cover; day bucketing and times use the
+ * Europe/Luxembourg time zone.
+ */
+export async function getPlanboardWeek(weekMonday: Date): Promise<PlanboardWeek> {
+  const rangeStart = weekMonday;
+  const rangeEnd = addDays(weekMonday, 7);
+
+  const days: PlanboardDayHeader[] = Array.from({ length: 7 }, (_, i) => {
+    const d = addDays(weekMonday, i);
+    return {
+      date: localDateOf(d.getTime()),
+      label: dayLabelFmt.format(d),
+      isToday: false,
+      isWeekend: i >= 5,
+    };
+  });
+  const todayStr = localDateOf(Date.now());
+  for (const d of days) d.isToday = d.date === todayStr;
+
+  const [events, tracked, absences] = await Promise.all([
+    getCalendarEvents(rangeStart.toISOString(), rangeEnd.toISOString()),
+    getTrackingTimes(days[0].date, localDateOf(rangeEnd.getTime())),
+    getAbsences(days[0].date, days[6].date),
+  ]);
+
+  const byEmp = new Map<
+    number,
+    {
+      name: string;
+      cells: PlanboardCellEvent[][];
+      workedCells: PlanboardWorkedEntry[][];
+      absenceCells: PlanboardAbsence[][];
+    }
+  >();
+  const ensureRow = (id: number, name: string) => {
+    let row = byEmp.get(id);
+    if (!row) {
+      row = {
+        name,
+        cells: Array.from({ length: 7 }, () => [] as PlanboardCellEvent[]),
+        workedCells: Array.from({ length: 7 }, () => [] as PlanboardWorkedEntry[]),
+        absenceCells: Array.from({ length: 7 }, () => [] as PlanboardAbsence[]),
+      };
+      byEmp.set(id, row);
+    }
+    return row;
+  };
+  const dayIndexByDate = new Map(days.map((d, i) => [d.date, i]));
+
+  for (const ev of events) {
+    if (!ev.start || !ev.end) continue;
+    const startMs = new Date(ev.start).getTime();
+    const endMs = new Date(ev.end).getTime();
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) continue;
+
+    const startDate = localDateOf(startMs);
+    // `end` is treated as exclusive (HERO all-day events end at midnight of the
+    // following day), so the last covered day is end − 1 ms.
+    const endDate = localDateOf(Math.max(startMs, endMs - 1));
+    const multiDay = startDate !== endDate;
+    const timeLabel =
+      ev.allDay || multiDay
+        ? "Ganztägig"
+        : `${localTimeFmt.format(new Date(startMs))}–${localTimeFmt.format(new Date(endMs))}`;
+
+    const targets =
+      ev.partners.length > 0
+        ? ev.partners.map((p) => ({ id: p.id, name: p.name }))
+        : [{ id: UNASSIGNED_ID, name: "Ohne Zuordnung" }];
+
+    for (let i = 0; i < days.length; i++) {
+      const day = days[i];
+      if (day.date < startDate || day.date > endDate) continue;
+      const ws = addDays(weekMonday, i);
+      const hours = round1(
+        eventHoursInRange(new Date(startMs), new Date(endMs), ws, addDays(ws, 1))
+      );
+      const cellEvent: PlanboardCellEvent = {
+        id: ev.id,
+        title: ev.title?.trim() || "Termin",
+        timeLabel,
+        projectName: ev.projectName,
+        projectRelativeId: ev.projectRelativeId,
+        hours,
+      };
+      for (const t of targets) ensureRow(t.id, t.name).cells[i].push(cellEvent);
+    }
+  }
+
+  for (const t of tracked) {
+    if (!t.start || !t.end) continue;
+    const startMs = new Date(t.start).getTime();
+    const endMs = new Date(t.end).getTime();
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) continue;
+    const idx = dayIndexByDate.get(localDateOf(startMs));
+    if (idx == null) continue;
+    ensureRow(t.partnerId ?? UNASSIGNED_ID, t.partnerName).workedCells[idx].push({
+      id: t.id,
+      projectRelativeId: t.projectRelativeId,
+      projectName: t.projectName,
+      timeLabel: `${localTimeFmt.format(new Date(startMs))}–${localTimeFmt.format(new Date(endMs))}`,
+      hours: t.durationHours,
+    });
+  }
+
+  for (const ab of absences) {
+    const row = ensureRow(ab.partnerId, ab.partnerName);
+    for (let i = 0; i < days.length; i++) {
+      const date = days[i].date;
+      if (date < ab.start || date > ab.end) continue;
+      const half =
+        (date === ab.start && ab.startHalf) || (date === ab.end && ab.endHalf);
+      row.absenceCells[i].push({
+        category: absenceCategory(ab.type),
+        label: absenceLabel(ab.type),
+        half,
+      });
+    }
+  }
+
+  const rows: PlanboardRow[] = [...byEmp.entries()]
+    .map(([employeeId, v]) => {
+      for (const cell of v.cells) sortCellEvents(cell);
+      for (const cell of v.workedCells) cell.sort((a, b) => a.timeLabel.localeCompare(b.timeLabel));
+      return {
+        employeeId,
+        employeeName: v.name,
+        cells: v.cells,
+        workedCells: v.workedCells,
+        absenceCells: v.absenceCells,
+      };
+    })
+    .sort((a, b) => {
+      // "Ohne Zuordnung" always last.
+      if (a.employeeId === UNASSIGNED_ID) return 1;
+      if (b.employeeId === UNASSIGNED_ID) return -1;
+      return a.employeeName.localeCompare(b.employeeName, "de");
+    });
+
+  return { days, rows };
+}
+
+// ---------------------------------------------------------------------------
+// Plantafel — single-day view: employee × time (06:00–18:00) as Gantt bars.
+// ---------------------------------------------------------------------------
+
+/** "HH:mm" (24h) → minutes from midnight. */
+function hhmmToMin(hhmm: string): number {
+  const [h, m] = hhmm.split(":").map((s) => parseInt(s, 10));
+  return (Number.isFinite(h) ? h : 0) * 60 + (Number.isFinite(m) ? m : 0);
+}
+
+export interface PlanboardDayEvent {
+  id: number;
+  title: string;
+  projectName: string | null;
+  projectRelativeId: number | null;
+  /** Original time label, e.g. "07:00–16:00" or "Ganztägig". */
+  timeLabel: string;
+  /** Start/end minutes from midnight, clamped to the 06:00–18:00 window. */
+  startMin: number;
+  endMin: number;
+}
+
+/** A recorded working-time entry (Ist-Zeit) shown alongside the plan. */
+export interface PlanboardWorkedSegment {
+  id: number;
+  projectRelativeId: number | null;
+  projectName: string | null;
+  /** e.g. "07:12–15:48". */
+  timeLabel: string;
+  /** Recorded duration in hours. */
+  hours: number;
+  /** Start/end minutes from midnight, clamped to the 06:00–18:00 window. */
+  startMin: number;
+  endMin: number;
+}
+
+export interface PlanboardDayRow {
+  /** Partner id, or -1 for the "Ohne Zuordnung" row. */
+  employeeId: number;
+  employeeName: string;
+  events: PlanboardDayEvent[];
+  /** Recorded working times (Ist) for this employee on the day. */
+  worked: PlanboardWorkedSegment[];
+  /** Absences (vacation, sickness, …) for this employee on the day. */
+  absences: PlanboardAbsence[];
+}
+
+export interface PlanboardDayData {
+  /** yyyy-mm-dd (Luxembourg local date). */
+  date: string;
+  /** e.g. "Montag, 16.06.2026". */
+  label: string;
+  isToday: boolean;
+  startHour: number;
+  endHour: number;
+  rows: PlanboardDayRow[];
+}
+
+/**
+ * The HERO Plantafel for a single day as an employee × time matrix, with each
+ * appointment placed on a 06:00–18:00 work-hours axis (times clamped to that
+ * window). Events with no overlap in the window are omitted; all times use the
+ * Europe/Luxembourg time zone.
+ */
+export async function getPlanboardDay(day: Date): Promise<PlanboardDayData> {
+  const dayStart = new Date(
+    Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate())
+  );
+  const dayEnd = addDays(dayStart, 1);
+  const dayStr = localDateOf(dayStart.getTime());
+
+  const nextDayStr = localDateOf(dayEnd.getTime());
+  const [events, tracked, absences] = await Promise.all([
+    getCalendarEvents(dayStart.toISOString(), dayEnd.toISOString()),
+    getTrackingTimes(dayStr, nextDayStr),
+    getAbsences(dayStr, dayStr),
+  ]);
+
+  const winStart = DAY_START_HOUR * 60;
+  const winEnd = DAY_END_HOUR * 60;
+  const clamp = (n: number) => Math.min(winEnd, Math.max(winStart, n));
+
+  const byEmp = new Map<
+    number,
+    {
+      name: string;
+      events: PlanboardDayEvent[];
+      worked: PlanboardWorkedSegment[];
+      absences: PlanboardAbsence[];
+    }
+  >();
+  const ensureRow = (id: number, name: string) => {
+    let row = byEmp.get(id);
+    if (!row) {
+      row = { name, events: [], worked: [], absences: [] };
+      byEmp.set(id, row);
+    }
+    return row;
+  };
+
+  for (const ev of events) {
+    if (!ev.start || !ev.end) continue;
+    const startMs = new Date(ev.start).getTime();
+    const endMs = new Date(ev.end).getTime();
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) continue;
+
+    const startLocalDate = localDateOf(startMs);
+    const endLocalDate = localDateOf(Math.max(startMs, endMs - 1));
+    // Skip events that don't touch this calendar day at all.
+    if (endLocalDate < dayStr || startLocalDate > dayStr) continue;
+
+    const multiDay = startLocalDate !== endLocalDate;
+    // Raw minutes within the day: events starting earlier / ending later or
+    // spanning the whole day fill the window.
+    let startMin: number;
+    let endMin: number;
+    if (ev.allDay || multiDay) {
+      startMin = winStart;
+      endMin = winEnd;
+    } else {
+      startMin = startLocalDate < dayStr ? 0 : hhmmToMin(localTimeFmt.format(new Date(startMs)));
+      endMin = endLocalDate > dayStr ? 24 * 60 : hhmmToMin(localTimeFmt.format(new Date(endMs)));
+    }
+
+    // Drop appointments wholly outside the 06:00–18:00 work-hours window.
+    if (endMin <= winStart || startMin >= winEnd) continue;
+
+    const timeLabel =
+      ev.allDay || multiDay
+        ? "Ganztägig"
+        : `${localTimeFmt.format(new Date(startMs))}–${localTimeFmt.format(new Date(endMs))}`;
+
+    const targets =
+      ev.partners.length > 0
+        ? ev.partners.map((p) => ({ id: p.id, name: p.name }))
+        : [{ id: UNASSIGNED_ID, name: "Ohne Zuordnung" }];
+
+    const dayEvent: PlanboardDayEvent = {
+      id: ev.id,
+      title: ev.title?.trim() || "Termin",
+      projectName: ev.projectName,
+      projectRelativeId: ev.projectRelativeId,
+      timeLabel,
+      startMin: clamp(startMin),
+      endMin: clamp(endMin),
+    };
+    for (const t of targets) ensureRow(t.id, t.name).events.push(dayEvent);
+  }
+
+  // Recorded working times (Ist) for the same day, on the same axis.
+  for (const t of tracked) {
+    if (!t.start || !t.end) continue;
+    const startMs = new Date(t.start).getTime();
+    const endMs = new Date(t.end).getTime();
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) continue;
+
+    const startLocalDate = localDateOf(startMs);
+    const endLocalDate = localDateOf(endMs - 1);
+    if (endLocalDate < dayStr || startLocalDate > dayStr) continue;
+
+    const startMin = startLocalDate < dayStr ? 0 : hhmmToMin(localTimeFmt.format(new Date(startMs)));
+    const endMin = endLocalDate > dayStr ? 24 * 60 : hhmmToMin(localTimeFmt.format(new Date(endMs)));
+    if (endMin <= winStart || startMin >= winEnd) continue;
+
+    const segment: PlanboardWorkedSegment = {
+      id: t.id,
+      projectRelativeId: t.projectRelativeId,
+      projectName: t.projectName,
+      timeLabel: `${localTimeFmt.format(new Date(startMs))}–${localTimeFmt.format(new Date(endMs))}`,
+      hours: t.durationHours,
+      startMin: clamp(startMin),
+      endMin: clamp(endMin),
+    };
+    const id = t.partnerId ?? UNASSIGNED_ID;
+    ensureRow(id, t.partnerName).worked.push(segment);
+  }
+
+  for (const ab of absences) {
+    if (dayStr < ab.start || dayStr > ab.end) continue;
+    const half =
+      (dayStr === ab.start && ab.startHalf) || (dayStr === ab.end && ab.endHalf);
+    ensureRow(ab.partnerId, ab.partnerName).absences.push({
+      category: absenceCategory(ab.type),
+      label: absenceLabel(ab.type),
+      half,
+    });
+  }
+
+  const rows: PlanboardDayRow[] = [...byEmp.entries()]
+    .map(([employeeId, v]) => {
+      v.events.sort((a, b) => a.startMin - b.startMin || a.title.localeCompare(b.title, "de"));
+      v.worked.sort((a, b) => a.startMin - b.startMin);
+      return {
+        employeeId,
+        employeeName: v.name,
+        events: v.events,
+        worked: v.worked,
+        absences: v.absences,
+      };
+    })
+    .sort((a, b) => {
+      if (a.employeeId === UNASSIGNED_ID) return 1;
+      if (b.employeeId === UNASSIGNED_ID) return -1;
+      return a.employeeName.localeCompare(b.employeeName, "de");
+    });
+
+  return {
+    date: dayStr,
+    label: fullDayLabelFmt.format(dayStart),
+    isToday: dayStr === localDateOf(Date.now()),
+    startHour: DAY_START_HOUR,
+    endHour: DAY_END_HOUR,
+    rows,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Planned man-hours for a project (sum of its calendar events).
+// ---------------------------------------------------------------------------
+
+/** One scheduled block of a project: when it is, how many man-hours, by whom. */
+export interface PlannedEntry {
+  id: number;
+  /** e.g. "Mo 16.06.2026" or a "… – …" range for multi-day events. */
+  dateLabel: string;
+  /** Effective man-hours of this block (hours × assigned employees). */
+  manHours: number;
+  title: string;
+  employees: string[];
+}
+
+/**
+ * Total planned man-hours scheduled for a project plus a per-block breakdown
+ * (when, how many hours): for each calendar event, its effective work hours
+ * (weekday, capped at 8 h/day like the utilisation model) multiplied by the
+ * number of assigned employees.
+ */
+export async function getProjectPlannedManHours(
+  projectMatchId: number
+): Promise<{ plannedHours: number; eventCount: number; entries: PlannedEntry[] }> {
+  const events = await getCalendarEventsForProject(projectMatchId);
+  let hours = 0;
+  let eventCount = 0;
+  const entries: { sort: number; entry: PlannedEntry }[] = [];
+  for (const ev of events) {
+    if (!ev.start || !ev.end) continue;
+    const s = new Date(ev.start);
+    const e = new Date(ev.end);
+    if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime()) || e <= s) continue;
+    const effectiveHours = eventHoursInRange(s, e, s, e);
+    const manHours = round1(effectiveHours * ev.partners.length);
+    hours += effectiveHours * ev.partners.length;
+    eventCount++;
+
+    const startDate = localDateOf(s.getTime());
+    const endDate = localDateOf(e.getTime() - 1);
+    const dateLabel =
+      startDate === endDate
+        ? entryDateFmt.format(s)
+        : `${entryDateFmt.format(s)} – ${entryDateFmt.format(new Date(e.getTime() - 1))}`;
+
+    entries.push({
+      sort: s.getTime(),
+      entry: {
+        id: ev.id,
+        dateLabel,
+        manHours,
+        title: ev.title?.trim() || "Termin",
+        employees: ev.partners.map((p) => p.name),
+      },
+    });
+  }
+  entries.sort((a, b) => a.sort - b.sort);
+  return {
+    plannedHours: round1(hours),
+    eventCount,
+    entries: entries.map((x) => x.entry),
+  };
 }

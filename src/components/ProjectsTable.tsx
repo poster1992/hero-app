@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import ProjectDetailModal from "@/components/ProjectDetailModal";
 
 export interface ProjectRow {
@@ -56,7 +57,8 @@ const STATUS_FILTERS: { key: string; label: string; needles: string[] | null }[]
 ];
 
 export default function ProjectsTable({ projects }: { projects: ProjectRow[] }) {
-  const [search, setSearch] = useState("");
+  const searchParams = useSearchParams();
+  const [search, setSearch] = useState(searchParams.get("q") ?? "");
   const [statusFilter, setStatusFilter] = useState("all");
   const [yearFilter, setYearFilter] = useState("all");
   const [sortKey, setSortKey] = useState<string | null>(null);

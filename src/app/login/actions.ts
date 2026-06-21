@@ -2,8 +2,8 @@
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import bcrypt from "bcryptjs";
 import { createSessionToken, SESSION_COOKIE_NAME, SESSION_COOKIE_MAX_AGE } from "@/lib/auth";
+import { authenticateUser } from "@/lib/users";
 
 export interface LoginState {
   error?: string;
@@ -13,27 +13,22 @@ export async function login(_prevState: LoginState, formData: FormData): Promise
   const username = formData.get("username");
   const password = formData.get("password");
 
-  if (typeof username !== "string" || typeof password !== "string") {
+  if (typeof username !== "string" || typeof password !== "string" || !username || !password) {
     return { error: "Bitte Benutzername und Passwort angeben." };
   }
 
-  const expectedUsername = process.env.APP_USERNAME;
-  const expectedHash = process.env.APP_PASSWORD_HASH;
-
-  if (!expectedUsername || !expectedHash) {
-    return { error: "Login ist nicht konfiguriert." };
+  let user: Awaited<ReturnType<typeof authenticateUser>>;
+  try {
+    user = await authenticateUser(username.trim(), password);
+  } catch {
+    return { error: "Anmeldung derzeit nicht möglich (Datenbank nicht erreichbar)." };
   }
 
-  if (username !== expectedUsername) {
+  if (!user) {
     return { error: "Benutzername oder Passwort ist falsch." };
   }
 
-  const passwordMatches = await bcrypt.compare(password, expectedHash);
-  if (!passwordMatches) {
-    return { error: "Benutzername oder Passwort ist falsch." };
-  }
-
-  const token = await createSessionToken({ username });
+  const token = await createSessionToken({ username: user.username, role: user.role });
   const cookieStore = await cookies();
   cookieStore.set(SESSION_COOKIE_NAME, token, {
     httpOnly: true,
@@ -43,7 +38,7 @@ export async function login(_prevState: LoginState, formData: FormData): Promise
     maxAge: SESSION_COOKIE_MAX_AGE,
   });
 
-  redirect("/dashboard");
+  redirect("/start");
 }
 
 export async function logout(): Promise<void> {
