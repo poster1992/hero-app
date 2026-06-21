@@ -10,46 +10,52 @@ interface NavItem {
   href: string;
   label: string;
   icon: string;
-  adminOnly?: boolean;
+  module: string;
   children?: { href: string; label: string }[];
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { href: "/dashboard", label: "Dashboard", icon: "home" },
-  { href: "/dashboard/projekte", label: "Projekte", icon: "projekte" },
+  { href: "/dashboard", label: "Dashboard", icon: "home", module: "dashboard" },
+  { href: "/dashboard/projekte", label: "Projekte", icon: "projekte", module: "projekte" },
   {
     href: "/dashboard/dokumente",
     label: "Dokumente",
     icon: "dokumente",
+    module: "dokumente",
     children: [
       { href: "/dashboard/dokumente/angebote", label: "Angebote" },
       { href: "/dashboard/dokumente/auftraege", label: "Aufträge" },
       { href: "/dashboard/dokumente/rechnungen", label: "Rechnungen" },
     ],
   },
-  { href: "/dashboard/lager", label: "Lager", icon: "lager" },
-  { href: "/dashboard/kunden", label: "Kunden", icon: "kunden" },
-  { href: "/dashboard/aufgaben", label: "Aufgaben", icon: "aufgaben" },
+  { href: "/dashboard/lager", label: "Lager", icon: "lager", module: "lager" },
+  { href: "/dashboard/kunden", label: "Kunden", icon: "kunden", module: "kunden" },
+  { href: "/dashboard/aufgaben", label: "Aufgaben", icon: "aufgaben", module: "aufgaben" },
   {
     href: "/dashboard/cockpit",
     label: "Cockpit",
     icon: "dashboard",
+    module: "cockpit",
     children: [
+      { href: "/dashboard/cockpit", label: "Übersicht" },
+      { href: "/dashboard/planung", label: "Arbeitsplanung" },
       { href: "/dashboard/belege", label: "Belege" },
       { href: "/dashboard/rechnungen", label: "Rechnungen" },
       { href: "/dashboard/arbeitszeiten", label: "Arbeitszeiten" },
       { href: "/dashboard/abc-analyse", label: "ABC-Analyse" },
     ],
   },
-  { href: "/dashboard/planung", label: "Arbeitsplanung", icon: "auslastung" },
   {
     href: "/dashboard/benutzer",
     label: "Konfiguration",
     icon: "konfiguration",
-    adminOnly: true,
-    children: [{ href: "/dashboard/benutzer", label: "Benutzer anlegen" }],
+    module: "konfiguration",
+    children: [
+      { href: "/dashboard/benutzer", label: "Benutzer anlegen" },
+      { href: "/dashboard/gruppen", label: "Benutzergruppen" },
+    ],
   },
-  { href: "/dashboard/hilfe", label: "Hilfe", icon: "hilfe" },
+  { href: "/dashboard/hilfe", label: "Hilfe", icon: "hilfe", module: "hilfe" },
 ];
 
 /** Monochrome Icons (folgen der Textfarbe via currentColor). */
@@ -182,10 +188,11 @@ function NavIcon({ name }: { name: string }) {
 
 const STORAGE_KEY = "sidebar-collapsed";
 
-export default function Sidebar({ role }: { role?: string }) {
+export default function Sidebar({ allowedModules }: { allowedModules: string[] }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
-  const navItems = NAV_ITEMS.filter((item) => !item.adminOnly || role === "administrator");
+  const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({});
+  const navItems = NAV_ITEMS.filter((item) => allowedModules.includes(item.module));
 
   useEffect(() => {
     setCollapsed(window.localStorage.getItem(STORAGE_KEY) === "1");
@@ -201,33 +208,35 @@ export default function Sidebar({ role }: { role?: string }) {
 
   return (
     <aside
-      className={`relative flex w-full shrink-0 flex-col border-b border-gray-200 bg-white transition-[width] duration-200 md:sticky md:top-0 md:h-screen md:border-b-0 md:border-r ${
-        collapsed ? "md:w-16" : "md:w-48"
+      className={`relative flex w-full shrink-0 flex-col border-b border-neutral-800 bg-neutral-900 text-gray-200 transition-[width] duration-200 md:sticky md:top-0 md:h-screen md:border-b-0 md:border-r md:border-neutral-800 ${
+        collapsed ? "md:w-16" : "md:w-56"
       }`}
     >
-      {/* Kleiner Pfeil am Rand zum Ein-/Ausklappen */}
-      <button
-        type="button"
-        onClick={toggle}
-        title={collapsed ? "Menü ausklappen" : "Menü einklappen"}
-        aria-label={collapsed ? "Menü ausklappen" : "Menü einklappen"}
-        className="absolute -right-3 top-8 z-20 hidden h-6 w-6 items-center justify-center rounded-full border border-gray-300 bg-white text-gray-500 shadow-sm transition-colors hover:border-brand-red/50 hover:text-brand-red md:flex"
+      {/* Kopfzeile: Logo + Ein-/Ausklappen */}
+      <div
+        className={`flex items-center gap-2 px-3 py-5 ${
+          collapsed ? "md:flex-col md:justify-center" : "justify-between"
+        }`}
       >
-        {collapsed ? "›" : "‹"}
-      </button>
-      <Link
-        href="/start"
-        title="Zur Modulübersicht"
-        className={`flex items-center px-3 py-5 ${collapsed ? "md:justify-center" : "justify-start"}`}
-      >
-        {collapsed ? (
-          <span className="hidden h-8 w-8 items-center justify-center rounded-md bg-brand-red text-sm font-bold text-white md:flex">
-            F
-          </span>
-        ) : (
-          <Logo />
-        )}
-      </Link>
+        <Link href="/start" title="Zur Modulübersicht" className="flex items-center">
+          {collapsed ? (
+            <span className="hidden h-8 w-8 items-center justify-center rounded-md bg-brand-red text-sm font-bold text-white md:flex">
+              F
+            </span>
+          ) : (
+            <Logo />
+          )}
+        </Link>
+        <button
+          type="button"
+          onClick={toggle}
+          title={collapsed ? "Menü ausklappen" : "Menü einklappen"}
+          aria-label={collapsed ? "Menü ausklappen" : "Menü einklappen"}
+          className="hidden h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-white/10 hover:text-white md:flex"
+        >
+          {collapsed ? "›" : "‹"}
+        </button>
+      </div>
 
       <nav className="flex flex-1 flex-col gap-1 px-3 py-2">
         {navItems.map((item) => {
@@ -236,27 +245,55 @@ export default function Sidebar({ role }: { role?: string }) {
           const childActiveAny =
             item.children?.some((c) => pathname?.startsWith(c.href)) ?? false;
           const active = selfActive || childActiveAny;
-          const showChildren = !collapsed && item.children && active;
+          const hasChildren = !!item.children?.length;
+          const isOpen = openMenus[item.href] ?? active;
+          const showChildren = !collapsed && hasChildren && isOpen;
+
+          const rowClass = `flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+            collapsed ? "md:justify-center" : "justify-start text-left"
+          } ${
+            active
+              ? "bg-brand-red text-white shadow-sm shadow-brand-red/30"
+              : "text-gray-300 hover:bg-white/10 hover:text-white"
+          }`;
 
           return (
             <div key={item.href}>
-              <Link
-                href={item.href}
-                title={item.label}
-                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                  collapsed ? "md:justify-center" : "justify-start text-left"
-                } ${
-                  active
-                    ? "bg-brand-red/10 text-brand-red ring-1 ring-brand-red/30"
-                    : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
-                }`}
-              >
-                <NavIcon name={item.icon} />
-                <span className={collapsed ? "md:hidden" : ""}>{item.label}</span>
-              </Link>
+              {hasChildren ? (
+                <button
+                  type="button"
+                  title={item.label}
+                  onClick={() =>
+                    setOpenMenus((p) => ({ ...p, [item.href]: !(p[item.href] ?? active) }))
+                  }
+                  className={rowClass}
+                >
+                  <NavIcon name={item.icon} />
+                  <span className={collapsed ? "md:hidden" : ""}>{item.label}</span>
+                  {!collapsed && (
+                    <svg
+                      className={`ml-auto h-4 w-4 shrink-0 transition-transform ${isOpen ? "rotate-90" : ""}`}
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden
+                    >
+                      <path d="M9 6l6 6-6 6" />
+                    </svg>
+                  )}
+                </button>
+              ) : (
+                <Link href={item.href} title={item.label} className={rowClass}>
+                  <NavIcon name={item.icon} />
+                  <span className={collapsed ? "md:hidden" : ""}>{item.label}</span>
+                </Link>
+              )}
 
               {showChildren && (
-                <div className="mt-1 ml-9 flex flex-col gap-1">
+                <div className="mt-1 ml-6 flex flex-col gap-0.5 border-l border-white/10 pl-3">
                   {item.children!.map((child) => {
                     const childActive = pathname?.startsWith(child.href);
                     return (
@@ -265,8 +302,8 @@ export default function Sidebar({ role }: { role?: string }) {
                         href={child.href}
                         className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm transition-colors ${
                           childActive
-                            ? "bg-brand-red/10 font-medium text-brand-red"
-                            : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"
+                            ? "bg-white/10 font-medium text-white"
+                            : "text-gray-400 hover:bg-white/5 hover:text-white"
                         }`}
                       >
                         <span className="text-xs">›</span>
@@ -281,13 +318,13 @@ export default function Sidebar({ role }: { role?: string }) {
         })}
       </nav>
 
-      <div className="border-t border-gray-200 px-3 py-3">
+      <div className="border-t border-white/10 px-3 py-3">
         <form action={logout}>
           <button
             type="submit"
             title="Abmelden"
             aria-label="Abmelden"
-            className={`flex items-center gap-3 rounded-lg px-3 py-2 text-gray-600 transition-colors hover:bg-gray-100 hover:text-brand-red ${
+            className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-gray-300 transition-colors hover:bg-white/10 hover:text-white ${
               collapsed ? "md:justify-center" : "w-full justify-start"
             }`}
           >
@@ -304,6 +341,7 @@ export default function Sidebar({ role }: { role?: string }) {
               <path d="M15 4h3a2 2 0 012 2v12a2 2 0 01-2 2h-3" />
               <path d="M10 17l-5-5 5-5M5 12h11" />
             </svg>
+            <span className={collapsed ? "md:hidden" : ""}>Abmelden</span>
           </button>
         </form>
       </div>

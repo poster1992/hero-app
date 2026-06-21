@@ -1,17 +1,21 @@
 import Sidebar from "@/components/Sidebar";
 import GlobalSearch from "@/components/GlobalSearch";
-import { getSession } from "@/lib/session";
+import PreviewBanner from "@/components/PreviewBanner";
+import { getEffectiveRole } from "@/lib/session";
+import { getAllowedModules } from "@/lib/role-store";
 
 export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const session = await getSession();
+  const { role, isPreview } = await getEffectiveRole();
+  const allowedModules = await getAllowedModules(role);
   return (
     <div className="flex min-h-screen flex-col md:flex-row">
-      <Sidebar role={session?.role ?? ""} />
+      <Sidebar allowedModules={allowedModules} />
       <main className="flex min-w-0 flex-1 flex-col bg-[#d2d2d2]">
+        {isPreview && <PreviewBanner role={role} />}
         <div className="flex items-center border-b border-gray-300 bg-white px-4 py-2">
           <GlobalSearch />
         </div>

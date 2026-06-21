@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getSession } from "@/lib/session";
+import { getSession, getEffectiveRole } from "@/lib/session";
+import { getAllowedModules } from "@/lib/role-store";
 import { getUserByUsername } from "@/lib/users";
 import { listTasksAssignedTo, listAllOverdueTasks } from "@/lib/tasks";
 import { taskStatusLabel, isOverdue, type TaskStatus } from "@/lib/task-types";
@@ -31,14 +32,16 @@ export default async function DashboardPage() {
   const session = await getSession();
   if (!session) redirect("/login");
 
-  const isAdmin = session.role === "administrator";
+  const { role } = await getEffectiveRole();
+  const allowedModules = await getAllowedModules(role);
+  const canSeeOverdue = allowedModules.includes("ueberfaellige_aufgaben");
   let tasks: Awaited<ReturnType<typeof listTasksAssignedTo>> = [];
   let overdueAll: Awaited<ReturnType<typeof listAllOverdueTasks>> = [];
   let error: string | null = null;
   try {
     const me = await getUserByUsername(session.username);
     if (me) tasks = await listTasksAssignedTo(me.id);
-    if (isAdmin) overdueAll = await listAllOverdueTasks();
+    if (canSeeOverdue) overdueAll = await listAllOverdueTasks();
   } catch (e) {
     error = e instanceof Error ? e.message : "Aufgaben konnten nicht geladen werden.";
   }
@@ -104,7 +107,7 @@ export default async function DashboardPage() {
         )}
       </div>
 
-      {isAdmin && (
+      {canSeeOverdue && (
         <div className="max-w-2xl rounded-xl border border-rose-300 bg-white p-5 shadow-lg shadow-black/10">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-lg font-semibold text-gray-900">

@@ -38,7 +38,7 @@ export async function login(_prevState: LoginState, formData: FormData): Promise
     maxAge: SESSION_COOKIE_MAX_AGE,
   });
 
-  redirect("/start");
+  redirect("/dashboard");
 }
 
 export async function logout(): Promise<void> {

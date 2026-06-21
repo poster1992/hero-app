@@ -2,16 +2,23 @@
 
 import { useActionState } from "react";
 import { createUserAction, setActiveAction, type CreateUserState } from "@/app/dashboard/benutzer/actions";
-import { ROLES, roleLabel } from "@/lib/roles";
 import type { AppUser } from "@/lib/users";
+
+interface RoleOption {
+  key: string;
+  label: string;
+}
 
 export default function UserAdmin({
   users,
   currentUsername,
+  roles,
 }: {
   users: AppUser[];
   currentUsername: string;
+  roles: RoleOption[];
 }) {
+  const roleLabel = (key: string) => roles.find((r) => r.key === key)?.label ?? key;
   const [state, formAction, pending] = useActionState<CreateUserState, FormData>(
     createUserAction,
     {}
@@ -47,7 +54,7 @@ export default function UserAdmin({
           <div>
             <label className="mb-1 block text-sm text-gray-600">Rolle *</label>
             <select name="role" required defaultValue="monteur" className={inputClass}>
-              {ROLES.map((r) => (
+              {roles.map((r) => (
                 <option key={r.key} value={r.key}>
                   {r.label}
                 </option>

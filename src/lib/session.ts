@@ -13,3 +13,23 @@ export async function isAdmin(): Promise<boolean> {
   const session = await getSession();
   return session?.role === "administrator";
 }
+
+const PREVIEW_COOKIE = "preview_role";
+
+/**
+ * The role to render the UI for. Administrators can preview another role's
+ * view via the `preview_role` cookie; everyone else just uses their own role.
+ */
+export async function getEffectiveRole(): Promise<{
+  role: string;
+  realRole: string;
+  isPreview: boolean;
+}> {
+  const session = await getSession();
+  const realRole = session?.role ?? "";
+  const preview = (await cookies()).get(PREVIEW_COOKIE)?.value ?? null;
+  if (realRole === "administrator" && preview && preview !== "administrator") {
+    return { role: preview, realRole, isPreview: true };
+  }
+  return { role: realRole, realRole, isPreview: false };
+}

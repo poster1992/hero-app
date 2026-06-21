@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getSession } from "@/lib/session";
 import { createUser, setUserActive } from "@/lib/users";
-import { isValidRole } from "@/lib/roles";
+import { roleExists } from "@/lib/role-store";
 
 const PATH = "/dashboard/benutzer";
 
@@ -35,7 +35,7 @@ export async function createUserAction(
   if (password.length < 4) {
     return { error: "Das Passwort muss mindestens 4 Zeichen haben." };
   }
-  if (!isValidRole(role)) {
+  if (!(await roleExists(role))) {
     return { error: "Bitte eine gültige Rolle wählen." };
   }
   if (email && !email.includes("@")) {
