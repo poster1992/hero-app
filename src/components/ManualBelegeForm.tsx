@@ -2,32 +2,66 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useActionState } from "react";
-import { uploadBelegAction, type UploadBelegState } from "@/app/dashboard/belege/manual-actions";
+import {
+  uploadBelegAction,
+  updateBelegAction,
+  type UploadBelegState,
+} from "@/app/dashboard/belege/manual-actions";
 
 interface AccountOption {
   number: string;
   name: string;
 }
 
-export default function ManualBelegeForm({ accounts }: { accounts: AccountOption[] }) {
+/** Subset of a manual receipt needed to prefill the edit form. */
+export interface EditableReceipt {
+  id: number;
+  date: string | null;
+  supplier: string | null;
+  description: string | null;
+  gross: number;
+  vatRate: number | null;
+  accountNumber: string | null;
+  accountName: string | null;
+  fileName: string | null;
+}
+
+export default function ManualBelegeForm({
+  accounts,
+  receipt,
+}: {
+  accounts: AccountOption[];
+  /** When set, the form edits this receipt instead of creating a new one. */
+  receipt?: EditableReceipt;
+}) {
+  const isEdit = !!receipt;
   const [open, setOpen] = useState(false);
   const [state, formAction, pending] = useActionState<UploadBelegState, FormData>(
-    uploadBelegAction,
+    isEdit ? updateBelegAction : uploadBelegAction,
     {}
   );
   const [accountQuery, setAccountQuery] = useState("");
-  const [account, setAccount] = useState<AccountOption | null>(null);
+  const [account, setAccount] = useState<AccountOption | null>(
+    receipt?.accountNumber
+      ? { number: receipt.accountNumber, name: receipt.accountName ?? "" }
+      : null
+  );
 
-  // Nach erfolgreichem Speichern Pop-up schließen und Felder zurücksetzen.
+  // Nach erfolgreichem Speichern Pop-up schließen (deferred, um setState
+  // synchron im Effekt zu vermeiden).
   const lastSuccess = useRef<string | undefined>(undefined);
   useEffect(() => {
-    if (state.success && state.success !== lastSuccess.current) {
-      lastSuccess.current = state.success;
+    if (!state.success || state.success === lastSuccess.current) return;
+    lastSuccess.current = state.success;
+    const t = setTimeout(() => {
       setOpen(false);
-      setAccount(null);
-      setAccountQuery("");
-    }
-  }, [state.success]);
+      if (!isEdit) {
+        setAccount(null);
+        setAccountQuery("");
+      }
+    }, 0);
+    return () => clearTimeout(t);
+  }, [state.success, isEdit]);
 
   const accountMatches = (() => {
     const words = accountQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
@@ -43,15 +77,28 @@ export default function ManualBelegeForm({ accounts }: { accounts: AccountOption
   const inputClass =
     "w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-brand-red/60";
 
+  const grossDefault = receipt ? String(receipt.gross).replace(".", ",") : "";
+  const vatDefault = receipt?.vatRate != null ? String(receipt.vatRate) : "";
+
   return (
-    <div className="flex items-center justify-end">
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="rounded-md bg-brand-red px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90"
-      >
-        + Beleg hochladen
-      </button>
+    <div className={isEdit ? "inline-block" : "flex items-center justify-end"}>
+      {isEdit ? (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="rounded-md border border-gray-300 px-2 py-0.5 text-xs font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900"
+        >
+          Bearbeiten
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="rounded-md bg-brand-red px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+        >
+          + Beleg hochladen
+        </button>
+      )}
 
       {open && (
         <div
@@ -63,7 +110,9 @@ export default function ManualBelegeForm({ accounts }: { accounts: AccountOption
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-gray-900">Beleg manuell hochladen</h2>
+              <h2 className="text-lg font-semibold text-gray-900">
+                {isEdit ? "Beleg bearbeiten" : "Beleg manuell hochladen"}
+              </h2>
               <button
                 type="button"
                 onClick={() => setOpen(false)}
@@ -75,34 +124,67 @@ export default function ManualBelegeForm({ accounts }: { accounts: AccountOption
             </div>
 
             <form action={formAction} className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {isEdit && <input type="hidden" name="id" value={receipt.id} />}
               <div>
-                <label className="mb-1 block text-sm text-gray-600">Datei (PDF/Bild)</label>
+                <label className="mb-1 block text-sm text-gray-600">
+                  {isEdit ? "Datei ersetzen (optional)" : "Datei (PDF/Bild)"}
+                </label>
                 <input
                   name="file"
                   type="file"
                   accept=".pdf,image/*"
                   className="w-full text-sm text-gray-700 file:mr-3 file:rounded-md file:border-0 file:bg-brand-red file:px-3 file:py-2 file:text-sm file:font-medium file:text-white hover:file:opacity-90"
                 />
+                {isEdit && receipt.fileName && (
+                  <p className="mt-1 text-xs text-gray-500">Aktuell: {receipt.fileName}</p>
+                )}
               </div>
               <div>
                 <label className="mb-1 block text-sm text-gray-600">Belegdatum</label>
-                <input name="date" type="date" className={inputClass} />
+                <input name="date" type="date" defaultValue={receipt?.date ?? ""} className={inputClass} />
               </div>
               <div>
                 <label className="mb-1 block text-sm text-gray-600">Lieferant</label>
-                <input name="supplier" type="text" className={inputClass} placeholder="z. B. Baumarkt XY" />
+                <input
+                  name="supplier"
+                  type="text"
+                  defaultValue={receipt?.supplier ?? ""}
+                  className={inputClass}
+                  placeholder="z. B. Baumarkt XY"
+                />
               </div>
               <div className="lg:col-span-3">
                 <label className="mb-1 block text-sm text-gray-600">Beschreibung</label>
-                <input name="description" type="text" className={inputClass} placeholder="Verwendungszweck" />
+                <input
+                  name="description"
+                  type="text"
+                  defaultValue={receipt?.description ?? ""}
+                  className={inputClass}
+                  placeholder="Verwendungszweck"
+                />
               </div>
               <div>
                 <label className="mb-1 block text-sm text-gray-600">Betrag (brutto) *</label>
-                <input name="gross" type="text" inputMode="decimal" required className={inputClass} placeholder="z. B. 119,00" />
+                <input
+                  name="gross"
+                  type="text"
+                  inputMode="decimal"
+                  required
+                  defaultValue={grossDefault}
+                  className={inputClass}
+                  placeholder="z. B. 119,00"
+                />
               </div>
               <div>
                 <label className="mb-1 block text-sm text-gray-600">MwSt-Satz %</label>
-                <input name="vatRate" type="text" inputMode="decimal" className={inputClass} placeholder="z. B. 17" />
+                <input
+                  name="vatRate"
+                  type="text"
+                  inputMode="decimal"
+                  defaultValue={vatDefault}
+                  className={inputClass}
+                  placeholder="z. B. 17"
+                />
               </div>
               <div>
                 <label className="mb-1 block text-sm text-gray-600">Konto *</label>
@@ -161,7 +243,11 @@ export default function ManualBelegeForm({ accounts }: { accounts: AccountOption
                   disabled={pending}
                   className="rounded-md bg-brand-red px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
                 >
-                  {pending ? "Wird gespeichert …" : "Beleg speichern"}
+                  {pending
+                    ? "Wird gespeichert …"
+                    : isEdit
+                      ? "Änderungen speichern"
+                      : "Beleg speichern"}
                 </button>
                 <button
                   type="button"

@@ -3,7 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { getSession } from "@/lib/session";
 import { getUserByUsername } from "@/lib/users";
-import { createManualReceipt, setManualReceiptPaid } from "@/lib/manual-receipts";
+import {
+  createManualReceipt,
+  setManualReceiptPaid,
+  updateManualReceipt,
+} from "@/lib/manual-receipts";
 import {
   addChecklistItem,
   removeChecklistItem,
@@ -76,6 +80,69 @@ export async function uploadBelegAction(
 
   revalidatePath(PATH);
   return { success: "Beleg gespeichert." };
+}
+
+export async function updateBelegAction(
+  _prev: UploadBelegState,
+  formData: FormData
+): Promise<UploadBelegState> {
+  const session = await getSession();
+  if (!session) return { error: "Nicht angemeldet." };
+
+  const id = Number(formData.get("id"));
+  if (!Number.isFinite(id) || id <= 0) return { error: "Ungültiger Beleg." };
+
+  const date = String(formData.get("date") ?? "").trim() || null;
+  const supplier = String(formData.get("supplier") ?? "").trim() || null;
+  const description = String(formData.get("description") ?? "").trim() || null;
+  const grossRaw = String(formData.get("gross") ?? "").trim().replace(",", ".");
+  const gross = Number(grossRaw);
+  const vatRateRaw = String(formData.get("vatRate") ?? "").trim().replace(",", ".");
+  const vatRate = vatRateRaw ? Number(vatRateRaw) : null;
+  const account = String(formData.get("account") ?? "").trim(); // "number|name"
+
+  if (!Number.isFinite(gross) || gross <= 0) {
+    return { error: "Bitte einen gültigen Betrag (brutto) angeben." };
+  }
+  if (vatRate != null && !Number.isFinite(vatRate)) {
+    return { error: "MwSt-Satz muss eine Zahl sein." };
+  }
+  if (!account) return { error: "Bitte ein Konto auswählen." };
+
+  const sep = account.indexOf("|");
+  const accountNumber = sep >= 0 ? account.slice(0, sep) : account;
+  const accountName = sep >= 0 ? account.slice(sep + 1) : "";
+
+  const upload = formData.get("file");
+  let file: { buffer: Buffer; originalName: string; mime: string } | null = null;
+  if (upload && typeof upload === "object" && "arrayBuffer" in upload && upload.size > 0) {
+    const f = upload as File;
+    if (f.size > 15 * 1024 * 1024) return { error: "Datei zu groß (max. 15 MB)." };
+    file = {
+      buffer: Buffer.from(await f.arrayBuffer()),
+      originalName: f.name,
+      mime: f.type || "application/octet-stream",
+    };
+  }
+
+  try {
+    await updateManualReceipt({
+      id,
+      date,
+      supplier,
+      description,
+      gross,
+      vatRate,
+      accountNumber,
+      accountName,
+      file,
+    });
+  } catch {
+    return { error: "Beleg konnte nicht aktualisiert werden." };
+  }
+
+  revalidatePath(PATH);
+  return { success: "Beleg aktualisiert." };
 }
 
 /** Markiert einen manuellen Beleg als bezahlt/offen. */

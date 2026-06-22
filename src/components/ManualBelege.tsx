@@ -94,6 +94,7 @@ export default async function ManualBelege({
                 <th className="px-4 py-2 text-right font-semibold">Brutto</th>
                 <th className="px-4 py-2 font-semibold">Status</th>
                 <th className="px-4 py-2 font-semibold">Beleg</th>
+                <th className="px-4 py-2 font-semibold">Aktion</th>
               </tr>
             </thead>
             <tbody>
@@ -150,6 +151,9 @@ export default async function ManualBelege({
                     ) : (
                       <span className="text-gray-400">—</span>
                     )}
+                  </td>
+                  <td className="px-4 py-2">
+                    <ManualBelegeForm accounts={accounts} receipt={r} />
                   </td>
                 </tr>
               ))}

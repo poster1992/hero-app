@@ -6,6 +6,7 @@ import {
   getProjectLocations,
 } from "@/lib/hero-api";
 import OfferOrderPanel from "@/components/OfferOrderPanel";
+import OpenItemsPanel from "@/components/OpenItemsPanel";
 import CustomerMapPanel from "@/components/CustomerMapPanel";
 import MonthlyChart from "@/components/MonthlyChart";
 import DashboardTitle from "@/components/DashboardTitle";
@@ -163,27 +164,18 @@ export default async function DashboardPage({
                     </span>
                   </div>
 
-                  {/* Offene (unbezahlte) Posten – brutto */}
-                  <div className="mt-3 grid grid-cols-2 gap-3 border-t border-gray-200 pt-3">
-                    <div className="rounded-lg bg-gray-50 px-3 py-2">
-                      <div className="text-xs text-gray-500">Offene Rechnungen</div>
-                      <div className="text-base font-semibold tabular-nums text-gray-900">
-                        {currencyFormatter.format(data.openInvoicesTotal)}
-                      </div>
-                      <div className="text-xs text-gray-400">
-                        {data.openInvoicesCount} offen · brutto
-                      </div>
-                    </div>
-                    <div className="rounded-lg bg-gray-50 px-3 py-2">
-                      <div className="text-xs text-gray-500">Offene Belege</div>
-                      <div className="text-base font-semibold tabular-nums text-gray-900">
-                        {currencyFormatter.format(data.openReceiptsTotal)}
-                      </div>
-                      <div className="text-xs text-gray-400">
-                        {data.openReceiptsCount} offen · brutto
-                      </div>
-                    </div>
-                  </div>
+                  {/* Offene (unbezahlte) Posten – brutto, Klick öffnet Monatsdetails */}
+                  <OpenItemsPanel
+                    year={data.year}
+                    openReceiptsTotal={data.openReceiptsTotal}
+                    openReceiptsCount={data.openReceiptsCount}
+                    openReceiptsMonthly={data.openReceiptsMonthly}
+                    openReceiptsDetails={data.openReceiptsDetails}
+                    openInvoicesTotal={data.openInvoicesTotal}
+                    openInvoicesCount={data.openInvoicesCount}
+                    openInvoicesMonthly={data.openInvoicesMonthly}
+                    openInvoicesDetails={data.openInvoicesDetails}
+                  />
                 </div>
 
                 {/* Angebote & Aufträge (Klick öffnet Monatsdetails) */}

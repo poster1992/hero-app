@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, writeFile, readFile } from "node:fs/promises";
+import { mkdir, writeFile, readFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import type { RowDataPacket } from "mysql2";
 import { getPool } from "./db";
@@ -121,6 +121,81 @@ export async function createManualReceipt(input: {
       storedName,
       input.file?.mime ?? null,
       input.uploadedBy,
+    ]
+  );
+}
+
+/** Updates an existing manual receipt; replaces the file only if a new one is given. */
+export async function updateManualReceipt(input: {
+  id: number;
+  date: string | null;
+  supplier: string | null;
+  description: string | null;
+  gross: number;
+  vatRate: number | null;
+  accountNumber: string | null;
+  accountName: string | null;
+  file: { buffer: Buffer; originalName: string; mime: string } | null;
+}): Promise<void> {
+  const pool = getPool();
+
+  if (input.file) {
+    // Alte Datei merken, um sie nach dem Ersetzen zu entfernen.
+    const [rows] = await pool.query<ReceiptRow[]>(
+      "SELECT stored_name FROM manual_receipts WHERE id = ? LIMIT 1",
+      [input.id]
+    );
+    const oldStored = rows[0]?.stored_name ?? null;
+
+    await mkdir(BELEGE_DIR, { recursive: true });
+    const ext = path.extname(input.file.originalName) || "";
+    const storedName = `${randomUUID()}${ext}`;
+    await writeFile(path.join(BELEGE_DIR, storedName), input.file.buffer);
+
+    await pool.query(
+      `UPDATE manual_receipts
+         SET beleg_date = ?, supplier = ?, description = ?, gross = ?, vat_rate = ?,
+             account_number = ?, account_name = ?, file_name = ?, stored_name = ?, mime = ?
+       WHERE id = ?`,
+      [
+        input.date,
+        input.supplier,
+        input.description,
+        input.gross,
+        input.vatRate,
+        input.accountNumber,
+        input.accountName,
+        input.file.originalName,
+        storedName,
+        input.file.mime,
+        input.id,
+      ]
+    );
+
+    if (oldStored) {
+      try {
+        await unlink(path.join(BELEGE_DIR, oldStored));
+      } catch {
+        // Alte Datei evtl. schon weg – ignorieren.
+      }
+    }
+    return;
+  }
+
+  await pool.query(
+    `UPDATE manual_receipts
+       SET beleg_date = ?, supplier = ?, description = ?, gross = ?, vat_rate = ?,
+           account_number = ?, account_name = ?
+     WHERE id = ?`,
+    [
+      input.date,
+      input.supplier,
+      input.description,
+      input.gross,
+      input.vatRate,
+      input.accountNumber,
+      input.accountName,
+      input.id,
     ]
   );
 }

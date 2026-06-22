@@ -72,10 +72,38 @@ export interface DashboardData {
   /** Offene (unbezahlte) Belege – brutto. Manuelle Belege ohne Bezahlt-Status. */
   openReceiptsTotal: number;
   openReceiptsCount: number;
+  /** Offene Belege je Monat (index 0 = Januar). */
+  openReceiptsMonthly: MonthlyOpen[];
+  /** Einzelne offene Belege (für die Monats-Detailansicht). */
+  openReceiptsDetails: OpenDetail[];
   /** Offene (unbezahlte) Ausgangsrechnungen – brutto. */
   openInvoicesTotal: number;
   openInvoicesCount: number;
+  /** Offene Rechnungen je Monat (index 0 = Januar). */
+  openInvoicesMonthly: MonthlyOpen[];
+  /** Einzelne offene Rechnungen (für die Monats-Detailansicht). */
+  openInvoicesDetails: OpenDetail[];
   guv: GuvData;
+}
+
+export interface MonthlyOpen {
+  month: number;
+  label: string;
+  count: number;
+  /** Offene Summe (brutto). */
+  total: number;
+}
+
+export interface OpenDetail {
+  /** Month 1–12. */
+  month: number;
+  date: string | null;
+  /** Document number, or "" for manual receipts without a number. */
+  number: string;
+  /** Supplier (Belege) or customer (Rechnungen). */
+  party: string;
+  /** Open amount (brutto). */
+  amount: number;
 }
 
 const NO_ACCOUNT_LABEL = "Ohne Buchungskonto";
@@ -118,6 +146,20 @@ export async function getDashboardData(year: number): Promise<DashboardData> {
   let openReceiptsCount = 0;
   let openInvoicesTotal = 0;
   let openInvoicesCount = 0;
+  const openReceiptsMonthly: MonthlyOpen[] = MONTH_LABELS.map((label, i) => ({
+    month: i + 1,
+    label,
+    count: 0,
+    total: 0,
+  }));
+  const openInvoicesMonthly: MonthlyOpen[] = MONTH_LABELS.map((label, i) => ({
+    month: i + 1,
+    label,
+    count: 0,
+    total: 0,
+  }));
+  const openReceiptsDetails: OpenDetail[] = [];
+  const openInvoicesDetails: OpenDetail[] = [];
 
   // GuV: expenses per booking account, net, per month.
   const expenseByAccount = new Map<string, number[]>();
@@ -144,6 +186,20 @@ export async function getDashboardData(year: number): Promise<DashboardData> {
     if (receipt.openAmount > 0.005) {
       openReceiptsTotal += receipt.openAmount;
       openReceiptsCount++;
+      openReceiptsMonthly[monthIndex].count++;
+      openReceiptsMonthly[monthIndex].total += receipt.openAmount;
+      const party = receipt.customer
+        ? receipt.customer.companyName ||
+          [receipt.customer.firstName, receipt.customer.lastName].filter(Boolean).join(" ") ||
+          "—"
+        : "—";
+      openReceiptsDetails.push({
+        month: monthIndex + 1,
+        date: receipt.receiptDate,
+        number: receipt.number ?? "",
+        party,
+        amount: round2(receipt.openAmount),
+      });
     }
 
     for (const p of receipt.receiptPositions) {
@@ -172,6 +228,15 @@ export async function getDashboardData(year: number): Promise<DashboardData> {
       if (!r.isPaid) {
         openReceiptsTotal += r.gross;
         openReceiptsCount++;
+        openReceiptsMonthly[monthIndex].count++;
+        openReceiptsMonthly[monthIndex].total += r.gross;
+        openReceiptsDetails.push({
+          month: monthIndex + 1,
+          date: r.date,
+          number: "",
+          party: r.supplier || r.description || "Manueller Beleg",
+          amount: round2(r.gross),
+        });
       }
       const number = r.accountNumber?.trim() ?? "";
       const name = r.accountName?.trim() ?? "";
@@ -196,6 +261,15 @@ export async function getDashboardData(year: number): Promise<DashboardData> {
     if (inv.isOpen === true) {
       openInvoicesTotal += inv.gross;
       openInvoicesCount++;
+      openInvoicesMonthly[monthIndex].count++;
+      openInvoicesMonthly[monthIndex].total += inv.gross;
+      openInvoicesDetails.push({
+        month: monthIndex + 1,
+        date: inv.date,
+        number: inv.number,
+        party: inv.customerName || "—",
+        amount: round2(inv.gross),
+      });
     }
   }
 
@@ -255,8 +329,12 @@ export async function getDashboardData(year: number): Promise<DashboardData> {
     marginRatio,
     openReceiptsTotal: round2(openReceiptsTotal),
     openReceiptsCount,
+    openReceiptsMonthly: openReceiptsMonthly.map((m) => ({ ...m, total: round2(m.total) })),
+    openReceiptsDetails,
     openInvoicesTotal: round2(openInvoicesTotal),
     openInvoicesCount,
+    openInvoicesMonthly: openInvoicesMonthly.map((m) => ({ ...m, total: round2(m.total) })),
+    openInvoicesDetails,
     guv,
   };
 }
