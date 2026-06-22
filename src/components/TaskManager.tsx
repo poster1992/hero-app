@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useState, useEffect, useRef } from "react";
 import {
   createTaskAction,
   setStatusAction,
@@ -68,7 +68,7 @@ function TaskCard({ task, users }: { task: Task; users: UserOption[] }) {
         task.status === "erledigt"
           ? "border-gray-200 bg-gray-50 opacity-75"
           : overdue
-            ? "border-rose-400 bg-rose-50"
+            ? "border-rose-500/40 bg-rose-500/10"
             : "border-gray-300 bg-white"
       }`}
     >
@@ -173,12 +173,26 @@ export default function TaskManager({
   projects: ProjectOption[];
   meId: number;
 }) {
+  const [open, setOpen] = useState(false);
   const [state, formAction, pending] = useActionState<CreateTaskState, FormData>(
     createTaskAction,
     {}
   );
   const [projectQuery, setProjectQuery] = useState("");
   const [selectedProject, setSelectedProject] = useState<ProjectOption | null>(null);
+
+  // Nach erfolgreichem Anlegen Pop-up schließen und Auswahl zurücksetzen.
+  const lastSuccess = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!state.success || state.success === lastSuccess.current) return;
+    lastSuccess.current = state.success;
+    const t = setTimeout(() => {
+      setOpen(false);
+      setSelectedProject(null);
+      setProjectQuery("");
+    }, 0);
+    return () => clearTimeout(t);
+  }, [state.success]);
   const projectMatches = (() => {
     const q = projectQuery.trim().toLowerCase();
     if (!q || selectedProject) return [];
@@ -191,15 +205,75 @@ export default function TaskManager({
       .slice(0, 8);
   })();
 
+  // Filter (Status + Suche) für die Aufgabenlisten.
+  const [statusFilter, setStatusFilter] = useState<
+    "alle" | "offen" | "in_arbeit" | "erledigt" | "ueberfaellig"
+  >("alle");
+  const [search, setSearch] = useState("");
+  const matchesFilter = (t: Task) => {
+    if (statusFilter === "ueberfaellig") {
+      if (!isOverdue(t.dueDate, t.status)) return false;
+    } else if (statusFilter !== "alle" && t.status !== statusFilter) {
+      return false;
+    }
+    const q = search.trim().toLowerCase();
+    if (q) {
+      const hay = `${t.title} ${t.description ?? ""} ${t.assignees
+        .map((a) => a.name)
+        .join(" ")} ${t.projectName ?? ""} ${t.createdByName}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  };
+  const fAssigned = assigned.filter(matchesFilter);
+  const fCreated = created.filter(matchesFilter);
+  const fAllOpen = allOpen.filter(matchesFilter);
+
+  const STATUS_FILTERS: { key: typeof statusFilter; label: string }[] = [
+    { key: "alle", label: "Alle" },
+    { key: "offen", label: "Offen" },
+    { key: "in_arbeit", label: "In Arbeit" },
+    { key: "erledigt", label: "Erledigt" },
+    { key: "ueberfaellig", label: "Überfällig" },
+  ];
+
   const inputClass =
     "w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-brand-red/60";
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Neue Aufgabe */}
-      <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
-        <h2 className="mb-4 text-lg font-semibold text-gray-900">Aufgabe senden</h2>
-        <form action={formAction} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      {/* Neue Aufgabe – Button öffnet Pop-up */}
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="rounded-md bg-brand-red px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+        >
+          + Neue Aufgabe
+        </button>
+      </div>
+
+      {open && (
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-4 sm:items-center"
+          onClick={() => setOpen(false)}
+        >
+          <div
+            className="w-full max-w-2xl rounded-xl border border-gray-300 bg-white p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-gray-900">Neue Aufgabe</h2>
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="text-gray-400 transition-colors hover:text-gray-700"
+                aria-label="Schließen"
+              >
+                ✕
+              </button>
+            </div>
+            <form action={formAction} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="sm:col-span-2">
             <label className="mb-1 block text-sm text-gray-600">Titel *</label>
             <input name="title" type="text" required className={inputClass} placeholder="Was ist zu tun?" />
@@ -298,10 +372,48 @@ export default function TaskManager({
             >
               {pending ? "Wird gesendet …" : "Aufgabe senden"}
             </button>
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+            >
+              Abbrechen
+            </button>
             {state.error && <span className="text-sm text-rose-600">{state.error}</span>}
-            {state.success && <span className="text-sm text-emerald-700">{state.success}</span>}
           </div>
-        </form>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Filterleiste */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap gap-1.5">
+          {STATUS_FILTERS.map((f) => {
+            const active = statusFilter === f.key;
+            return (
+              <button
+                key={f.key}
+                type="button"
+                onClick={() => setStatusFilter(f.key)}
+                className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                  active
+                    ? "bg-brand-red text-white"
+                    : "border border-gray-300 text-gray-600 hover:border-brand-red/50 hover:text-gray-900"
+                }`}
+              >
+                {f.label}
+              </button>
+            );
+          })}
+        </div>
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Suchen (Titel, Mitarbeiter, Projekt …)"
+          className="ml-auto w-full max-w-xs rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 outline-none focus:border-brand-red/60"
+        />
       </div>
 
       {/* Admin: alle offenen Aufgaben */}
@@ -309,13 +421,13 @@ export default function TaskManager({
         <section className="flex flex-col gap-3">
           <h2 className="text-lg font-semibold text-gray-900">
             Alle offenen Aufgaben{" "}
-            <span className="text-sm font-normal text-gray-500">({allOpen.length})</span>
+            <span className="text-sm font-normal text-gray-500">({fAllOpen.length})</span>
           </h2>
-          {allOpen.length === 0 ? (
-            <p className="text-sm text-gray-400">Keine offenen Aufgaben.</p>
+          {fAllOpen.length === 0 ? (
+            <p className="text-sm text-gray-400">Keine Aufgaben für diesen Filter.</p>
           ) : (
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-              {allOpen.map((t) => (
+              {fAllOpen.map((t) => (
                 <TaskCard key={t.id} task={t} users={users} />
               ))}
             </div>
@@ -328,12 +440,12 @@ export default function TaskManager({
         <section className="flex flex-col gap-3">
           <h2 className="text-lg font-semibold text-gray-900">
             Mir zugewiesen{" "}
-            <span className="text-sm font-normal text-gray-500">({assigned.length})</span>
+            <span className="text-sm font-normal text-gray-500">({fAssigned.length})</span>
           </h2>
-          {assigned.length === 0 ? (
-            <p className="text-sm text-gray-400">Keine Aufgaben.</p>
+          {fAssigned.length === 0 ? (
+            <p className="text-sm text-gray-400">Keine Aufgaben für diesen Filter.</p>
           ) : (
-            assigned.map((t) => <TaskCard key={t.id} task={t} users={users} />)
+            fAssigned.map((t) => <TaskCard key={t.id} task={t} users={users} />)
           )}
         </section>
 
@@ -341,12 +453,12 @@ export default function TaskManager({
         <section className="flex flex-col gap-3">
           <h2 className="text-lg font-semibold text-gray-900">
             Von mir gesendet{" "}
-            <span className="text-sm font-normal text-gray-500">({created.length})</span>
+            <span className="text-sm font-normal text-gray-500">({fCreated.length})</span>
           </h2>
-          {created.length === 0 ? (
-            <p className="text-sm text-gray-400">Keine Aufgaben.</p>
+          {fCreated.length === 0 ? (
+            <p className="text-sm text-gray-400">Keine Aufgaben für diesen Filter.</p>
           ) : (
-            created.map((t) => <TaskCard key={t.id} task={t} users={users} />)
+            fCreated.map((t) => <TaskCard key={t.id} task={t} users={users} />)
           )}
         </section>
       </div>

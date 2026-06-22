@@ -210,7 +210,7 @@ export default function Sidebar({ allowedModules }: { allowedModules: string[] }
   return (
     <aside
       className={`relative flex w-full shrink-0 flex-col border-b border-neutral-800 bg-black text-gray-200 transition-[width] duration-200 md:sticky md:top-0 md:h-screen md:border-b-0 md:border-r md:border-neutral-800 ${
-        collapsed ? "md:w-16" : "md:w-56"
+        collapsed ? "md:w-16" : "md:w-72"
       }`}
     >
       {/* Kopfzeile: Logo + Ein-/Ausklappen */}
@@ -256,7 +256,7 @@ export default function Sidebar({ allowedModules }: { allowedModules: string[] }
             collapsed ? "md:justify-center" : "justify-start text-left"
           } ${
             active
-              ? "bg-brand-red text-white shadow-sm shadow-brand-red/30"
+              ? "bg-white/10 font-medium text-white"
               : "text-gray-300 hover:bg-white/10 hover:text-white"
           }`;
 
