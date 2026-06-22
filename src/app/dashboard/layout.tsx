@@ -14,9 +14,9 @@ export default async function DashboardLayout({
   return (
     <div className="flex min-h-screen flex-col md:flex-row">
       <Sidebar allowedModules={allowedModules} />
-      <main className="flex min-w-0 flex-1 flex-col bg-[#d2d2d2]">
+      <main className="flex min-w-0 flex-1 flex-col bg-black">
         {isPreview && <PreviewBanner role={role} />}
-        <div className="flex items-center border-b border-gray-300 bg-white px-4 py-2">
+        <div className="flex items-center justify-center bg-black px-4 py-2">
           <GlobalSearch />
         </div>
         <div className="flex flex-1 flex-col">{children}</div>

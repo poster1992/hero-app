@@ -1,8 +1,51 @@
 @import "tailwindcss";
 
 :root {
-  --background: #0c0d0f;
+  --background: #000000;
   --foreground: #e5e7eb;
+}
+
+/*
+ * Globales Dark-Theme im Stil der Ladeseite: die im Code verwendeten hellen
+ * Utility-Klassen werden zentral auf dunkle Werte umgelenkt, damit Karten,
+ * Tabellen, Modals usw. einheitlich dunkel sind – ohne jede Komponente
+ * einzeln umzubauen. Nur am Bildschirm; Druck/PDF bleibt hell.
+ */
+@media screen {
+  /* Flächen */
+  .bg-white { background-color: #121417 !important; }
+  .bg-gray-50 { background-color: #191c20 !important; }
+  .bg-gray-100 { background-color: #20242a !important; }
+  .bg-gray-200 { background-color: #272c33 !important; }
+  .hover\:bg-gray-50:hover { background-color: #1d2125 !important; }
+  .hover\:bg-gray-100:hover { background-color: #23272e !important; }
+
+  /* Text */
+  .text-gray-900 { color: #f3f4f6 !important; }
+  .text-gray-800 { color: #e5e7eb !important; }
+  .text-gray-700 { color: #d1d5db !important; }
+  .text-gray-600 { color: #b6bcc6 !important; }
+  .text-gray-500 { color: #9aa1ab !important; }
+  .text-gray-400 { color: #7c828c !important; }
+  .text-gray-300 { color: #5b616b !important; }
+
+  /* Ränder */
+  .border-gray-100,
+  .border-gray-200,
+  .border-gray-300 { border-color: rgba(255, 255, 255, 0.12) !important; }
+
+  /* Trennlinien (divide-*) */
+  .divide-gray-100 > :not([hidden]) ~ :not([hidden]),
+  .divide-gray-200 > :not([hidden]) ~ :not([hidden]) {
+    border-color: rgba(255, 255, 255, 0.1) !important;
+  }
+
+  /* Formularfelder */
+  input,
+  textarea,
+  select {
+    color-scheme: dark;
+  }
 }
 
 @theme inline {

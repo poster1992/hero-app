@@ -933,6 +933,59 @@ export async function getHoursByProject(): Promise<Map<number, number>> {
   return byProject;
 }
 
+export interface HoursByProjectEmployee {
+  /** project_match id -> (employee/partner id -> worked hours). */
+  byProject: Map<number, Map<number, number>>;
+  /** employee/partner id -> display name. */
+  names: Map<number, string>;
+}
+
+/** Worked hours per project AND employee (all time), for profit allocation. */
+export async function getHoursByProjectAndEmployee(): Promise<HoursByProjectEmployee> {
+  const pageSize = 200;
+  const maxPages = 200;
+  const byProject = new Map<number, Map<number, number>>();
+  const names = new Map<number, string>();
+
+  for (let page = 0; page < maxPages; page++) {
+    const data = await heroGraphQL<{
+      tracking_times: {
+        project_match_id: number | null;
+        start: string | null;
+        end: string | null;
+        partner: { id: number; name: string | null } | null;
+      }[];
+    }>(
+      `query HoursByProjectEmp($first: Int, $offset: Int) {
+        tracking_times(show_all_partners: true, orderBy: "id", first: $first, offset: $offset) {
+          project_match_id
+          start
+          end
+          partner { id name }
+        }
+      }`,
+      { first: pageSize, offset: page * pageSize }
+    );
+    const entries = data.tracking_times ?? [];
+    for (const e of entries) {
+      if (e.project_match_id == null || e.partner?.id == null || !e.start || !e.end) continue;
+      const ms = new Date(e.end).getTime() - new Date(e.start).getTime();
+      if (ms <= 0) continue;
+      const hours = ms / 3_600_000;
+      names.set(e.partner.id, e.partner.name ?? "Unbekannt");
+      const emp = byProject.get(e.project_match_id) ?? new Map<number, number>();
+      emp.set(e.partner.id, (emp.get(e.partner.id) ?? 0) + hours);
+      byProject.set(e.project_match_id, emp);
+    }
+    if (entries.length < pageSize) break;
+  }
+
+  for (const emp of byProject.values()) {
+    for (const [k, v] of emp) emp.set(k, Math.round(v * 100) / 100);
+  }
+  return { byProject, names };
+}
+
 // ---------------------------------------------------------------------------
 // Project pipeline — projects grouped by their current status phase.
 // Phases (by status_code): 201 Neu-Erstkontakt, 601 Angebotserstellung,
@@ -1098,6 +1151,54 @@ const PROJECTS_QUERY = `
     }
   }
 `;
+
+/** Status code of the "Abgeschlossen" project phase. */
+const PROJECT_DONE_STATUS_CODE = 2000;
+
+/**
+ * Ids of projects relevant for the profit evaluation in `year`: projects whose
+ * current status is "Abgeschlossen" OR whose current step is "Nachkalkulation",
+ * and that entered that status in `year`.
+ */
+export async function getEvaluableProjectIds(year: number): Promise<Set<number>> {
+  const pageSize = 200;
+  const maxPages = 60;
+  const ids = new Set<number>();
+
+  for (let page = 0; page < maxPages; page++) {
+    const data = await heroGraphQL<{
+      project_matches: {
+        id: number;
+        current_project_match_status: {
+          status_code: number | null;
+          created: string | null;
+          modified: string | null;
+          step: { name: string | null } | null;
+        } | null;
+      }[];
+    }>(
+      `query EvaluableProjects($first: Int, $offset: Int) {
+        project_matches(type: "project", orderBy: "id", first: $first, offset: $offset) {
+          id
+          current_project_match_status { status_code created modified step { name } }
+        }
+      }`,
+      { first: pageSize, offset: page * pageSize }
+    );
+    const rows = data.project_matches ?? [];
+    for (const p of rows) {
+      const st = p.current_project_match_status;
+      if (!st) continue;
+      const isDone = st.status_code === PROJECT_DONE_STATUS_CODE;
+      const isNachkalkulation = (st.step?.name ?? "").toLowerCase().includes("nachkalkulation");
+      if (!isDone && !isNachkalkulation) continue;
+      const date = st.created || st.modified;
+      if (date && new Date(date).getUTCFullYear() === year) ids.add(p.id);
+    }
+    if (rows.length < pageSize) break;
+  }
+  return ids;
+}
 
 // Document type "Auftragsbestätigung" = 1057579, "Angebot" = 1057591.
 const CONFIRMATION_DOCUMENT_TYPE_ID = 1057579;

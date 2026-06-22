@@ -37,12 +37,13 @@ const NAV_ITEMS: NavItem[] = [
     icon: "dashboard",
     module: "cockpit",
     children: [
-      { href: "/dashboard/cockpit", label: "Übersicht" },
+      { href: "/dashboard/cockpit", label: "Unternehmensübersicht" },
       { href: "/dashboard/planung", label: "Arbeitsplanung" },
       { href: "/dashboard/belege", label: "Belege" },
       { href: "/dashboard/rechnungen", label: "Rechnungen" },
       { href: "/dashboard/arbeitszeiten", label: "Arbeitszeiten" },
       { href: "/dashboard/abc-analyse", label: "ABC-Analyse" },
+      { href: "/dashboard/mitarbeiterbewertung", label: "Mitarbeiterbewertung" },
     ],
   },
   {
@@ -208,14 +209,14 @@ export default function Sidebar({ allowedModules }: { allowedModules: string[] }
 
   return (
     <aside
-      className={`relative flex w-full shrink-0 flex-col border-b border-neutral-800 bg-neutral-900 text-gray-200 transition-[width] duration-200 md:sticky md:top-0 md:h-screen md:border-b-0 md:border-r md:border-neutral-800 ${
+      className={`relative flex w-full shrink-0 flex-col border-b border-neutral-800 bg-black text-gray-200 transition-[width] duration-200 md:sticky md:top-0 md:h-screen md:border-b-0 md:border-r md:border-neutral-800 ${
         collapsed ? "md:w-16" : "md:w-56"
       }`}
     >
       {/* Kopfzeile: Logo + Ein-/Ausklappen */}
       <div
-        className={`flex items-center gap-2 px-3 py-5 ${
-          collapsed ? "md:flex-col md:justify-center" : "justify-between"
+        className={`relative flex items-center px-3 py-5 ${
+          collapsed ? "md:flex-col md:justify-center md:gap-2" : "justify-center"
         }`}
       >
         <Link href="/start" title="Zur Modulübersicht" className="flex items-center">
@@ -232,7 +233,9 @@ export default function Sidebar({ allowedModules }: { allowedModules: string[] }
           onClick={toggle}
           title={collapsed ? "Menü ausklappen" : "Menü einklappen"}
           aria-label={collapsed ? "Menü ausklappen" : "Menü einklappen"}
-          className="hidden h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-white/10 hover:text-white md:flex"
+          className={`hidden h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-white/10 hover:text-white md:flex ${
+            collapsed ? "" : "absolute right-3 top-1/2 -translate-y-1/2"
+          }`}
         >
           {collapsed ? "›" : "‹"}
         </button>

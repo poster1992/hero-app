@@ -152,7 +152,9 @@ export default async function DashboardPage({
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                 {/* Diagramm: Umsatz / Belege / Saldo */}
                 <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
-                  <h2 className="mb-4 text-lg font-medium text-gray-900">Übersicht {data.year}</h2>
+                  <h2 className="mb-4 text-lg font-medium text-gray-900">
+                    Unternehmensübersicht {data.year}
+                  </h2>
                   <div className="flex flex-col gap-4">
                     {[
                       { label: "Ausgangsrechnungen", value: income, color: "bg-brand-red" },

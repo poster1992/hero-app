@@ -255,10 +255,9 @@ export default function ProjectDetailModal({
         className="my-6 w-full max-w-4xl rounded-xl border border-gray-300 bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Logo – nur im Druck / PDF sichtbar */}
+        {/* Schriftzug – nur im Druck / PDF sichtbar */}
         <div id="print-logo" className="hidden border-b border-gray-200 px-6 py-3 print:block">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo.png" alt="FLOORTEC.design" className="h-12 w-auto" />
+          <span className="text-xl font-semibold tracking-[0.2em] text-black">FLOORTEC</span>
         </div>
 
         {/* Header */}
