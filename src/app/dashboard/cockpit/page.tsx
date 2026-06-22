@@ -1,5 +1,11 @@
 import { getDashboardData } from "@/lib/dashboard-data";
-import { getProjectPipeline, getOfferConfirmationVolume, getProjectLocations } from "@/lib/hero-api";
+import {
+  getProjectPipeline,
+  getOfferConfirmationVolume,
+  getOfferConfirmationByMonth,
+  getProjectLocations,
+} from "@/lib/hero-api";
+import OfferOrderPanel from "@/components/OfferOrderPanel";
 import CustomerMapPanel from "@/components/CustomerMapPanel";
 import MonthlyChart from "@/components/MonthlyChart";
 import DashboardTitle from "@/components/DashboardTitle";
@@ -48,6 +54,13 @@ export default async function DashboardPage({
     volume = await getOfferConfirmationVolume(year);
   } catch {
     // Volumen ist optional – Fehler hier blockiert das Dashboard nicht.
+  }
+
+  let monthlyVolume: Awaited<ReturnType<typeof getOfferConfirmationByMonth>> | null = null;
+  try {
+    monthlyVolume = await getOfferConfirmationByMonth(year);
+  } catch {
+    // Monatsquote ist optional.
   }
 
   let locations: Awaited<ReturnType<typeof getProjectLocations>> = [];
@@ -100,71 +113,70 @@ export default async function DashboardPage({
 
       {data && (
         <>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <div className="group relative overflow-hidden rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10 transition-colors hover:border-gray-400">
-              <div className="absolute -right-6 -top-6 h-24 w-24 rounded-full bg-gray-400/10 blur-2xl transition-opacity group-hover:bg-gray-400/20" />
-              <div className="relative flex flex-col items-center text-center">
-                <p className="text-sm text-gray-600">Ausgangsrechnungen {data.year}</p>
-                <p className="mt-2 text-2xl font-semibold text-gray-900">
-                  {currencyFormatter.format(data.totalIncome)}
-                </p>
-                <p className="mt-1 text-xs text-gray-500">{data.countIncome} Rechnungen (netto)</p>
-              </div>
-            </div>
+          {(() => {
+            const income = data.totalIncome;
+            const output = data.totalOutput;
+            const saldo = income - output;
+            const max = Math.max(income, output, Math.abs(saldo), 1);
+            const pct = (v: number) => `${(Math.abs(v) / max) * 100}%`;
+            const marginPct = income > 0 ? (saldo / income) * 100 : 0;
+            return (
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                {/* Diagramm: Umsatz / Belege / Saldo */}
+                <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
+                  <h2 className="mb-4 text-lg font-medium text-gray-900">Übersicht {data.year}</h2>
+                  <div className="flex flex-col gap-4">
+                    {[
+                      { label: "Ausgangsrechnungen", value: income, color: "bg-brand-red" },
+                      { label: "Belege", value: output, color: "bg-neutral-400" },
+                      {
+                        label: "Saldo",
+                        value: saldo,
+                        color: saldo < 0 ? "bg-rose-600" : "bg-brand-red-dark",
+                      },
+                    ].map((row) => (
+                      <div key={row.label}>
+                        <div className="mb-1 flex items-center justify-between text-sm">
+                          <span className="text-gray-600">{row.label}</span>
+                          <span className="font-medium tabular-nums text-gray-900">
+                            {currencyFormatter.format(row.value)}
+                          </span>
+                        </div>
+                        <div className="h-3 w-full overflow-hidden rounded-full bg-gray-100">
+                          <div
+                            className={`h-full rounded-full ${row.color}`}
+                            style={{ width: pct(row.value) }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
 
-            <div className="group relative overflow-hidden rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10 transition-colors hover:border-brand-red/40">
-              <div className="absolute -right-6 -top-6 h-24 w-24 rounded-full bg-gray-400/10 blur-2xl transition-opacity group-hover:bg-gray-400/20" />
-              <div className="relative flex flex-col items-center text-center">
-                <p className="text-sm text-gray-600">Belege {data.year}</p>
-                <p className="mt-2 text-2xl font-semibold text-gray-900">
-                  {currencyFormatter.format(data.totalOutput)}
-                </p>
-                <p className="mt-1 text-xs text-gray-500">{data.countOutput} Belege (netto)</p>
-              </div>
-            </div>
+                  <div className="mt-4 flex items-baseline justify-between border-t border-gray-200 pt-3 text-sm">
+                    <span className="text-gray-600">Gewinn in % vom Umsatz</span>
+                    <span
+                      className={`text-lg font-bold tabular-nums ${
+                        marginPct < 0 ? "text-rose-600" : "text-brand-red"
+                      }`}
+                    >
+                      {marginPct.toLocaleString("de-DE", { maximumFractionDigits: 1 })} %
+                    </span>
+                  </div>
+                </div>
 
-            <div className="group relative overflow-hidden rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10 transition-colors hover:border-brand-red/40">
-              <div className="absolute -right-6 -top-6 h-24 w-24 rounded-full bg-brand-red/10 blur-2xl transition-opacity group-hover:bg-brand-red/20" />
-              <div className="relative flex flex-col items-center text-center">
-                <p className="text-sm text-gray-600">Saldo {data.year}</p>
-                <p className="mt-2 text-2xl font-semibold text-gray-900">
-                  {currencyFormatter.format(data.totalIncome - data.totalOutput)}
-                </p>
-                <p className="mt-1 text-xs text-gray-500">Rechnungen − Belege</p>
+                {/* Angebote & Aufträge (Klick öffnet Monatsdetails) */}
+                {volume && (
+                  <OfferOrderPanel
+                    year={data.year}
+                    offers={volume.offers}
+                    confirmations={volume.confirmations}
+                    monthlyOffers={monthlyVolume?.offers ?? null}
+                    monthlyConfirmations={monthlyVolume?.confirmations ?? null}
+                  />
+                )}
               </div>
-            </div>
-          </div>
-
-          {volume && (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-              <div className="rounded-xl border border-gray-300 bg-white p-5 text-center shadow-lg shadow-black/10">
-                <p className="text-sm text-gray-600">Angebotsvolumen {data.year}</p>
-                <p className="mt-2 text-2xl font-semibold text-gray-900">
-                  {currencyFormatter.format(volume.offers)}
-                </p>
-                <p className="mt-1 text-xs text-gray-500">Angebote (netto)</p>
-              </div>
-              <div className="rounded-xl border border-gray-300 bg-white p-5 text-center shadow-lg shadow-black/10">
-                <p className="text-sm text-gray-600">Auftragsbestätigungsvolumen {data.year}</p>
-                <p className="mt-2 text-2xl font-semibold text-gray-900">
-                  {currencyFormatter.format(volume.confirmations)}
-                </p>
-                <p className="mt-1 text-xs text-gray-500">Auftragsbestätigungen (netto)</p>
-              </div>
-              <div className="rounded-xl border border-gray-300 bg-white p-5 text-center shadow-lg shadow-black/10">
-                <p className="text-sm text-gray-600">Davon verrechnet {data.year}</p>
-                <p className="mt-2 text-2xl font-semibold text-emerald-600">
-                  {volume.confirmations > 0
-                    ? `${Math.round((volume.invoiced / volume.confirmations) * 100)} % verrechnet`
-                    : "—"}
-                </p>
-                <p className="mt-1 text-xs text-gray-500">
-                  {currencyFormatter.format(volume.invoiced)} verrechnet · offen{" "}
-                  {currencyFormatter.format(volume.confirmations - volume.invoiced)}
-                </p>
-              </div>
-            </div>
-          )}
+            );
+          })()}
 
           <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
             <h2 className="mb-4 text-lg font-medium text-gray-900">

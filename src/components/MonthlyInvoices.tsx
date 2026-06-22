@@ -28,19 +28,38 @@ function statusToTone(status: string | null): InvoiceStatusTone {
   return "open";
 }
 
+/** Zahlungsstatus aus den Buchungsdaten ableiten (Bezahlt / Offen / Überfällig). */
+function paymentInfo(inv: CustomerInvoice): { label: string; tone: InvoiceStatusTone } {
+  if (inv.isOpen === false) {
+    return { label: inv.paymentStatusName || "Bezahlt", tone: "paid" };
+  }
+  if (inv.isOpen === true) {
+    const due = inv.dueDate ? inv.dueDate.slice(0, 10) : null;
+    const today = new Date().toISOString().slice(0, 10);
+    const overdue = due != null && due < today;
+    return {
+      label: inv.paymentStatusName || (overdue ? "Überfällig" : "Offen"),
+      tone: overdue ? "overdue" : "open",
+    };
+  }
+  // Keine Buchungsdaten: auf den Dokumentstatus zurückfallen.
+  return { label: inv.statusName ?? "—", tone: statusToTone(inv.statusName) };
+}
+
 function toRow(inv: CustomerInvoice): ReceiptRow {
+  const pay = paymentInfo(inv);
   return {
     id: inv.id,
     number: inv.number,
     dateStr: inv.date ? dateFormatter.format(new Date(inv.date)) : "—",
-    dueStr: "—",
+    dueStr: inv.dueDate ? dateFormatter.format(new Date(inv.dueDate)) : "—",
     party: inv.customerName ?? "—",
     projects: inv.project ? [{ id: inv.project.id, name: inv.project.name, relativeId: null }] : [],
     net: inv.net,
     tax: inv.tax,
     gross: inv.gross,
-    statusLabel: inv.statusName ?? "—",
-    statusTone: statusToTone(inv.statusName),
+    statusLabel: pay.label,
+    statusTone: pay.tone,
     file: inv.fileUpload?.src
       ? {
           filename: inv.fileUpload.filename,
@@ -80,6 +99,12 @@ export default async function MonthlyInvoices({
   const heading = view === "all" ? `Alle Rechnungen ${year}` : `${MONTH_LABELS[month - 1]} ${year}`;
   const summary = summarizeInvoices(invoices);
   const rows = invoices.map(toRow);
+
+  // Offene (noch nicht bezahlte) Rechnungen der aktuellen Ansicht – Brutto.
+  const openInvoices = invoices.filter((inv) => inv.isOpen === true);
+  const openTotal = openInvoices.reduce((s, inv) => s + inv.gross, 0);
+  const openCount = openInvoices.length;
+  const periodLabel = view === "all" ? String(year) : `${MONTH_LABELS[month - 1]} ${year}`;
 
   const viewHref = (v: InvoicesView) => {
     const params = new URLSearchParams({ view: v, year: String(year) });
@@ -124,6 +149,20 @@ export default async function MonthlyInvoices({
       )}
 
       {monthly && <InvoicesSummaryPanel summary={summary} />}
+
+      {monthly && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-brand-red/30 bg-white p-5 shadow-lg shadow-black/10">
+          <div>
+            <p className="text-sm text-gray-600">Offene Rechnungen {periodLabel}</p>
+            <p className="text-xs text-gray-400">
+              {openCount} Rechnung{openCount === 1 ? "" : "en"} noch nicht bezahlt (brutto)
+            </p>
+          </div>
+          <p className="text-2xl font-bold tabular-nums text-brand-red">
+            {currencyFormatter.format(openTotal)}
+          </p>
+        </div>
+      )}
 
       {monthly && (
         <div className="rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">

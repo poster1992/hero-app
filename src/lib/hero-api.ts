@@ -197,6 +197,14 @@ export interface CustomerInvoice {
   customerName: string | null;
   project: { id: number; name: string } | null;
   fileUpload: ReceiptFileUpload | null;
+  /** Payment status from the booking (e.g. "Bezahlt"/"Offen"), or null if none. */
+  paymentStatusName: string | null;
+  /** True if the invoice is still open (not fully paid). */
+  isOpen: boolean | null;
+  paidDate: string | null;
+  dueDate: string | null;
+  /** Open balance (remaining amount), or null. */
+  balance: number | null;
 }
 
 interface RawCustomerDocument {
@@ -205,10 +213,18 @@ interface RawCustomerDocument {
   date: string | null;
   value: number | null;
   vat: number | null;
+  status_code: number | null;
   status_name: string | null;
   customer: { id: number; company_name: string | null; full_name: string | null } | null;
   project_match: { id: number; name: string } | null;
   file_upload: { id: number; filename: string; type: string | null; src: string | null } | null;
+  customer_document_booking: {
+    status_name: string | null;
+    is_open: boolean | null;
+    paid_date: string | null;
+    due_date: string | null;
+    balance: number | null;
+  } | null;
 }
 
 const CUSTOMER_INVOICES_QUERY = `
@@ -219,10 +235,12 @@ const CUSTOMER_INVOICES_QUERY = `
       date
       value
       vat
+      status_code
       status_name
       customer { id company_name full_name }
       project_match { id name }
       file_upload { id filename type src }
+      customer_document_booking { status_name is_open paid_date due_date balance }
     }
   }
 `;
@@ -245,6 +263,8 @@ export async function getCustomerDocumentsByType(typeIds: number[]): Promise<Cus
     );
     const docs = data.customer_documents ?? [];
     for (const d of docs) {
+      // Gelöschte Dokumente (status_code 1000) ausblenden.
+      if (d.status_code === 1000) continue;
       // For CustomerDocument, `value` is the NET amount and `vat` the tax amount
       // (unlike Receipt_Receipt, where `value` is gross).
       const net = d.value ?? 0;
@@ -271,6 +291,11 @@ export async function getCustomerDocumentsByType(typeIds: number[]): Promise<Cus
                 thumbnails: null,
               }
             : null,
+        paymentStatusName: d.customer_document_booking?.status_name ?? null,
+        isOpen: d.customer_document_booking?.is_open ?? null,
+        paidDate: d.customer_document_booking?.paid_date ?? null,
+        dueDate: d.customer_document_booking?.due_date ?? null,
+        balance: d.customer_document_booking?.balance ?? null,
       });
     }
     if (docs.length < pageSize) break;
