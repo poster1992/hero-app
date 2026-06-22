@@ -1,9 +1,28 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import DocumentPreview from "@/components/DocumentPreview";
 import type { InvoiceStatusTone } from "@/lib/invoices";
+import { assignReviewAction, decideReviewAction } from "@/app/dashboard/belege/review-actions";
+
+export interface ReviewHistoryItem {
+  actionLabel: string;
+  detail: string | null;
+  byName: string | null;
+  at: string | null;
+}
+
+export interface ReviewInfo {
+  status: "offen" | "freigegeben" | "abgelehnt";
+  statusLabel: string;
+  assignedToName: string | null;
+  reviewedByName: string | null;
+  reviewedAt: string | null;
+  note: string | null;
+  history: ReviewHistoryItem[];
+}
 
 export interface ProjectRef {
   id: number;
@@ -32,6 +51,7 @@ export interface ReceiptRow {
   statusLabel: string;
   statusTone: InvoiceStatusTone;
   file: FileRef | null;
+  review?: ReviewInfo | null;
 }
 
 const currencyFormatter = new Intl.NumberFormat("de-DE", {
@@ -82,13 +102,31 @@ export default function ReceiptsTableClient({
   partyLabel = "Kunde",
   showProject = true,
   showDue = true,
+  reviewers = [],
+  canReview = false,
+  exportName = "hero-belege",
 }: {
   rows: ReceiptRow[];
   partyLabel?: string;
   showProject?: boolean;
   showDue?: boolean;
+  reviewers?: { id: number; name: string }[];
+  canReview?: boolean;
+  exportName?: string;
 }) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [activeRow, setActiveRow] = useState<ReceiptRow | null>(null);
+  const [historyRow, setHistoryRow] = useState<ReceiptRow | null>(null);
   const [filters, setFilters] = useState<Record<FilterKey, string>>(EMPTY_FILTERS);
+
+  const runAction = (fd: FormData, fn: (fd: FormData) => Promise<void>) => {
+    startTransition(async () => {
+      await fn(fd);
+      router.refresh();
+      setActiveRow(null);
+    });
+  };
 
   const setFilter = (key: FilterKey, value: string) =>
     setFilters((prev) => ({ ...prev, [key]: value }));
@@ -135,6 +173,91 @@ export default function ReceiptsTableClient({
     [filtered]
   );
 
+  const [zipping, setZipping] = useState<string | null>(null);
+  const exportPdfs = async () => {
+    const withFile = filtered.filter((r) => r.file);
+    if (withFile.length === 0) return;
+    setZipping(`0 / ${withFile.length}`);
+    try {
+      const JSZip = (await import("jszip")).default;
+      const zip = new JSZip();
+      const used = new Set<string>();
+      let done = 0;
+      for (const r of withFile) {
+        try {
+          const res = await fetch(r.file!.docUrl);
+          if (res.ok) {
+            const blob = await res.blob();
+            const ext = (r.file!.filename.match(/\.[a-z0-9]+$/i)?.[0] ?? ".pdf").toLowerCase();
+            const safeParty = r.party.replace(/[^\wäöüÄÖÜß .-]/g, "_").slice(0, 40);
+            let name = `${r.number || "Beleg"}_${safeParty}${ext}`.replace(/\s+/g, " ").trim();
+            let i = 2;
+            while (used.has(name)) name = name.replace(ext, ` (${i++})${ext}`);
+            used.add(name);
+            zip.file(name, blob);
+          }
+        } catch {
+          // einzelnes Dokument überspringen
+        }
+        done++;
+        setZipping(`${done} / ${withFile.length}`);
+      }
+      const out = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(out);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${exportName}-pdf-${new Date().toISOString().slice(0, 10)}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setZipping(null);
+    }
+  };
+
+  const exportCsv = () => {
+    const num = (n: number) => n.toFixed(2).replace(".", ",");
+    const esc = (v: string) => {
+      const s = String(v ?? "");
+      return /[;"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const header = [
+      "Nr.",
+      "Datum",
+      ...(showDue ? ["Fällig"] : []),
+      partyLabel,
+      ...(showProject ? ["Projekt"] : []),
+      "Netto",
+      "Steuer",
+      "Brutto",
+      "Status",
+      ...(canReview ? ["Prüfung"] : []),
+    ];
+    const lines = filtered.map((r) =>
+      [
+        r.number,
+        r.dateStr,
+        ...(showDue ? [r.dueStr] : []),
+        r.party,
+        ...(showProject ? [projectText(r).trim()] : []),
+        num(r.net),
+        num(r.tax),
+        num(r.gross),
+        r.statusLabel,
+        ...(canReview ? [r.review?.statusLabel ?? "Offen"] : []),
+      ]
+        .map((c) => esc(String(c)))
+        .join(";")
+    );
+    const csv = "﻿" + [header.join(";"), ...lines].join("\r\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${exportName}-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const leadingCols = 3 + (showDue ? 1 : 0) + (showProject ? 1 : 0);
 
   // Fixed column widths so every view fills the container at the same width,
@@ -150,9 +273,10 @@ export default function ReceiptsTableClient({
     "9%", // Brutto
     "10%", // Status
     "8%", // Dokument
+    ...(canReview ? ["11%"] : []), // Prüfung
   ];
 
-  return (
+  const table = (
     <table className="w-full table-fixed text-left text-sm">
       <colgroup>
         {colWidths.map((w, i) => (
@@ -171,6 +295,7 @@ export default function ReceiptsTableClient({
           <th className="px-3 py-3 font-medium text-right">Brutto</th>
           <th className="px-3 py-3 font-medium">Status</th>
           <th className="px-3 py-3 font-medium">Dokument</th>
+          {canReview && <th className="px-3 py-3 font-medium">Prüfung</th>}
         </tr>
         <tr className="border-b border-gray-200">
           <th className="px-3 pb-3">
@@ -257,13 +382,14 @@ export default function ReceiptsTableClient({
               onChange={(e) => setFilter("document", e.target.value)}
             />
           </th>
+          {canReview && <th className="px-3 pb-3" />}
         </tr>
       </thead>
       <tbody>
         {filtered.length === 0 ? (
           <tr>
             <td
-              colSpan={leadingCols + 5}
+              colSpan={leadingCols + 5 + (canReview ? 1 : 0)}
               className="px-3 py-8 text-center text-sm text-gray-500"
             >
               Keine Treffer für den Filter.
@@ -338,6 +464,31 @@ export default function ReceiptsTableClient({
                   <span className="text-gray-600">—</span>
                 )}
               </td>
+              {canReview && (
+                <td className="px-3 py-2.5">
+                  <div className="flex flex-col items-start gap-1">
+                    <ReviewBadge review={row.review ?? null} />
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setActiveRow(row)}
+                        className="rounded-md border border-gray-300 px-2 py-0.5 text-xs font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900"
+                      >
+                        Prüfen
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setHistoryRow(row)}
+                        title="Historie anzeigen"
+                        aria-label="Historie anzeigen"
+                        className="rounded-md border border-gray-300 px-1.5 py-0.5 text-xs text-gray-600 transition-colors hover:border-brand-red/50 hover:text-gray-900"
+                      >
+                        🕘
+                      </button>
+                    </div>
+                  </div>
+                </td>
+              )}
             </tr>
           ))
         )}
@@ -356,9 +507,314 @@ export default function ReceiptsTableClient({
           <td className="px-3 py-3 whitespace-nowrap text-right">
             {currencyFormatter.format(totals.gross)}
           </td>
-          <td className="px-3 py-3" colSpan={2} />
+          <td className="px-3 py-3" colSpan={2 + (canReview ? 1 : 0)} />
         </tr>
       </tfoot>
     </table>
   );
+
+  return (
+    <>
+      <div className="mb-3 flex justify-end gap-2">
+        <button
+          type="button"
+          onClick={exportCsv}
+          disabled={filtered.length === 0}
+          className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900 disabled:opacity-50"
+        >
+          ⬇ Export CSV ({filtered.length})
+        </button>
+        <button
+          type="button"
+          onClick={exportPdfs}
+          disabled={zipping !== null || filtered.filter((r) => r.file).length === 0}
+          className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900 disabled:opacity-50"
+        >
+          {zipping ? `PDFs … ${zipping}` : `⬇ Export PDFs (${filtered.filter((r) => r.file).length})`}
+        </button>
+      </div>
+      {table}
+      {canReview && activeRow && (
+        <ReviewModal
+          row={activeRow}
+          reviewers={reviewers}
+          pending={pending}
+          onClose={() => setActiveRow(null)}
+          onAssign={(fd) => runAction(fd, assignReviewAction)}
+          onDecide={(fd) => runAction(fd, decideReviewAction)}
+        />
+      )}
+      {canReview && historyRow && (
+        <HistoryModal row={historyRow} onClose={() => setHistoryRow(null)} />
+      )}
+    </>
+  );
+}
+
+function HistoryModal({ row, onClose }: { row: ReceiptRow; onClose: () => void }) {
+  const history = row.review?.history ?? [];
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-4 sm:items-center"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-lg rounded-xl border border-gray-300 bg-white p-6 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-4 flex items-center justify-between gap-2">
+          <h3 className="text-lg font-semibold text-gray-900">
+            Historie · {row.number || "Beleg"}
+          </h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-gray-400 transition-colors hover:text-gray-700"
+            aria-label="Schließen"
+          >
+            ✕
+          </button>
+        </div>
+        {history.length === 0 ? (
+          <p className="py-4 text-center text-sm text-gray-500">Noch keine Historie.</p>
+        ) : (
+          <ul className="space-y-1.5 border-l-2 border-gray-200 pl-3">
+            {history.map((h, i) => (
+              <li key={i} className="text-sm text-gray-600">
+                <span className="text-gray-400">{formatHistoryDate(h.at)}</span>
+                {h.byName ? ` · ${h.byName}` : ""} —{" "}
+                <span className="font-medium">{h.actionLabel}</span>
+                {h.detail ? `: ${h.detail}` : ""}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ReviewBadge({ review }: { review: ReviewInfo | null }) {
+  if (review?.status === "freigegeben") {
+    return (
+      <span className="whitespace-nowrap rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-700 ring-1 ring-emerald-500/30">
+        Freigegeben
+      </span>
+    );
+  }
+  if (review?.status === "abgelehnt") {
+    return (
+      <span className="whitespace-nowrap rounded-full bg-brand-red/15 px-2 py-0.5 text-xs font-medium text-brand-red ring-1 ring-brand-red/30">
+        Abgelehnt
+      </span>
+    );
+  }
+  if (review?.assignedToName) {
+    return (
+      <span className="whitespace-nowrap rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700 ring-1 ring-amber-500/30">
+        {review.assignedToName}
+      </span>
+    );
+  }
+  return (
+    <span className="whitespace-nowrap rounded-full bg-gray-400/20 px-2 py-0.5 text-xs font-medium text-gray-600 ring-1 ring-gray-400/40">
+      Offen
+    </span>
+  );
+}
+
+function ReviewModal({
+  row,
+  reviewers,
+  pending,
+  onClose,
+  onAssign,
+  onDecide,
+}: {
+  row: ReceiptRow;
+  reviewers: { id: number; name: string }[];
+  pending: boolean;
+  onClose: () => void;
+  onAssign: (fd: FormData) => void;
+  onDecide: (fd: FormData) => void;
+}) {
+  const baseFields = (fd: FormData) => {
+    fd.set("heroId", row.id);
+    fd.set("number", row.number);
+    fd.set("supplier", row.party);
+    fd.set("gross", String(row.gross));
+    if (row.file?.docUrl) fd.set("docUrl", row.file.docUrl);
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-4 sm:items-center"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-lg rounded-xl border border-gray-300 bg-white p-6 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-4 flex items-center justify-between gap-2">
+          <h3 className="text-lg font-semibold text-gray-900">Rechnung prüfen</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-gray-400 transition-colors hover:text-gray-700"
+            aria-label="Schließen"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="mb-4 space-y-1 text-sm">
+          <p className="font-medium text-gray-900">
+            {row.number} · {row.party}
+          </p>
+          <p className="text-gray-600">
+            {row.dateStr} · {currencyFormatter.format(row.gross)} brutto
+          </p>
+          {row.file && (
+            <a
+              href={row.file.docUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-block text-brand-red hover:underline"
+            >
+              Beleg ansehen
+            </a>
+          )}
+          {row.review?.status === "freigegeben" && (
+            <p className="text-emerald-700">
+              Freigegeben{row.review.reviewedByName ? ` von ${row.review.reviewedByName}` : ""}
+            </p>
+          )}
+          {row.review?.status === "abgelehnt" && (
+            <p className="text-brand-red">
+              Abgelehnt{row.review.reviewedByName ? ` von ${row.review.reviewedByName}` : ""}
+            </p>
+          )}
+          {row.review?.note && <p className="text-gray-600">Notiz: {row.review.note}</p>}
+        </div>
+
+        {/* Prüfer zuweisen (legt eine Aufgabe an) */}
+        <form
+          action={(fd) => {
+            baseFields(fd);
+            onAssign(fd);
+          }}
+          className="mb-4 flex items-end gap-2 border-b border-gray-200 pb-4"
+        >
+          <div className="flex-1">
+            <label className="mb-1 block text-xs text-gray-600">Prüfer zuweisen (Aufgabe)</label>
+            <select
+              name="toUserId"
+              defaultValue=""
+              required
+              className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900 outline-none focus:border-brand-red/60"
+            >
+              <option value="" disabled>
+                Mitarbeiter wählen …
+              </option>
+              {reviewers.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name}
+                </option>
+              ))}
+            </select>
+            <input
+              type="text"
+              name="note"
+              placeholder="Notiz an den Prüfer (optional) …"
+              className="mt-2 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900 outline-none focus:border-brand-red/60"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={pending}
+            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:border-brand-red/50 disabled:opacity-50"
+          >
+            Zuweisen
+          </button>
+        </form>
+
+        {/* Entscheidung */}
+        <form
+          action={(fd) => {
+            baseFields(fd);
+            onDecide(fd);
+          }}
+          className="space-y-3"
+        >
+          <div>
+            <label className="mb-1 block text-xs text-gray-600">Kommentar (optional)</label>
+            <textarea
+              name="note"
+              rows={2}
+              defaultValue={row.review?.note ?? ""}
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-brand-red/60"
+              placeholder="z. B. sachlich/rechnerisch geprüft …"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="submit"
+              name="decision"
+              value="freigegeben"
+              disabled={pending}
+              className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+            >
+              Freigeben
+            </button>
+            <button
+              type="submit"
+              name="decision"
+              value="abgelehnt"
+              disabled={pending}
+              className="rounded-md bg-brand-red px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+            >
+              Ablehnen
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="ml-auto rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+            >
+              Schließen
+            </button>
+          </div>
+        </form>
+
+        {row.review?.history && row.review.history.length > 0 && (
+          <div className="mt-4 border-t border-gray-200 pt-3">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+              Historie
+            </p>
+            <ul className="space-y-1.5 border-l-2 border-gray-200 pl-3">
+              {row.review.history.map((h, i) => (
+                <li key={i} className="text-xs text-gray-600">
+                  <span className="text-gray-400">{formatHistoryDate(h.at)}</span>
+                  {h.byName ? ` · ${h.byName}` : ""} — <span className="font-medium">{h.actionLabel}</span>
+                  {h.detail ? `: ${h.detail}` : ""}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function formatHistoryDate(s: string | null): string {
+  if (!s) return "";
+  const d = new Date(s.replace(" ", "T"));
+  if (Number.isNaN(d.getTime())) return s;
+  return d.toLocaleString("de-DE", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }

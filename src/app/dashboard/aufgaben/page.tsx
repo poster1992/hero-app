@@ -3,7 +3,8 @@ import { getSession } from "@/lib/session";
 import { getUserByUsername, listUsers } from "@/lib/users";
 import { listTasksAssignedTo, listTasksCreatedBy, listAllOpenTasks } from "@/lib/tasks";
 import { getProjects } from "@/lib/hero-api";
-import TaskManager from "@/components/TaskManager";
+import { listReceiptReviews } from "@/lib/receipt-reviews";
+import TaskManager, { type ReviewTaskInfo } from "@/components/TaskManager";
 
 export default async function AufgabenPage() {
   const session = await getSession();
@@ -42,6 +43,31 @@ export default async function AufgabenPage() {
     // Projektliste optional – ohne sie fehlt nur die Projektauswahl.
   }
 
+  // Prüf-Infos je HERO-Beleg-ID (für Prüf-Aufgaben: PDF + Entscheidung).
+  const reviewsByHeroId: Record<string, ReviewTaskInfo> = {};
+  try {
+    const rev = await listReceiptReviews();
+    for (const [id, r] of rev) {
+      reviewsByHeroId[id] = {
+        status: r.status,
+        docUrl: r.docUrl,
+        number: r.number,
+        supplier: r.supplier,
+        gross: r.gross,
+        reviewedByName: r.reviewedByName,
+        note: r.note,
+        history: r.history.map((h) => ({
+          actionLabel: h.actionLabel,
+          detail: h.detail,
+          byName: h.byName,
+          at: h.at,
+        })),
+      };
+    }
+  } catch {
+    // Prüf-Infos optional.
+  }
+
   return (
     <div className="flex w-full max-w-full flex-1 flex-col gap-6 px-6 py-8">
       <header>
@@ -67,6 +93,7 @@ export default async function AufgabenPage() {
           }))}
           projects={projects}
           meId={me?.id ?? 0}
+          reviewsByHeroId={reviewsByHeroId}
         />
       )}
     </div>

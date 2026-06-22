@@ -6,6 +6,7 @@ import {
   getDocumentUrl,
 } from "@/lib/invoices";
 import type { Receipt } from "@/lib/hero-api";
+import { reviewStatusLabel, type ReceiptReview } from "@/lib/receipt-reviews";
 
 const dateFormatter = new Intl.DateTimeFormat("de-DE");
 
@@ -13,15 +14,38 @@ export default function ReceiptsTable({
   receipts,
   partyLabel = "Kunde",
   showProject = true,
+  reviews,
+  reviewers = [],
+  canReview = false,
 }: {
   receipts: Receipt[];
   partyLabel?: string;
   showProject?: boolean;
+  reviews?: Map<string, ReceiptReview>;
+  reviewers?: { id: number; name: string }[];
+  canReview?: boolean;
 }) {
   const rows: ReceiptRow[] = receipts.map((r) => {
     const status = getInvoiceStatus(r);
     const file = r.fileUpload;
+    const rv = reviews?.get(r.id) ?? null;
     return {
+      review: rv
+        ? {
+            status: rv.status,
+            statusLabel: reviewStatusLabel(rv.status),
+            assignedToName: rv.assignedToName,
+            reviewedByName: rv.reviewedByName,
+            reviewedAt: rv.reviewedAt,
+            note: rv.note,
+            history: rv.history.map((h) => ({
+              actionLabel: h.actionLabel,
+              detail: h.detail,
+              byName: h.byName,
+              at: h.at,
+            })),
+          }
+        : null,
       id: r.id,
       number: r.number,
       dateStr: r.receiptDate ? dateFormatter.format(new Date(r.receiptDate)) : "—",
@@ -50,5 +74,13 @@ export default function ReceiptsTable({
     };
   });
 
-  return <ReceiptsTableClient rows={rows} partyLabel={partyLabel} showProject={showProject} />;
+  return (
+    <ReceiptsTableClient
+      rows={rows}
+      partyLabel={partyLabel}
+      showProject={showProject}
+      reviewers={reviewers}
+      canReview={canReview}
+    />
+  );
 }

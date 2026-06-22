@@ -180,7 +180,13 @@ export default async function MonthlyInvoices({
                 : "Keine Rechnungen in diesem Monat."}
             </p>
           ) : (
-            <ReceiptsTableClient rows={rows} partyLabel="Kunde" showProject showDue={false} />
+            <ReceiptsTableClient
+              rows={rows}
+              partyLabel="Kunde"
+              showProject
+              showDue={false}
+              exportName="rechnungen"
+            />
           )}
         </div>
       )}

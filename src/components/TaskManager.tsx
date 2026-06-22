@@ -7,7 +7,30 @@ import {
   forwardAction,
   type CreateTaskState,
 } from "@/app/dashboard/aufgaben/actions";
+import { decideReviewAction } from "@/app/dashboard/belege/review-actions";
 import { taskStatusLabel, isOverdue, type Task, type TaskStatus } from "@/lib/task-types";
+
+export interface ReviewTaskInfo {
+  status: "offen" | "freigegeben" | "abgelehnt";
+  docUrl: string | null;
+  number: string | null;
+  supplier: string | null;
+  gross: number | null;
+  reviewedByName: string | null;
+  note: string | null;
+  history: { actionLabel: string; detail: string | null; byName: string | null; at: string | null }[];
+}
+
+/** Extracts the HERO receipt id from a review task's marker, or null. */
+function reviewHeroId(description: string | null): string | null {
+  const m = description?.match(/\[RECHNPRUEF:([^\]]+)\]/);
+  return m ? m[1] : null;
+}
+
+/** Removes internal markers (e.g. [RECHNPRUEF:..], [EKREQ:..]) from display text. */
+function cleanDescription(description: string | null): string {
+  return (description ?? "").replace(/\s*\[[A-Z]+:[^\]]+\]/g, "").trim();
+}
 
 interface UserOption {
   id: number;
@@ -59,9 +82,19 @@ const STATUS_ACTIONS: { key: TaskStatus; label: string }[] = [
   { key: "erledigt", label: "Erledigt" },
 ];
 
-function TaskCard({ task, users }: { task: Task; users: UserOption[] }) {
+function TaskCard({
+  task,
+  users,
+  review,
+}: {
+  task: Task;
+  users: UserOption[];
+  review?: ReviewTaskInfo | null;
+}) {
   const assigneeNames = task.assignees.map((a) => a.name).join(", ") || "—";
   const overdue = isOverdue(task.dueDate, task.status);
+  const heroId = reviewHeroId(task.description);
+  const desc = cleanDescription(task.description);
   return (
     <div
       className={`rounded-lg border p-4 ${
@@ -75,8 +108,8 @@ function TaskCard({ task, users }: { task: Task; users: UserOption[] }) {
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="font-medium text-gray-900">{task.title}</p>
-          {task.description && (
-            <p className="mt-1 whitespace-pre-wrap text-sm text-gray-600">{task.description}</p>
+          {desc && (
+            <p className="mt-1 whitespace-pre-wrap text-sm text-gray-600">{desc}</p>
           )}
           <p className="mt-2 text-xs text-gray-500">
             von {task.createdByName} · an {assigneeNames}
@@ -96,6 +129,85 @@ function TaskCard({ task, users }: { task: Task; users: UserOption[] }) {
         </div>
         <StatusBadge status={task.status} />
       </div>
+
+      {/* Rechnungsprüfung: PDF + Entscheidung direkt in der Aufgabe */}
+      {heroId && (
+        <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+              Rechnungsprüfung
+            </span>
+            {review?.docUrl ? (
+              <a
+                href={review.docUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm font-medium text-brand-red hover:underline"
+              >
+                Beleg (PDF) ansehen
+              </a>
+            ) : (
+              <span className="text-xs text-gray-400">Kein PDF hinterlegt</span>
+            )}
+          </div>
+
+          {review?.status === "freigegeben" || review?.status === "abgelehnt" ? (
+            <p
+              className={`mt-2 text-sm font-medium ${
+                review.status === "freigegeben" ? "text-emerald-600" : "text-brand-red"
+              }`}
+            >
+              {review.status === "freigegeben" ? "Freigegeben" : "Abgelehnt"}
+              {review.reviewedByName ? ` von ${review.reviewedByName}` : ""}
+              {review.note ? ` · ${review.note}` : ""}
+            </p>
+          ) : (
+            <form action={decideReviewAction} className="mt-2 flex flex-col gap-2">
+              <input type="hidden" name="heroId" value={heroId} />
+              <input type="hidden" name="number" value={review?.number ?? ""} />
+              <input type="hidden" name="supplier" value={review?.supplier ?? ""} />
+              <input type="hidden" name="gross" value={review?.gross ?? ""} />
+              <textarea
+                name="note"
+                rows={2}
+                placeholder="Kommentar (optional) …"
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-brand-red/60"
+              />
+              <div className="flex items-center gap-2">
+                <button
+                  type="submit"
+                  name="decision"
+                  value="freigegeben"
+                  className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90"
+                >
+                  Freigeben
+                </button>
+                <button
+                  type="submit"
+                  name="decision"
+                  value="abgelehnt"
+                  className="rounded-md bg-brand-red px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90"
+                >
+                  Ablehnen
+                </button>
+              </div>
+            </form>
+          )}
+
+          {review?.history && review.history.length > 0 && (
+            <ul className="mt-3 space-y-1 border-l-2 border-gray-200 pl-3">
+              {review.history.map((h, i) => (
+                <li key={i} className="text-xs text-gray-600">
+                  <span className="text-gray-400">{formatDateTime(h.at)}</span>
+                  {h.byName ? ` · ${h.byName}` : ""} —{" "}
+                  <span className="font-medium">{h.actionLabel}</span>
+                  {h.detail ? `: ${h.detail}` : ""}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         {STATUS_ACTIONS.filter((s) => s.key !== task.status).map((s) => (
@@ -164,6 +276,7 @@ export default function TaskManager({
   isAdmin,
   users,
   projects,
+  reviewsByHeroId = {},
 }: {
   assigned: Task[];
   created: Task[];
@@ -172,6 +285,7 @@ export default function TaskManager({
   users: UserOption[];
   projects: ProjectOption[];
   meId: number;
+  reviewsByHeroId?: Record<string, ReviewTaskInfo>;
 }) {
   const [open, setOpen] = useState(false);
   const [state, formAction, pending] = useActionState<CreateTaskState, FormData>(
@@ -428,7 +542,12 @@ export default function TaskManager({
           ) : (
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
               {fAllOpen.map((t) => (
-                <TaskCard key={t.id} task={t} users={users} />
+                <TaskCard
+                  key={t.id}
+                  task={t}
+                  users={users}
+                  review={reviewsByHeroId[reviewHeroId(t.description) ?? ""]}
+                />
               ))}
             </div>
           )}
@@ -445,7 +564,14 @@ export default function TaskManager({
           {fAssigned.length === 0 ? (
             <p className="text-sm text-gray-400">Keine Aufgaben für diesen Filter.</p>
           ) : (
-            fAssigned.map((t) => <TaskCard key={t.id} task={t} users={users} />)
+            fAssigned.map((t) => (
+              <TaskCard
+                key={t.id}
+                task={t}
+                users={users}
+                review={reviewsByHeroId[reviewHeroId(t.description) ?? ""]}
+              />
+            ))
           )}
         </section>
 
@@ -458,7 +584,14 @@ export default function TaskManager({
           {fCreated.length === 0 ? (
             <p className="text-sm text-gray-400">Keine Aufgaben für diesen Filter.</p>
           ) : (
-            fCreated.map((t) => <TaskCard key={t.id} task={t} users={users} />)
+            fCreated.map((t) => (
+              <TaskCard
+                key={t.id}
+                task={t}
+                users={users}
+                review={reviewsByHeroId[reviewHeroId(t.description) ?? ""]}
+              />
+            ))
           )}
         </section>
       </div>

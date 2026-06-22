@@ -6,13 +6,14 @@ import ReceiptsTable from "@/components/ReceiptsTable";
 import { getReceiptsByMonth, summarizeReceipts, mergeManualIntoSummary, MONTH_LABELS } from "@/lib/invoices";
 import type { ReceiptType } from "@/lib/hero-api";
 import type { ManualReceipt } from "@/lib/manual-receipts";
+import type { ReceiptReview } from "@/lib/receipt-reviews";
 
 const currencyFormatter = new Intl.NumberFormat("de-DE", {
   style: "currency",
   currency: "EUR",
 });
 
-export type ReceiptsView = "month" | "all" | "open" | "due";
+export type ReceiptsView = "month" | "all" | "open" | "due" | "unreviewed";
 
 const VIEW_OPTIONS: { value: ReceiptsView; label: string }[] = [
   { value: "month", label: "Monatlich" },
@@ -30,6 +31,9 @@ export default async function MonthlyReceipts({
   view,
   partyLabel = "Kunde",
   manual = [],
+  reviews,
+  reviewers = [],
+  canReview = false,
 }: {
   title: string;
   type: ReceiptType;
@@ -40,6 +44,10 @@ export default async function MonthlyReceipts({
   partyLabel?: string;
   /** Manually uploaded receipts (year), folded into the summary cards. */
   manual?: ManualReceipt[];
+  /** Review status per HERO receipt id (Rechnungsprüfung). */
+  reviews?: Map<string, ReceiptReview>;
+  reviewers?: { id: number; name: string }[];
+  canReview?: boolean;
 }) {
   let monthly: Awaited<ReturnType<typeof getReceiptsByMonth>> | null = null;
   let error: string | null = null;
@@ -66,6 +74,13 @@ export default async function MonthlyReceipts({
       .filter((r) => r.openAmount > 0.005 && r.dueDate && new Date(r.dueDate) <= now)
       .sort((a, b) => (a.dueDate ?? "").localeCompare(b.dueDate ?? ""));
     heading = `Fällige Rechnungen ${year}`;
+  } else if (view === "unreviewed") {
+    // Noch nicht entschieden (kein Freigegeben/Abgelehnt).
+    receipts = allReceipts.filter((r) => {
+      const st = reviews?.get(r.id)?.status;
+      return st !== "freigegeben" && st !== "abgelehnt";
+    });
+    heading = `Ungeprüfte Belege ${year}`;
   } else {
     receipts = monthly ? monthly[month - 1] : [];
     heading = `${MONTH_LABELS[month - 1]} ${year}`;
@@ -77,6 +92,8 @@ export default async function MonthlyReceipts({
     manualFiltered = manual;
   } else if (view === "open" || view === "due") {
     manualFiltered = manual.filter((r) => !r.isPaid);
+  } else if (view === "unreviewed") {
+    manualFiltered = []; // Prüfung betrifft nur HERO-Belege.
   } else {
     manualFiltered = manual.filter((r) => r.date && Number(r.date.slice(5, 7)) === month);
   }
@@ -106,7 +123,10 @@ export default async function MonthlyReceipts({
       </header>
 
       <div className="flex flex-wrap gap-1.5">
-        {VIEW_OPTIONS.map((opt) => {
+        {(canReview
+          ? [...VIEW_OPTIONS, { value: "unreviewed" as ReceiptsView, label: "Ungeprüft" }]
+          : VIEW_OPTIONS
+        ).map((opt) => {
           const active = opt.value === view;
           return (
             <Link
@@ -148,7 +168,13 @@ export default async function MonthlyReceipts({
           {receipts.length === 0 ? (
             <p className="px-5 py-8 text-center text-sm text-gray-500">{emptyText}</p>
           ) : (
-            <ReceiptsTable receipts={receipts} partyLabel={partyLabel} />
+            <ReceiptsTable
+              receipts={receipts}
+              partyLabel={partyLabel}
+              reviews={reviews}
+              reviewers={reviewers}
+              canReview={canReview}
+            />
           )}
         </div>
       )}

@@ -244,6 +244,45 @@ export async function completeEkPriceRequests(
   }
 }
 
+/** Marker embedded in a review task's description to tie it to a HERO receipt. */
+function reviewMarker(heroReceiptId: string): string {
+  return `[RECHNPRUEF:${heroReceiptId}]`;
+}
+
+/** Creates a task asking a reviewer to check a HERO receipt (no duplicates). */
+export async function createReviewTask(
+  heroReceiptId: string,
+  label: string,
+  createdBy: number,
+  assignedTo: number,
+  note?: string | null
+): Promise<void> {
+  const marker = reviewMarker(heroReceiptId);
+  const [existing] = await getPool().query<RowDataPacket[]>(
+    "SELECT id FROM tasks WHERE status <> 'erledigt' AND description LIKE ? LIMIT 1",
+    [`%${marker}%`]
+  );
+  if (existing.length > 0) return;
+  const noteLine = note ? `\n\nNotiz: ${note}` : "";
+  await createTask({
+    title: `Rechnung prüfen: ${label}`,
+    description: `Bitte die Eingangsrechnung prüfen und freigeben/ablehnen.${noteLine} ${marker}`,
+    createdBy,
+    assignedTo: [assignedTo],
+    dueDate: null,
+  });
+}
+
+/** Completes open review tasks for a receipt once it was decided. */
+export async function completeReviewTasks(heroReceiptId: string, byUserId: number): Promise<void> {
+  const marker = reviewMarker(heroReceiptId);
+  const [rows] = await getPool().query<RowDataPacket[]>(
+    "SELECT id FROM tasks WHERE status <> 'erledigt' AND description LIKE ?",
+    [`%${marker}%`]
+  );
+  for (const r of rows) await setTaskStatus(r.id as number, "erledigt", byUserId);
+}
+
 /** Updates a task's status and logs it. Tasks are never deleted, only their status changes. */
 export async function setTaskStatus(
   id: number,
