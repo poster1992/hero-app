@@ -7,6 +7,11 @@ import {
 } from "@/lib/hero-api";
 import OfferOrderPanel from "@/components/OfferOrderPanel";
 import OpenItemsPanel from "@/components/OpenItemsPanel";
+import ChecklistOverview from "@/components/ChecklistOverview";
+import InvoicedRatePanel from "@/components/InvoicedRatePanel";
+import StockOutPanel from "@/components/StockOutPanel";
+import { getStockOutboundReport } from "@/lib/materials";
+import { listOpenChecklistByMonth } from "@/lib/belege-checklist";
 import CustomerMapPanel from "@/components/CustomerMapPanel";
 import MonthlyChart from "@/components/MonthlyChart";
 import DashboardTitle from "@/components/DashboardTitle";
@@ -69,6 +74,28 @@ export default async function DashboardPage({
     locations = await getProjectLocations();
   } catch {
     // Karte ist optional – Fehler hier blockiert das Dashboard nicht.
+  }
+
+  // Offene Punkte der monatlichen Beleg-Checkliste (bis einschließlich aktuellem Monat).
+  const nowForChecklist = new Date();
+  const uptoMonth =
+    year < nowForChecklist.getUTCFullYear()
+      ? 12
+      : year > nowForChecklist.getUTCFullYear()
+        ? 0
+        : nowForChecklist.getUTCMonth() + 1;
+  let checklistMonths: Awaited<ReturnType<typeof listOpenChecklistByMonth>> = [];
+  try {
+    checklistMonths = await listOpenChecklistByMonth(year, uptoMonth);
+  } catch {
+    // Checkliste ist optional – Fehler hier blockiert das Dashboard nicht.
+  }
+
+  let stockOut: Awaited<ReturnType<typeof getStockOutboundReport>> | null = null;
+  try {
+    stockOut = await getStockOutboundReport();
+  } catch {
+    // Lagerausgang ist optional – Fehler hier blockiert das Dashboard nicht.
   }
 
   // Monthly averages over the months that have already occurred (incl. the current
@@ -192,6 +219,14 @@ export default async function DashboardPage({
             );
           })()}
 
+          {volume && (
+            <InvoicedRatePanel
+              year={data.year}
+              confirmations={volume.confirmations}
+              invoiced={volume.invoiced}
+            />
+          )}
+
           <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
             <h2 className="mb-4 text-lg font-medium text-gray-900">
               Einnahmen / Ausgaben {data.year}
@@ -211,6 +246,10 @@ export default async function DashboardPage({
               }
             />
           </div>
+
+          {stockOut && <StockOutPanel report={stockOut} />}
+
+          <ChecklistOverview year={data.year} months={checklistMonths} />
 
           {locations.length > 0 && (
             <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">

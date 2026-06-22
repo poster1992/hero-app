@@ -2,8 +2,14 @@
 
 import { revalidatePath } from "next/cache";
 import { getSession } from "@/lib/session";
-import { getUserByUsername } from "@/lib/users";
-import { bookStockByArticle } from "@/lib/materials";
+import { getUserByUsername, listAdminUserIds } from "@/lib/users";
+import {
+  bookStockByArticle,
+  listArticlesWithoutEk,
+  setMaterialEkByArticle,
+} from "@/lib/materials";
+import { createEkPriceRequest, completeEkPriceRequests } from "@/lib/tasks";
+import { getAllowedModules } from "@/lib/role-store";
 
 const PATH = "/dashboard/lager";
 
@@ -12,6 +18,20 @@ async function currentUserId(): Promise<number | null> {
   if (!session) return null;
   const user = await getUserByUsername(session.username);
   return user?.id ?? null;
+}
+
+/**
+ * Creates admin tasks for any of the given out-booked articles that have no EK
+ * price, so the price can be entered and the booking value backfilled.
+ */
+async function requestMissingEkPrices(heroArticleIds: number[], byUserId: number): Promise<void> {
+  const missing = await listArticlesWithoutEk(heroArticleIds);
+  if (missing.length === 0) return;
+  const adminIds = await listAdminUserIds();
+  if (adminIds.length === 0) return;
+  for (const a of missing) {
+    await createEkPriceRequest(a.heroArticleId, a.name, byUserId, adminIds);
+  }
 }
 
 /** Schnelle Inline-Buchung für einen einzelnen HERO-Artikel. */
@@ -38,6 +58,7 @@ export async function bookStockAction(formData: FormData): Promise<void> {
     userId,
     direction,
   });
+  if (direction === "out") await requestMissingEkPrices([heroArticleId], userId);
   revalidatePath(PATH);
 }
 
@@ -96,6 +117,37 @@ export async function submitBooking(input: BookingInput): Promise<BookingResult>
     return { ok: false, error: "Buchung fehlgeschlagen." };
   }
 
+  if (input.direction === "out") {
+    try {
+      await requestMissingEkPrices(
+        items.map((it) => it.heroArticleId),
+        userId
+      );
+    } catch {
+      // Aufgaben-Erstellung ist optional – Buchung war erfolgreich.
+    }
+  }
+
   revalidatePath(PATH);
   return { ok: true };
+}
+
+/** Admin: setzt den EK-Preis eines Artikels und schließt offene Preis-Aufgaben. */
+export async function setMaterialEkAction(formData: FormData): Promise<void> {
+  const session = await getSession();
+  if (!session) return;
+  const user = await getUserByUsername(session.username);
+  if (!user) return;
+  const allowed = await getAllowedModules(user.role);
+  if (!allowed.includes("lager_ek")) return;
+
+  const heroArticleId = Number(formData.get("heroArticleId"));
+  const priceRaw = String(formData.get("price") ?? "").trim().replace(",", ".");
+  const price = Number(priceRaw);
+  if (!Number.isFinite(heroArticleId) || heroArticleId <= 0) return;
+  if (!Number.isFinite(price) || price < 0) return;
+
+  await setMaterialEkByArticle(heroArticleId, price);
+  if (price > 0) await completeEkPriceRequests(heroArticleId, user.id);
+  revalidatePath(PATH);
 }

@@ -11,6 +11,7 @@ export const MODULES: AppModule[] = [
   { key: "projekte", label: "Projekte" },
   { key: "dokumente", label: "Dokumente" },
   { key: "lager", label: "Lager" },
+  { key: "lager_ek", label: "Lager EK-Preise (sehen & pflegen)" },
   { key: "kunden", label: "Kunden" },
   { key: "aufgaben", label: "Aufgaben" },
   { key: "ueberfaellige_aufgaben", label: "Überfällige Aufgaben (Unternehmen)" },

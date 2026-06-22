@@ -34,6 +34,55 @@ export async function listChecklist(year: number, month: number): Promise<Checkl
   }));
 }
 
+export interface ChecklistMonthOpen {
+  month: number;
+  label: string;
+  /** Labels of checklist items still open (not done) that month. */
+  openItems: string[];
+  /** Total active checklist items. */
+  total: number;
+}
+
+const MONTH_LABELS = [
+  "Januar", "Februar", "März", "April", "Mai", "Juni",
+  "Juli", "August", "September", "Oktober", "November", "Dezember",
+];
+
+interface IdLabelRow extends RowDataPacket {
+  id: number;
+  label: string;
+}
+interface DoneRow extends RowDataPacket {
+  item_id: number;
+  month: number;
+}
+
+/**
+ * Open checklist items per month for a year, up to (incl.) uptoMonth.
+ * An item counts as open in a month when it has no done-entry for that month.
+ */
+export async function listOpenChecklistByMonth(
+  year: number,
+  uptoMonth: number
+): Promise<ChecklistMonthOpen[]> {
+  const pool = getPool();
+  const [items] = await pool.query<IdLabelRow[]>(
+    "SELECT id, label FROM belege_checklist_items WHERE active = 1 ORDER BY sort_order, id"
+  );
+  const [doneRows] = await pool.query<DoneRow[]>(
+    "SELECT item_id, month FROM belege_checklist_status WHERE year = ? AND done = 1",
+    [year]
+  );
+  const doneSet = new Set(doneRows.map((r) => `${r.item_id}-${r.month}`));
+
+  const months: ChecklistMonthOpen[] = [];
+  for (let m = 1; m <= Math.min(Math.max(uptoMonth, 0), 12); m++) {
+    const openItems = items.filter((it) => !doneSet.has(`${it.id}-${m}`)).map((it) => it.label);
+    months.push({ month: m, label: MONTH_LABELS[m - 1], openItems, total: items.length });
+  }
+  return months;
+}
+
 /** Adds a new recurring checklist item, appended to the end. */
 export async function addChecklistItem(label: string): Promise<void> {
   await getPool().query(

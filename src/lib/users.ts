@@ -100,6 +100,14 @@ export async function getUsersForNotification(
   }));
 }
 
+/** Active administrator user ids (for system-generated tasks/notifications). */
+export async function listAdminUserIds(): Promise<number[]> {
+  const [rows] = await getPool().query<UserRow[]>(
+    "SELECT id FROM users WHERE role = 'administrator' AND is_active = 1"
+  );
+  return rows.map((r) => r.id);
+}
+
 /** Creates a new user. Throws ER_DUP_ENTRY if the username already exists. */
 export async function createUser(input: {
   username: string;

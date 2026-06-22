@@ -1,8 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import type { StockMovement } from "@/lib/material-types";
 import BookingScanModal from "@/components/BookingScanModal";
+import { setMaterialEkAction } from "@/app/dashboard/lager/actions";
 
 export interface LagerItem {
   id: number; // HERO article (stock material) id
@@ -12,6 +14,53 @@ export interface LagerItem {
   unit: string;
   category: string | null;
   quantity: number; // local stock (MySQL)
+  ekPrice: number; // EK price (MySQL), 0 = nicht hinterlegt
+}
+
+/** Inline EK editor: saves the price via server action. */
+function EkCell({ item }: { item: LagerItem }) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [value, setValue] = useState(item.ekPrice ? String(item.ekPrice).replace(".", ",") : "");
+
+  const save = () => {
+    const fd = new FormData();
+    fd.set("heroArticleId", String(item.id));
+    fd.set("price", value);
+    startTransition(async () => {
+      await setMaterialEkAction(fd);
+      router.refresh();
+    });
+  };
+
+  return (
+    <div className="flex items-center justify-end gap-1">
+      <input
+        type="text"
+        inputMode="decimal"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            save();
+          }
+        }}
+        placeholder="0,00"
+        className={`w-20 rounded-md border px-2 py-1 text-right text-sm outline-none focus:border-brand-red/60 ${
+          item.ekPrice > 0 ? "border-gray-300" : "border-brand-red/50 bg-brand-red/5"
+        }`}
+      />
+      <button
+        type="button"
+        onClick={save}
+        disabled={pending}
+        className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 transition-colors hover:border-brand-red/50 disabled:opacity-50"
+      >
+        ✓
+      </button>
+    </div>
+  );
 }
 
 interface ProjectOption {
@@ -39,10 +88,12 @@ export default function LagerHero({
   items,
   movements,
   projects,
+  canSeeEk = false,
 }: {
   items: LagerItem[];
   movements: StockMovement[];
   projects: ProjectOption[];
+  canSeeEk?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [bookingOpen, setBookingOpen] = useState(false);
@@ -106,12 +157,13 @@ export default function LagerHero({
                 <th className="px-4 py-2 font-semibold">Bezeichnung</th>
                 <th className="px-4 py-2 font-semibold">Kategorie</th>
                 <th className="px-4 py-2 text-right font-semibold">Bestand</th>
+                {canSeeEk && <th className="px-4 py-2 text-right font-semibold">EK-Preis</th>}
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-4 py-4 text-sm text-gray-400">
+                  <td colSpan={canSeeEk ? 5 : 4} className="px-4 py-4 text-sm text-gray-400">
                     Keine Artikel gefunden.
                   </td>
                 </tr>
@@ -128,6 +180,11 @@ export default function LagerHero({
                         {numberFmt.format(a.quantity)} {a.unit}
                       </span>
                     </td>
+                    {canSeeEk && (
+                      <td className="px-4 py-2 text-right">
+                        <EkCell item={a} />
+                      </td>
+                    )}
                   </tr>
                 ))
               )}

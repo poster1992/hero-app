@@ -197,6 +197,53 @@ export async function createTask(input: {
   await addHistory(taskId, input.createdBy, "created", "Aufgabe erstellt");
 }
 
+/** Marker embedded in a price-request task's description to tie it to an article. */
+function ekRequestMarker(heroArticleId: number): string {
+  return `[EKREQ:${heroArticleId}]`;
+}
+
+/**
+ * Creates a task asking admins to enter the EK price for an article — but only
+ * if no open request for that article exists yet (avoids duplicates).
+ */
+export async function createEkPriceRequest(
+  heroArticleId: number,
+  articleName: string,
+  createdBy: number,
+  adminIds: number[]
+): Promise<void> {
+  const marker = ekRequestMarker(heroArticleId);
+  const [existing] = await getPool().query<RowDataPacket[]>(
+    "SELECT id FROM tasks WHERE status <> 'erledigt' AND description LIKE ? LIMIT 1",
+    [`%${marker}%`]
+  );
+  if (existing.length > 0) return;
+  await createTask({
+    title: `EK-Preis hinterlegen: ${articleName}`,
+    description:
+      `Für den Artikel „${articleName}" wurde beim Lagerausgang kein EK-Preis gefunden. ` +
+      `Bitte im Lager den Einkaufspreis hinterlegen, damit der Warenwert nachgetragen wird. ${marker}`,
+    createdBy,
+    assignedTo: adminIds,
+    dueDate: null,
+  });
+}
+
+/** Completes open EK-price requests for an article once a price was entered. */
+export async function completeEkPriceRequests(
+  heroArticleId: number,
+  byUserId: number
+): Promise<void> {
+  const marker = ekRequestMarker(heroArticleId);
+  const [rows] = await getPool().query<RowDataPacket[]>(
+    "SELECT id FROM tasks WHERE status <> 'erledigt' AND description LIKE ?",
+    [`%${marker}%`]
+  );
+  for (const r of rows) {
+    await setTaskStatus(r.id as number, "erledigt", byUserId);
+  }
+}
+
 /** Updates a task's status and logs it. Tasks are never deleted, only their status changes. */
 export async function setTaskStatus(
   id: number,

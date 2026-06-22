@@ -1,12 +1,22 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
-import { getLocalQuantities, listRecentMovements, syncArticleMaster } from "@/lib/materials";
+import {
+  getLocalQuantities,
+  getLocalEkPrices,
+  listRecentMovements,
+  syncArticleMaster,
+} from "@/lib/materials";
+import { getUserByUsername } from "@/lib/users";
+import { getAllowedModules } from "@/lib/role-store";
 import { getStockArticles, getProjects } from "@/lib/hero-api";
 import LagerHero, { type LagerItem } from "@/components/LagerHero";
 
 export default async function LagerPage() {
   const session = await getSession();
   if (!session) redirect("/login");
+  const me = await getUserByUsername(session.username);
+  const allowed = me ? await getAllowedModules(me.role) : [];
+  const canSeeEk = allowed.includes("lager_ek");
 
   let items: LagerItem[] = [];
   let movements: Awaited<ReturnType<typeof listRecentMovements>> = [];
@@ -29,7 +39,7 @@ export default async function LagerPage() {
         purchasePrice: a.purchasePrice,
       }))
     );
-    const localQ = await getLocalQuantities();
+    const [localQ, localEk] = await Promise.all([getLocalQuantities(), getLocalEkPrices()]);
     items = articles.map((a) => ({
       id: a.id,
       name: a.name,
@@ -38,6 +48,7 @@ export default async function LagerPage() {
       unit: a.unit,
       category: a.category,
       quantity: localQ.get(a.id) ?? 0, // lokaler Bestand aus MySQL (HERO-Bestand ignoriert)
+      ekPrice: localEk.get(a.id) ?? 0,
     }));
     movements = mv;
     projects = projs.map((p) => ({ id: p.id, relativeId: p.relativeId, name: p.name }));
@@ -59,7 +70,7 @@ export default async function LagerPage() {
           {error}
         </div>
       ) : (
-        <LagerHero items={items} movements={movements} projects={projects} />
+        <LagerHero items={items} movements={movements} projects={projects} canSeeEk={canSeeEk} />
       )}
     </div>
   );
