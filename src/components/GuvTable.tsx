@@ -26,6 +26,7 @@ export default function GuvTable({ guv, year }: { guv: GuvData; year: number }) 
         <table className="w-full text-right text-xs">
           <thead>
             <tr className="border-b border-gray-300 text-xs uppercase tracking-wide text-gray-500">
+              <th className="px-2 py-2 text-left font-medium">Konto-Nr.</th>
               <th className="px-2 py-2 text-left font-medium">Position</th>
               {MONTH_LABELS.map((m) => (
                 <th key={m} className="px-2 py-2 font-medium">
@@ -38,7 +39,10 @@ export default function GuvTable({ guv, year }: { guv: GuvData; year: number }) 
           <tbody>
             {/* Revenue */}
             <tr className="border-b border-gray-200">
-              <td className="whitespace-nowrap px-2 py-2 text-left font-medium text-gray-700">
+              <td
+                colSpan={2}
+                className="whitespace-nowrap px-2 py-2 text-left font-medium text-gray-700"
+              >
                 Umsatzerlöse (Rechnungen)
               </td>
               {guv.revenueMonthly.map((v, i) => (
@@ -54,7 +58,7 @@ export default function GuvTable({ guv, year }: { guv: GuvData; year: number }) 
             {/* Expenses heading */}
             <tr>
               <td
-                colSpan={14}
+                colSpan={15}
                 className="px-2 pt-3 pb-1 text-left text-[11px] uppercase tracking-wide text-gray-500"
               >
                 Aufwendungen nach Buchungskonto
@@ -63,15 +67,18 @@ export default function GuvTable({ guv, year }: { guv: GuvData; year: number }) 
 
             {guv.expenseAccounts.length === 0 ? (
               <tr>
-                <td colSpan={14} className="px-2 py-2 text-left text-gray-500">
+                <td colSpan={15} className="px-2 py-2 text-left text-gray-500">
                   Keine Buchungskonten
                 </td>
               </tr>
             ) : (
               guv.expenseAccounts.map((acc) => (
-                <tr key={acc.account} className="border-b border-gray-200">
+                <tr key={`${acc.accountNumber}-${acc.accountName}`} className="border-b border-gray-200">
+                  <td className="whitespace-nowrap px-2 py-2 text-left font-medium tabular-nums text-gray-600">
+                    {acc.accountNumber || "—"}
+                  </td>
                   <td className="whitespace-nowrap px-2 py-2 text-left text-gray-700">
-                    {acc.account}
+                    {acc.accountName}
                   </td>
                   {acc.monthly.map((v, i) => (
                     <td key={i} className="whitespace-nowrap px-2 py-2 text-gray-500">
@@ -87,7 +94,10 @@ export default function GuvTable({ guv, year }: { guv: GuvData; year: number }) 
 
             {/* Sum of expenses */}
             <tr className="border-b border-gray-300">
-              <td className="whitespace-nowrap px-2 py-2 text-left font-medium text-gray-700">
+              <td
+                colSpan={2}
+                className="whitespace-nowrap px-2 py-2 text-left font-medium text-gray-700"
+              >
                 Summe Aufwand
               </td>
               {guv.expenseMonthly.map((v, i) => (
@@ -102,7 +112,9 @@ export default function GuvTable({ guv, year }: { guv: GuvData; year: number }) 
 
             {/* Result */}
             <tr className="border-t border-gray-300 font-semibold text-gray-900">
-              <td className="whitespace-nowrap px-2 py-2 text-left">Ergebnis</td>
+              <td colSpan={2} className="whitespace-nowrap px-2 py-2 text-left">
+                Ergebnis
+              </td>
               {guv.resultMonthly.map((v, i) => (
                 <td
                   key={i}

@@ -3,8 +3,9 @@ import YearSelector from "@/components/YearSelector";
 import MonthTabs from "@/components/MonthTabs";
 import ReceiptsSummaryPanel from "@/components/ReceiptsSummaryPanel";
 import ReceiptsTable from "@/components/ReceiptsTable";
-import { getReceiptsByMonth, summarizeReceipts, MONTH_LABELS } from "@/lib/invoices";
+import { getReceiptsByMonth, summarizeReceipts, mergeManualIntoSummary, MONTH_LABELS } from "@/lib/invoices";
 import type { ReceiptType } from "@/lib/hero-api";
+import type { ManualReceipt } from "@/lib/manual-receipts";
 
 const currencyFormatter = new Intl.NumberFormat("de-DE", {
   style: "currency",
@@ -28,6 +29,7 @@ export default async function MonthlyReceipts({
   month,
   view,
   partyLabel = "Kunde",
+  manual = [],
 }: {
   title: string;
   type: ReceiptType;
@@ -36,6 +38,8 @@ export default async function MonthlyReceipts({
   month: number;
   view: ReceiptsView;
   partyLabel?: string;
+  /** Manually uploaded receipts (year), folded into the summary cards. */
+  manual?: ManualReceipt[];
 }) {
   let monthly: Awaited<ReturnType<typeof getReceiptsByMonth>> | null = null;
   let error: string | null = null;
@@ -67,7 +71,17 @@ export default async function MonthlyReceipts({
     heading = `${MONTH_LABELS[month - 1]} ${year}`;
   }
 
-  const summary = summarizeReceipts(receipts);
+  // Manuelle Belege passend zur aktuellen Ansicht (Monat/Alle/Offen/Fällig).
+  let manualFiltered: ManualReceipt[];
+  if (view === "all") {
+    manualFiltered = manual;
+  } else if (view === "open" || view === "due") {
+    manualFiltered = manual.filter((r) => !r.isPaid);
+  } else {
+    manualFiltered = manual.filter((r) => r.date && Number(r.date.slice(5, 7)) === month);
+  }
+
+  const summary = mergeManualIntoSummary(summarizeReceipts(receipts), manualFiltered);
 
   const viewHref = (v: ReceiptsView) => {
     const params = new URLSearchParams({ view: v, year: String(year) });

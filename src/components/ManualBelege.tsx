@@ -1,7 +1,9 @@
 import { listManualReceipts } from "@/lib/manual-receipts";
+import { listChecklist } from "@/lib/belege-checklist";
 import { getBookAccounts } from "@/lib/hero-api";
 import { setBelegPaidAction } from "@/app/dashboard/belege/manual-actions";
 import ManualBelegeForm from "@/components/ManualBelegeForm";
+import BelegeChecklist from "@/components/BelegeChecklist";
 
 const currencyFormatter = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
 const dateFormatter = new Intl.DateTimeFormat("de-DE");
@@ -27,9 +29,14 @@ export default async function ManualBelege({
 }) {
   let receipts: Awaited<ReturnType<typeof listManualReceipts>> = [];
   let accounts: Awaited<ReturnType<typeof getBookAccounts>> = [];
+  let checklist: Awaited<ReturnType<typeof listChecklist>> = [];
   let error: string | null = null;
   try {
-    [receipts, accounts] = await Promise.all([listManualReceipts(year), getBookAccounts()]);
+    [receipts, accounts, checklist] = await Promise.all([
+      listManualReceipts(year),
+      getBookAccounts(),
+      listChecklist(year, month),
+    ]);
   } catch (e) {
     error = e instanceof Error ? e.message : "Manuelle Belege konnten nicht geladen werden.";
   }
@@ -40,6 +47,7 @@ export default async function ManualBelege({
       ? receipts.filter((r) => r.date && Number(r.date.slice(5, 7)) === month)
       : receipts;
   const periodLabel = view === "month" ? `${MONTH_LABELS[month - 1]} ${year}` : String(year);
+  const monthLabel = `${MONTH_LABELS[month - 1]} ${year}`;
   const total = filtered.reduce((s, r) => s + r.gross, 0);
 
   return (
@@ -59,6 +67,8 @@ export default async function ManualBelege({
           {error}
         </div>
       )}
+
+      <BelegeChecklist items={checklist} year={year} month={month} periodLabel={monthLabel} />
 
       <div className="overflow-x-auto rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
         <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">

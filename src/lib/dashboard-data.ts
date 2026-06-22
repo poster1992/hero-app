@@ -2,6 +2,7 @@ import {
   getReceiptsInRange,
   getCustomerInvoices,
   getOfferConfirmationByMonth,
+  getBookAccounts,
 } from "./hero-api";
 import { listManualReceipts } from "./manual-receipts";
 
@@ -36,7 +37,10 @@ export interface MonthlyTotals {
 }
 
 export interface GuvAccountRow {
-  account: string;
+  /** Booking account number (Buchungsnummer), or "" if none. */
+  accountNumber: string;
+  /** Booking account name. */
+  accountName: string;
   /** Net amount per month (index 0 = January). */
   monthly: number[];
   total: number;
@@ -65,13 +69,25 @@ export interface DashboardData {
   countIncome: number;
   costRatio: number;
   marginRatio: number;
+  /** Offene (unbezahlte) Belege – brutto. Manuelle Belege ohne Bezahlt-Status. */
+  openReceiptsTotal: number;
+  openReceiptsCount: number;
+  /** Offene (unbezahlte) Ausgangsrechnungen – brutto. */
+  openInvoicesTotal: number;
+  openInvoicesCount: number;
   guv: GuvData;
 }
 
 const NO_ACCOUNT_LABEL = "Ohne Buchungskonto";
+const KEY_SEP = "␟";
 
 function round2(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+/** Unique map key for a booking account (number + name kept separable). */
+function accountKey(number: string, name: string): string {
+  return number || name ? `${number}${KEY_SEP}${name}` : `${KEY_SEP}${NO_ACCOUNT_LABEL}`;
 }
 
 export async function getDashboardData(year: number): Promise<DashboardData> {
@@ -98,9 +114,24 @@ export async function getDashboardData(year: number): Promise<DashboardData> {
   let totalIncome = 0;
   let countOutput = 0;
   let countIncome = 0;
+  let openReceiptsTotal = 0;
+  let openReceiptsCount = 0;
+  let openInvoicesTotal = 0;
+  let openInvoicesCount = 0;
 
   // GuV: expenses per booking account, net, per month.
   const expenseByAccount = new Map<string, number[]>();
+
+  // HERO-Belegpositionen liefern oft keine Konto-Nr. – daher die SKR-Nummer
+  // über den Kontonamen aus dem HERO-Kontenrahmen nachschlagen.
+  const accountNumberByName = new Map<string, string>();
+  try {
+    for (const a of await getBookAccounts()) {
+      accountNumberByName.set(a.name.trim().toLowerCase(), a.number);
+    }
+  } catch {
+    // Kontenrahmen optional – ohne ihn bleibt die Nummer ggf. leer.
+  }
 
   // Belege = Eingangsrechnungen (Receipt type "output"), netto + Vorsteuer
   for (const receipt of receipts) {
@@ -110,15 +141,18 @@ export async function getDashboardData(year: number): Promise<DashboardData> {
     monthly[monthIndex].outputTax += receipt.value - receipt.netValue;
     totalOutput += receipt.netValue;
     countOutput++;
+    if (receipt.openAmount > 0.005) {
+      openReceiptsTotal += receipt.openAmount;
+      openReceiptsCount++;
+    }
 
     for (const p of receipt.receiptPositions) {
-      const account = p.bookAccount
-        ? [p.bookAccount.num, p.bookAccount.name].filter(Boolean).join(" ").trim() ||
-          NO_ACCOUNT_LABEL
-        : NO_ACCOUNT_LABEL;
-      const arr = expenseByAccount.get(account) ?? new Array(12).fill(0);
+      const name = p.bookAccount?.name?.trim() ?? "";
+      let number = p.bookAccount?.num?.trim() ?? "";
+      if (!number && name) number = accountNumberByName.get(name.toLowerCase()) ?? "";
+      const arr = expenseByAccount.get(accountKey(number, name)) ?? new Array(12).fill(0);
       arr[monthIndex] += p.valueExclVat;
-      expenseByAccount.set(account, arr);
+      expenseByAccount.set(accountKey(number, name), arr);
     }
   }
 
@@ -135,11 +169,15 @@ export async function getDashboardData(year: number): Promise<DashboardData> {
       monthly[monthIndex].outputTax += r.vat;
       totalOutput += r.net;
       countOutput++;
-      const account =
-        [r.accountNumber, r.accountName].filter(Boolean).join(" ").trim() || NO_ACCOUNT_LABEL;
-      const arr = expenseByAccount.get(account) ?? new Array(12).fill(0);
+      if (!r.isPaid) {
+        openReceiptsTotal += r.gross;
+        openReceiptsCount++;
+      }
+      const number = r.accountNumber?.trim() ?? "";
+      const name = r.accountName?.trim() ?? "";
+      const arr = expenseByAccount.get(accountKey(number, name)) ?? new Array(12).fill(0);
       arr[monthIndex] += r.net;
-      expenseByAccount.set(account, arr);
+      expenseByAccount.set(accountKey(number, name), arr);
     }
   } catch {
     // Manuelle Belege sind optional – Fehler hier blockiert das Dashboard nicht.
@@ -155,6 +193,10 @@ export async function getDashboardData(year: number): Promise<DashboardData> {
     monthly[monthIndex].incomeTax += inv.tax;
     totalIncome += inv.net;
     countIncome++;
+    if (inv.isOpen === true) {
+      openInvoicesTotal += inv.gross;
+      openInvoicesCount++;
+    }
   }
 
   for (const m of monthly) {
@@ -174,11 +216,15 @@ export async function getDashboardData(year: number): Promise<DashboardData> {
   const revenueTotal = round2(revenueMonthly.reduce((s, v) => s + v, 0));
 
   const expenseAccounts: GuvAccountRow[] = [...expenseByAccount.entries()]
-    .map(([account, arr]) => ({
-      account,
-      monthly: arr.map(round2),
-      total: round2(arr.reduce((s, v) => s + v, 0)),
-    }))
+    .map(([key, arr]) => {
+      const sep = key.indexOf(KEY_SEP);
+      return {
+        accountNumber: sep >= 0 ? key.slice(0, sep) : "",
+        accountName: sep >= 0 ? key.slice(sep + 1) : key,
+        monthly: arr.map(round2),
+        total: round2(arr.reduce((s, v) => s + v, 0)),
+      };
+    })
     .sort((a, b) => b.total - a.total);
 
   const expenseMonthly = Array.from({ length: 12 }, (_, i) =>
@@ -207,6 +253,10 @@ export async function getDashboardData(year: number): Promise<DashboardData> {
     countIncome,
     costRatio,
     marginRatio,
+    openReceiptsTotal: round2(openReceiptsTotal),
+    openReceiptsCount,
+    openInvoicesTotal: round2(openInvoicesTotal),
+    openInvoicesCount,
     guv,
   };
 }

@@ -1,5 +1,6 @@
 import MonthlyReceipts, { type ReceiptsView } from "@/components/MonthlyReceipts";
 import ManualBelege from "@/components/ManualBelege";
+import { listManualReceipts } from "@/lib/manual-receipts";
 
 const BASE_PATH = "/dashboard/belege";
 
@@ -33,6 +34,13 @@ export default async function BelegePage({
   const month = parseMonth(monthParam);
   const view = parseView(viewParam);
 
+  let manual: Awaited<ReturnType<typeof listManualReceipts>> = [];
+  try {
+    manual = await listManualReceipts(year);
+  } catch {
+    // Manuelle Belege sind optional – Fehler hier blockiert die Seite nicht.
+  }
+
   return (
     <>
       <MonthlyReceipts
@@ -43,6 +51,7 @@ export default async function BelegePage({
         month={month}
         view={view}
         partyLabel="Lieferant"
+        manual={manual}
       />
       <ManualBelege year={year} month={month} view={view} />
     </>

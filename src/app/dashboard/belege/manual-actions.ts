@@ -4,6 +4,11 @@ import { revalidatePath } from "next/cache";
 import { getSession } from "@/lib/session";
 import { getUserByUsername } from "@/lib/users";
 import { createManualReceipt, setManualReceiptPaid } from "@/lib/manual-receipts";
+import {
+  addChecklistItem,
+  removeChecklistItem,
+  setChecklistDone,
+} from "@/lib/belege-checklist";
 
 const PATH = "/dashboard/belege";
 
@@ -81,5 +86,38 @@ export async function setBelegPaidAction(formData: FormData): Promise<void> {
   const paid = String(formData.get("paid")) === "1";
   if (!Number.isFinite(id) || id <= 0) return;
   await setManualReceiptPaid(id, paid);
+  revalidatePath(PATH);
+}
+
+/** Hakt einen Checklisten-Punkt für einen Monat ab bzw. wieder ab. */
+export async function toggleChecklistAction(
+  itemId: number,
+  year: number,
+  month: number,
+  done: boolean
+): Promise<void> {
+  const session = await getSession();
+  if (!session) return;
+  if (!Number.isFinite(itemId) || itemId <= 0) return;
+  await setChecklistDone(itemId, year, month, done);
+  revalidatePath(PATH);
+}
+
+/** Fügt einen wiederkehrenden Checklisten-Punkt hinzu. */
+export async function addChecklistItemAction(label: string): Promise<void> {
+  const session = await getSession();
+  if (!session) return;
+  const trimmed = label.trim();
+  if (!trimmed) return;
+  await addChecklistItem(trimmed);
+  revalidatePath(PATH);
+}
+
+/** Entfernt einen Checklisten-Punkt (Historie bleibt erhalten). */
+export async function removeChecklistItemAction(itemId: number): Promise<void> {
+  const session = await getSession();
+  if (!session) return;
+  if (!Number.isFinite(itemId) || itemId <= 0) return;
+  await removeChecklistItem(itemId);
   revalidatePath(PATH);
 }

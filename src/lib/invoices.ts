@@ -136,6 +136,66 @@ export function summarizeReceipts(receipts: Receipt[]): ReceiptsSummary {
   };
 }
 
+/** Minimal shape of a manual receipt needed to fold it into a receipts summary. */
+export interface ManualReceiptLike {
+  net: number;
+  vat: number;
+  gross: number;
+  vatRate: number | null;
+  isPaid: boolean;
+}
+
+/**
+ * Folds manually uploaded receipts into a HERO receipts summary so the Belege
+ * cards (Gesamtsumme/Steuerlast/Bezahlt/Offen) reflect both sources.
+ * Manual receipts have no partial payments: paid → fully paid, otherwise open.
+ */
+export function mergeManualIntoSummary(
+  summary: ReceiptsSummary,
+  manual: ManualReceiptLike[]
+): ReceiptsSummary {
+  let netTotal = summary.netTotal;
+  let grossTotal = summary.grossTotal;
+  let paidTotal = summary.paidTotal;
+  let openTotal = summary.openTotal;
+  let count = summary.count;
+
+  const byRate = new Map<number, { net: number; gross: number }>();
+  for (const r of summary.taxByRate) byRate.set(r.rate, { net: r.net, gross: r.gross });
+
+  for (const m of manual) {
+    count++;
+    netTotal += m.net;
+    grossTotal += m.gross;
+    if (m.isPaid) paidTotal += m.gross;
+    else openTotal += m.gross;
+    const rate = m.vatRate ?? 0;
+    const entry = byRate.get(rate) ?? { net: 0, gross: 0 };
+    entry.net += m.net;
+    entry.gross += m.gross;
+    byRate.set(rate, entry);
+  }
+
+  const taxByRate: TaxRateSummary[] = [...byRate.entries()]
+    .map(([rate, v]) => ({
+      rate,
+      net: round2(v.net),
+      gross: round2(v.gross),
+      tax: round2(v.gross - v.net),
+    }))
+    .sort((a, b) => b.rate - a.rate);
+
+  return {
+    count,
+    netTotal: round2(netTotal),
+    taxTotal: round2(grossTotal - netTotal),
+    grossTotal: round2(grossTotal),
+    paidTotal: round2(paidTotal),
+    openTotal: round2(openTotal),
+    taxByRate,
+  };
+}
+
 // --- Customer invoices ("Rechnungen") ---------------------------------------
 
 export interface InvoicesSummary {
