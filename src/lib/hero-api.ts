@@ -183,6 +183,14 @@ export async function getReceiptsInRange(from: string, to: string): Promise<Rece
 
 const INVOICE_DOCUMENT_TYPE_IDS = [1057585, 1057587, 1057595];
 
+// Gutschrift + Stornorechnung mindern den Umsatz (immer als Betragsabzug).
+const REVENUE_REDUCTION_TYPE_IDS = new Set([1057587, 1057595]);
+
+/** True if the document type reduces revenue (Gutschrift/Storno). */
+export function isRevenueReduction(documentTypeId: number | null): boolean {
+  return documentTypeId != null && REVENUE_REDUCTION_TYPE_IDS.has(documentTypeId);
+}
+
 export interface CustomerInvoice {
   id: string;
   number: string;
@@ -205,6 +213,10 @@ export interface CustomerInvoice {
   dueDate: string | null;
   /** Open balance (remaining amount), or null. */
   balance: number | null;
+  /** HERO document type id (Rechnung/Gutschrift/Storno). */
+  documentTypeId: number | null;
+  /** Referenced original document id (Storno/Gutschrift → Originalrechnung). */
+  selectedDocumentId: number | null;
 }
 
 interface RawCustomerDocument {
@@ -215,6 +227,8 @@ interface RawCustomerDocument {
   vat: number | null;
   status_code: number | null;
   status_name: string | null;
+  document_type_id: number | null;
+  selected_document_id: number | null;
   customer: { id: number; company_name: string | null; full_name: string | null } | null;
   project_match: { id: number; name: string } | null;
   file_upload: { id: number; filename: string; type: string | null; src: string | null } | null;
@@ -237,6 +251,8 @@ const CUSTOMER_INVOICES_QUERY = `
       vat
       status_code
       status_name
+      document_type_id
+      selected_document_id
       customer { id company_name full_name }
       project_match { id name }
       file_upload { id filename type src }
@@ -296,6 +312,8 @@ export async function getCustomerDocumentsByType(typeIds: number[]): Promise<Cus
         paidDate: d.customer_document_booking?.paid_date ?? null,
         dueDate: d.customer_document_booking?.due_date ?? null,
         balance: d.customer_document_booking?.balance ?? null,
+        documentTypeId: d.document_type_id ?? null,
+        selectedDocumentId: d.selected_document_id ?? null,
       });
     }
     if (docs.length < pageSize) break;

@@ -3,6 +3,7 @@ import {
   getCustomerInvoices,
   getOfferConfirmationByMonth,
   getBookAccounts,
+  isRevenueReduction,
 } from "./hero-api";
 import { listManualReceipts } from "./manual-receipts";
 
@@ -248,27 +249,65 @@ export async function getDashboardData(year: number): Promise<DashboardData> {
     // Manuelle Belege sind optional – Fehler hier blockiert das Dashboard nicht.
   }
 
-  // Rechnungen = Kundenrechnungen (customer_documents), netto + Umsatzsteuer
+  // Rechnungen = Kundenrechnungen (customer_documents), netto + Umsatzsteuer.
+  // Storno/Gutschrift werden dem Monat der Originalrechnung zugeordnet
+  // (selected_document_id), damit der Umsatz im Ursprungsmonat korrigiert wird.
+  const invByDocId = new Map<string, { monthIndex: number; year: number; reduce: boolean }>();
   for (const inv of invoices) {
     if (!inv.date) continue;
     const d = new Date(inv.date);
-    if (d.getUTCFullYear() !== year) continue;
-    const monthIndex = d.getUTCMonth();
-    monthly[monthIndex].income += inv.net;
-    monthly[monthIndex].incomeTax += inv.tax;
-    totalIncome += inv.net;
+    invByDocId.set(inv.id, {
+      monthIndex: d.getUTCMonth(),
+      year: d.getUTCFullYear(),
+      reduce: isRevenueReduction(inv.documentTypeId),
+    });
+  }
+
+  for (const inv of invoices) {
+    if (!inv.date) continue;
+    const reduce = isRevenueReduction(inv.documentTypeId);
+
+    let monthIndex: number;
+    let entryYear: number;
+    let sign: number;
+    if (reduce) {
+      const ref =
+        inv.selectedDocumentId != null
+          ? invByDocId.get(String(inv.selectedDocumentId))
+          : undefined;
+      const own = new Date(inv.date);
+      // Monat/Jahr der Originalrechnung (falls verknüpft), sonst eigenes Datum.
+      monthIndex = ref ? ref.monthIndex : own.getUTCMonth();
+      entryYear = ref ? ref.year : own.getUTCFullYear();
+      // Storno einer Gutschrift/eines Stornos macht die Minderung rückgängig (+),
+      // sonst mindert es den Umsatz (−).
+      sign = ref && ref.reduce ? 1 : -1;
+    } else {
+      const own = new Date(inv.date);
+      monthIndex = own.getUTCMonth();
+      entryYear = own.getUTCFullYear();
+      sign = 1;
+    }
+    if (entryYear !== year) continue;
+
+    const signedNet = reduce ? sign * Math.abs(inv.net) : inv.net;
+    const signedTax = reduce ? sign * Math.abs(inv.tax) : inv.tax;
+    monthly[monthIndex].income += signedNet;
+    monthly[monthIndex].incomeTax += signedTax;
+    totalIncome += signedNet;
     countIncome++;
     if (inv.isOpen === true) {
-      openInvoicesTotal += inv.gross;
+      const signedGross = reduce ? sign * Math.abs(inv.gross) : inv.gross;
+      openInvoicesTotal += signedGross;
       openInvoicesCount++;
       openInvoicesMonthly[monthIndex].count++;
-      openInvoicesMonthly[monthIndex].total += inv.gross;
+      openInvoicesMonthly[monthIndex].total += signedGross;
       openInvoicesDetails.push({
         month: monthIndex + 1,
         date: inv.date,
         number: inv.number,
         party: inv.customerName || "—",
-        amount: round2(inv.gross),
+        amount: round2(signedGross),
       });
     }
   }
