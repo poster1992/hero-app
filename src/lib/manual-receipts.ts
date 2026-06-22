@@ -1,0 +1,144 @@
+import { randomUUID } from "node:crypto";
+import { mkdir, writeFile, readFile } from "node:fs/promises";
+import path from "node:path";
+import type { RowDataPacket } from "mysql2";
+import { getPool } from "./db";
+
+/** Directory for uploaded receipt files (configurable via BELEGE_DIR). */
+const BELEGE_DIR = process.env.BELEGE_DIR || path.join(process.cwd(), "data", "belege");
+
+export interface ManualReceipt {
+  id: number;
+  date: string | null;
+  supplier: string | null;
+  description: string | null;
+  gross: number;
+  vatRate: number | null;
+  net: number;
+  vat: number;
+  accountNumber: string | null;
+  accountName: string | null;
+  fileName: string | null;
+  mime: string | null;
+  hasFile: boolean;
+  isPaid: boolean;
+  paidDate: string | null;
+}
+
+interface ReceiptRow extends RowDataPacket {
+  id: number;
+  beleg_date: string | null;
+  supplier: string | null;
+  description: string | null;
+  gross: string | number;
+  vat_rate: string | number | null;
+  account_number: string | null;
+  account_name: string | null;
+  file_name: string | null;
+  stored_name: string | null;
+  mime: string | null;
+  is_paid: number | null;
+  paid_date: string | null;
+}
+
+const num = (v: string | number | null): number => (v == null ? 0 : Number(v));
+
+function mapRow(r: ReceiptRow): ManualReceipt {
+  const gross = num(r.gross);
+  const rate = r.vat_rate == null ? null : num(r.vat_rate);
+  const vat = rate ? Math.round((gross - gross / (1 + rate / 100)) * 100) / 100 : 0;
+  return {
+    id: r.id,
+    date: r.beleg_date ? String(r.beleg_date).slice(0, 10) : null,
+    supplier: r.supplier,
+    description: r.description,
+    gross,
+    vatRate: rate,
+    net: Math.round((gross - vat) * 100) / 100,
+    vat,
+    accountNumber: r.account_number,
+    accountName: r.account_name,
+    fileName: r.file_name,
+    mime: r.mime,
+    hasFile: !!r.stored_name,
+    isPaid: r.is_paid === 1,
+    paidDate: r.paid_date ? String(r.paid_date).slice(0, 10) : null,
+  };
+}
+
+/** Manual receipts whose beleg_date falls in the given year (newest first). */
+export async function listManualReceipts(year: number): Promise<ManualReceipt[]> {
+  const [rows] = await getPool().query<ReceiptRow[]>(
+    `SELECT id, beleg_date, supplier, description, gross, vat_rate, account_number, account_name,
+            file_name, stored_name, mime, is_paid, paid_date
+     FROM manual_receipts
+     WHERE beleg_date IS NULL OR YEAR(beleg_date) = ?
+     ORDER BY beleg_date DESC, id DESC`,
+    [year]
+  );
+  return rows.map(mapRow);
+}
+
+/** Sets/clears the paid status of a manual receipt. */
+export async function setManualReceiptPaid(id: number, paid: boolean): Promise<void> {
+  await getPool().query(
+    "UPDATE manual_receipts SET is_paid = ?, paid_date = ? WHERE id = ?",
+    [paid ? 1 : 0, paid ? new Date().toISOString().slice(0, 10) : null, id]
+  );
+}
+
+export async function createManualReceipt(input: {
+  date: string | null;
+  supplier: string | null;
+  description: string | null;
+  gross: number;
+  vatRate: number | null;
+  accountNumber: string | null;
+  accountName: string | null;
+  file: { buffer: Buffer; originalName: string; mime: string } | null;
+  uploadedBy: number | null;
+}): Promise<void> {
+  let storedName: string | null = null;
+  if (input.file) {
+    await mkdir(BELEGE_DIR, { recursive: true });
+    const ext = path.extname(input.file.originalName) || "";
+    storedName = `${randomUUID()}${ext}`;
+    await writeFile(path.join(BELEGE_DIR, storedName), input.file.buffer);
+  }
+  await getPool().query(
+    `INSERT INTO manual_receipts
+       (beleg_date, supplier, description, gross, vat_rate, account_number, account_name, file_name, stored_name, mime, uploaded_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      input.date,
+      input.supplier,
+      input.description,
+      input.gross,
+      input.vatRate,
+      input.accountNumber,
+      input.accountName,
+      input.file?.originalName ?? null,
+      storedName,
+      input.file?.mime ?? null,
+      input.uploadedBy,
+    ]
+  );
+}
+
+/** Loads a receipt's stored file for download/inline view. */
+export async function getManualReceiptFile(
+  id: number
+): Promise<{ data: Buffer; mime: string; name: string } | null> {
+  const [rows] = await getPool().query<ReceiptRow[]>(
+    "SELECT file_name, stored_name, mime FROM manual_receipts WHERE id = ? LIMIT 1",
+    [id]
+  );
+  const row = rows[0];
+  if (!row?.stored_name) return null;
+  try {
+    const data = await readFile(path.join(BELEGE_DIR, row.stored_name));
+    return { data, mime: row.mime ?? "application/octet-stream", name: row.file_name ?? "beleg" };
+  } catch {
+    return null;
+  }
+}

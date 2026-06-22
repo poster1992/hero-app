@@ -3,6 +3,7 @@ import {
   getCustomerInvoices,
   getOfferConfirmationByMonth,
 } from "./hero-api";
+import { listManualReceipts } from "./manual-receipts";
 
 const MONTH_LABELS = [
   "Jan",
@@ -119,6 +120,29 @@ export async function getDashboardData(year: number): Promise<DashboardData> {
       arr[monthIndex] += p.valueExclVat;
       expenseByAccount.set(account, arr);
     }
+  }
+
+  // Manuelle Belege (lokal, unabhängig von HERO) – zählen als Belege (Aufwand):
+  // in die Übersicht (Belege/Saldo/Steuer/Monatschart) UND in die GuV (je Konto).
+  try {
+    const manual = await listManualReceipts(year);
+    for (const r of manual) {
+      if (!r.date) continue;
+      const d = new Date(r.date);
+      if (d.getUTCFullYear() !== year) continue;
+      const monthIndex = d.getUTCMonth();
+      monthly[monthIndex].output += r.net;
+      monthly[monthIndex].outputTax += r.vat;
+      totalOutput += r.net;
+      countOutput++;
+      const account =
+        [r.accountNumber, r.accountName].filter(Boolean).join(" ").trim() || NO_ACCOUNT_LABEL;
+      const arr = expenseByAccount.get(account) ?? new Array(12).fill(0);
+      arr[monthIndex] += r.net;
+      expenseByAccount.set(account, arr);
+    }
+  } catch {
+    // Manuelle Belege sind optional – Fehler hier blockiert das Dashboard nicht.
   }
 
   // Rechnungen = Kundenrechnungen (customer_documents), netto + Umsatzsteuer

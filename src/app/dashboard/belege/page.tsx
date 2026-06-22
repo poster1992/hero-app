@@ -1,4 +1,5 @@
 import MonthlyReceipts, { type ReceiptsView } from "@/components/MonthlyReceipts";
+import ManualBelege from "@/components/ManualBelege";
 
 const BASE_PATH = "/dashboard/belege";
 
@@ -33,14 +34,17 @@ export default async function BelegePage({
   const view = parseView(viewParam);
 
   return (
-    <MonthlyReceipts
-      title="Belege"
-      type="output"
-      basePath={BASE_PATH}
-      year={year}
-      month={month}
-      view={view}
-      partyLabel="Lieferant"
-    />
+    <>
+      <MonthlyReceipts
+        title="Belege"
+        type="output"
+        basePath={BASE_PATH}
+        year={year}
+        month={month}
+        view={view}
+        partyLabel="Lieferant"
+      />
+      <ManualBelege year={year} month={month} view={view} />
+    </>
   );
 }

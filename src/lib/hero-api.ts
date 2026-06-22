@@ -596,6 +596,37 @@ export async function getCalendarEventsForProject(
 }
 
 // ---------------------------------------------------------------------------
+// Book accounts (Kontenplan) — for assigning manual receipts to an account.
+// ---------------------------------------------------------------------------
+
+export interface BookAccount {
+  /** SKR account number (SKR03, fallback SKR04), as string. */
+  number: string;
+  name: string;
+  type: string | null;
+}
+
+/** The company's chart of accounts from HERO. */
+export async function getBookAccounts(): Promise<BookAccount[]> {
+  const data = await heroGraphQL<{
+    bookaccounts: {
+      name: string | null;
+      type: string | null;
+      skr03_number: number | null;
+      skr04_number: number | null;
+    }[];
+  }>(`query BookAccounts { bookaccounts(first: 3000) { name type skr03_number skr04_number } }`);
+  return (data.bookaccounts ?? [])
+    .map((a) => ({
+      number: String(a.skr03_number ?? a.skr04_number ?? ""),
+      name: a.name ?? "",
+      type: a.type ?? null,
+    }))
+    .filter((a) => a.number && a.name)
+    .sort((a, b) => a.number.localeCompare(b.number, "de", { numeric: true }));
+}
+
+// ---------------------------------------------------------------------------
 // Stock articles (Lager) — read-only stock from HERO (no write API available).
 // Stock materials are nested under supply_product_versions.
 // ---------------------------------------------------------------------------
