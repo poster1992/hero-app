@@ -62,6 +62,8 @@ export interface ReceiptRow {
   supplierId?: number | null;
   /** Offener Betrag (für SEPA-Zahlbetrag). */
   open?: number;
+  /** Lieferant zieht per Bankeinzug ein. */
+  directDebit?: boolean;
 }
 
 const currencyFormatter = new Intl.NumberFormat("de-DE", {
@@ -505,7 +507,14 @@ export default function ReceiptsTableClient({
               {showDue && (
                 <td className="px-3 py-2.5 whitespace-nowrap text-gray-600">{row.dueStr}</td>
               )}
-              <td className="px-3 py-2.5 break-words text-gray-700">{row.party}</td>
+              <td className="px-3 py-2.5 break-words text-gray-700">
+                {row.party}
+                {row.directDebit && (
+                  <span className="ml-1.5 whitespace-nowrap rounded-full bg-violet-500/15 px-2 py-0.5 text-[10px] font-medium text-violet-700 ring-1 ring-violet-500/30">
+                    Bankeinzug
+                  </span>
+                )}
+              </td>
               {showProject && (
                 <td className="px-3 py-2.5">
                   {row.projects.length === 0 ? (

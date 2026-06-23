@@ -2,7 +2,7 @@
 
 import { getSession } from "@/lib/session";
 import { getCompanyBankInfo } from "@/lib/hero-api";
-import { getSupplierIbanMap, upsertSupplierIban } from "@/lib/supplier-ibans";
+import { getSupplierIbanMap, upsertSupplierIban, setSupplierDirectDebit } from "@/lib/supplier-ibans";
 import { buildSepaCreditTransfer, type SepaPayment } from "@/lib/sepa";
 
 export interface SepaItem {
@@ -54,6 +54,15 @@ export async function saveSupplierIbanAction(
   return { success: "IBAN gespeichert." };
 }
 
+export async function setDirectDebitAction(formData: FormData): Promise<void> {
+  if (!(await getSession())) return;
+  const customerId = Number(formData.get("customerId"));
+  const name = String(formData.get("name") ?? "").trim() || null;
+  const directDebit = String(formData.get("directDebit")) === "1";
+  if (!Number.isFinite(customerId)) return;
+  await setSupplierDirectDebit({ customerId, supplierName: name, directDebit });
+}
+
 export async function buildMultilineSepaAction(items: SepaItem[]): Promise<SepaResult> {
   if (!(await getSession())) return { missing: [], error: "Kein Zugriff." };
   if (items.length === 0) return { missing: [], error: "Keine Belege ausgewählt." };
@@ -70,7 +79,9 @@ export async function buildMultilineSepaAction(items: SepaItem[]): Promise<SepaR
   for (const it of items) {
     if (it.amount <= 0) continue;
     const entry = it.customerId != null ? ibanMap.get(it.customerId) : undefined;
-    if (!entry) {
+    // Bankeinzug-Lieferanten werden per Lastschrift gezogen → nicht überweisen.
+    if (entry?.directDebit) continue;
+    if (!entry || !entry.iban) {
       missing.push({ customerId: it.customerId, name: it.name });
       continue;
     }

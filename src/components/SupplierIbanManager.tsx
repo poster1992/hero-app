@@ -1,13 +1,18 @@
 "use client";
 
 import { useActionState, useMemo, useState } from "react";
-import { saveSupplierIbanAction, type SaveIbanState } from "@/app/dashboard/belege/sepa-actions";
+import {
+  saveSupplierIbanAction,
+  setDirectDebitAction,
+  type SaveIbanState,
+} from "@/app/dashboard/belege/sepa-actions";
 
 export interface SupplierIbanItem {
   customerId: number;
   name: string;
   iban: string;
   bic: string;
+  directDebit: boolean;
 }
 
 function SupplierRow({ item }: { item: SupplierIbanItem }) {
@@ -15,13 +20,16 @@ function SupplierRow({ item }: { item: SupplierIbanItem }) {
     saveSupplierIbanAction,
     {}
   );
+  const [dd, setDd] = useState(item.directDebit);
   const has = item.iban.trim().length > 0;
   return (
     <tr className="border-b border-gray-200 last:border-0 hover:bg-gray-100">
       <td className="px-4 py-2 align-middle">
         <span
-          className={`inline-block h-2.5 w-2.5 rounded-full ${has ? "bg-emerald-500" : "bg-gray-300"}`}
-          title={has ? "IBAN hinterlegt" : "keine IBAN"}
+          className={`inline-block h-2.5 w-2.5 rounded-full ${
+            dd ? "bg-violet-500" : has ? "bg-emerald-500" : "bg-gray-300"
+          }`}
+          title={dd ? "Bankeinzug" : has ? "IBAN hinterlegt" : "keine IBAN"}
         />
       </td>
       <td className="px-4 py-2 align-middle text-gray-900">{item.name}</td>
@@ -51,6 +59,25 @@ function SupplierRow({ item }: { item: SupplierIbanItem }) {
           </button>
           {state.error && <span className="text-xs text-rose-600">{state.error}</span>}
           {state.success && <span className="text-xs text-emerald-700">✓</span>}
+        </form>
+      </td>
+      <td className="px-4 py-2 align-middle">
+        <form action={setDirectDebitAction}>
+          <input type="hidden" name="customerId" value={item.customerId} />
+          <input type="hidden" name="name" value={item.name} />
+          <label className="flex items-center gap-1.5 text-sm text-gray-700">
+            <input
+              type="checkbox"
+              name="directDebit"
+              value="1"
+              checked={dd}
+              onChange={(e) => {
+                setDd(e.target.checked);
+                e.currentTarget.form?.requestSubmit();
+              }}
+            />
+            Bankeinzug
+          </label>
         </form>
       </td>
     </tr>
@@ -102,12 +129,13 @@ export default function SupplierIbanManager({ suppliers }: { suppliers: Supplier
               <th className="px-4 py-3 font-semibold"> </th>
               <th className="px-4 py-3 font-semibold">Lieferant</th>
               <th className="px-4 py-3 font-semibold">IBAN / BIC</th>
+              <th className="px-4 py-3 font-semibold">Bankeinzug</th>
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={3} className="px-4 py-8 text-center text-sm text-gray-500">
+                <td colSpan={4} className="px-4 py-8 text-center text-sm text-gray-500">
                   Keine Lieferanten gefunden.
                 </td>
               </tr>

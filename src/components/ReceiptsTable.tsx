@@ -7,10 +7,11 @@ import {
 } from "@/lib/invoices";
 import type { Receipt } from "@/lib/hero-api";
 import { reviewStatusLabel, type ReceiptReview } from "@/lib/receipt-reviews";
+import { getSupplierIbanMap } from "@/lib/supplier-ibans";
 
 const dateFormatter = new Intl.DateTimeFormat("de-DE");
 
-export default function ReceiptsTable({
+export default async function ReceiptsTable({
   receipts,
   partyLabel = "Kunde",
   showProject = true,
@@ -27,6 +28,16 @@ export default function ReceiptsTable({
   canReview?: boolean;
   enableSepa?: boolean;
 }) {
+  // Bankeinzug-Kennzeichen je Lieferant (nur für Belege/SEPA-Ansicht laden).
+  let ibanMap: Awaited<ReturnType<typeof getSupplierIbanMap>> = new Map();
+  if (enableSepa) {
+    try {
+      ibanMap = await getSupplierIbanMap();
+    } catch {
+      // DB optional – Bankeinzug-Markierung entfällt dann nur.
+    }
+  }
+
   const rows: ReceiptRow[] = receipts.map((r) => {
     const status = getInvoiceStatus(r);
     const file = r.fileUpload;
@@ -63,6 +74,7 @@ export default function ReceiptsTable({
       gross: r.value,
       supplierId: r.customer?.id ?? null,
       open: r.openAmount,
+      directDebit: r.customer?.id != null ? (ibanMap.get(r.customer.id)?.directDebit ?? false) : false,
       statusLabel: status.label,
       statusTone: status.tone,
       file:

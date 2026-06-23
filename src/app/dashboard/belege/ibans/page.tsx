@@ -38,6 +38,7 @@ export default async function SupplierIbansPage() {
           name,
           iban: stored?.iban ?? "",
           bic: stored?.bic ?? "",
+          directDebit: stored?.directDebit ?? false,
         };
       })
       .sort((a, b) => a.name.localeCompare(b.name, "de"));
