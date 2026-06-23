@@ -46,6 +46,7 @@ export async function heroGraphQL<T>(
 export type ReceiptType = "output" | "income";
 
 export interface ReceiptCustomer {
+  id: number | null;
   companyName: string | null;
   firstName: string | null;
   lastName: string | null;
@@ -122,6 +123,7 @@ const RECEIPTS_QUERY = `
           openAmount
           statusCode
           customer {
+            id
             companyName
             firstName
             lastName
@@ -172,6 +174,24 @@ export async function getReceiptsInRange(from: string, to: string): Promise<Rece
   }
 
   return receipts;
+}
+
+export interface CompanyBank {
+  name: string | null;
+  iban: string | null;
+  bic: string | null;
+}
+
+/** The company's own bank details (debtor account for SEPA exports). */
+export async function getCompanyBankInfo(): Promise<CompanyBank> {
+  const data = await heroGraphQL<{
+    company: { name: string | null; iban: string | null; bic: string | null } | null;
+  }>(`query { company { name iban bic } }`);
+  return {
+    name: data.company?.name ?? null,
+    iban: data.company?.iban ?? null,
+    bic: data.company?.bic ?? null,
+  };
 }
 
 // ---------------------------------------------------------------------------

@@ -17,6 +17,7 @@ export default function ReceiptsTable({
   reviews,
   reviewers = [],
   canReview = false,
+  enableSepa = false,
 }: {
   receipts: Receipt[];
   partyLabel?: string;
@@ -24,6 +25,7 @@ export default function ReceiptsTable({
   reviews?: Map<string, ReceiptReview>;
   reviewers?: { id: number; name: string }[];
   canReview?: boolean;
+  enableSepa?: boolean;
 }) {
   const rows: ReceiptRow[] = receipts.map((r) => {
     const status = getInvoiceStatus(r);
@@ -59,6 +61,8 @@ export default function ReceiptsTable({
       net: r.netValue,
       tax: r.value - r.netValue,
       gross: r.value,
+      supplierId: r.customer?.id ?? null,
+      open: r.openAmount,
       statusLabel: status.label,
       statusTone: status.tone,
       file:
@@ -81,6 +85,7 @@ export default function ReceiptsTable({
       showProject={showProject}
       reviewers={reviewers}
       canReview={canReview}
+      enableSepa={enableSepa}
     />
   );
 }

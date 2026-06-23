@@ -1,11 +1,17 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useActionState, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import DocumentPreview from "@/components/DocumentPreview";
 import type { InvoiceStatusTone } from "@/lib/invoices";
 import { assignReviewAction, decideReviewAction } from "@/app/dashboard/belege/review-actions";
+import {
+  buildMultilineSepaAction,
+  saveSupplierIbanAction,
+  type SepaItem,
+  type SaveIbanState,
+} from "@/app/dashboard/belege/sepa-actions";
 
 export interface ReviewHistoryItem {
   actionLabel: string;
@@ -52,6 +58,10 @@ export interface ReceiptRow {
   statusTone: InvoiceStatusTone;
   file: FileRef | null;
   review?: ReviewInfo | null;
+  /** Lieferanten-Kundennummer (für SEPA-IBAN-Mapping). */
+  supplierId?: number | null;
+  /** Offener Betrag (für SEPA-Zahlbetrag). */
+  open?: number;
 }
 
 const currencyFormatter = new Intl.NumberFormat("de-DE", {
@@ -105,6 +115,7 @@ export default function ReceiptsTableClient({
   reviewers = [],
   canReview = false,
   exportName = "hero-belege",
+  enableSepa = false,
 }: {
   rows: ReceiptRow[];
   partyLabel?: string;
@@ -113,6 +124,7 @@ export default function ReceiptsTableClient({
   reviewers?: { id: number; name: string }[];
   canReview?: boolean;
   exportName?: string;
+  enableSepa?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -172,6 +184,70 @@ export default function ReceiptsTableClient({
       ),
     [filtered]
   );
+
+  // --- SEPA / Multiline-Export ---
+  const sepaAmount = (r: ReceiptRow) => (r.open && r.open > 0 ? r.open : r.gross);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [sepaBusy, setSepaBusy] = useState(false);
+  const [sepaError, setSepaError] = useState<string | null>(null);
+  const [sepaMissing, setSepaMissing] = useState<
+    { customerId: number | null; name: string }[] | null
+  >(null);
+
+  const selectedFiltered = filtered.filter((r) => selected.has(r.id));
+  const allFilteredSelected = filtered.length > 0 && filtered.every((r) => selected.has(r.id));
+  const toggleRow = (id: string) =>
+    setSelected((prev) => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  const toggleAll = () =>
+    setSelected((prev) => {
+      const n = new Set(prev);
+      if (allFilteredSelected) filtered.forEach((r) => n.delete(r.id));
+      else filtered.forEach((r) => n.add(r.id));
+      return n;
+    });
+
+  const downloadXml = (xml: string, filename: string) => {
+    const blob = new Blob([xml], { type: "application/xml;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const runSepa = async () => {
+    const items: SepaItem[] = selectedFiltered.map((r) => ({
+      customerId: r.supplierId ?? null,
+      name: r.party,
+      amount: sepaAmount(r),
+      reference: r.number,
+    }));
+    setSepaBusy(true);
+    setSepaError(null);
+    try {
+      const res = await buildMultilineSepaAction(items);
+      if (res.error) {
+        setSepaError(res.error);
+        return;
+      }
+      if (res.missing.length > 0) {
+        setSepaMissing(res.missing);
+        return;
+      }
+      if (res.xml && res.filename) {
+        downloadXml(res.xml, res.filename);
+        setSepaMissing(null);
+      }
+    } finally {
+      setSepaBusy(false);
+    }
+  };
 
   const [zipping, setZipping] = useState<string | null>(null);
   const exportPdfs = async () => {
@@ -258,11 +334,12 @@ export default function ReceiptsTableClient({
     URL.revokeObjectURL(url);
   };
 
-  const leadingCols = 3 + (showDue ? 1 : 0) + (showProject ? 1 : 0);
+  const leadingCols = (enableSepa ? 1 : 0) + 3 + (showDue ? 1 : 0) + (showProject ? 1 : 0);
 
   // Fixed column widths so every view fills the container at the same width,
   // regardless of how long the project/party text is (no horizontal overflow).
   const colWidths: string[] = [
+    ...(enableSepa ? ["4%"] : []), // Auswahl
     "9%", // Nr
     "8%", // Datum
     ...(showDue ? ["8%"] : []), // Fällig
@@ -285,6 +362,17 @@ export default function ReceiptsTableClient({
       </colgroup>
       <thead>
         <tr className="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-500">
+          {enableSepa && (
+            <th className="px-3 py-3 text-center font-medium">
+              <input
+                type="checkbox"
+                checked={allFilteredSelected}
+                onChange={toggleAll}
+                title="Alle auswählen"
+                aria-label="Alle auswählen"
+              />
+            </th>
+          )}
           <th className="px-3 py-3 font-medium">Nr.</th>
           <th className="px-3 py-3 font-medium">Datum</th>
           {showDue && <th className="px-3 py-3 font-medium">Fällig</th>}
@@ -298,6 +386,7 @@ export default function ReceiptsTableClient({
           {canReview && <th className="px-3 py-3 font-medium">Prüfung</th>}
         </tr>
         <tr className="border-b border-gray-200">
+          {enableSepa && <th className="px-3 pb-3" />}
           <th className="px-3 pb-3">
             <input
               className={inputClass}
@@ -401,6 +490,16 @@ export default function ReceiptsTableClient({
               key={row.id}
               className="border-b border-gray-200 last:border-0 hover:bg-gray-100"
             >
+              {enableSepa && (
+                <td className="px-3 py-2.5 text-center">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(row.id)}
+                    onChange={() => toggleRow(row.id)}
+                    aria-label="Beleg auswählen"
+                  />
+                </td>
+              )}
               <td className="px-3 py-2.5 font-medium break-words text-gray-800">{row.number}</td>
               <td className="px-3 py-2.5 whitespace-nowrap text-gray-600">{row.dateStr}</td>
               {showDue && (
@@ -515,7 +614,20 @@ export default function ReceiptsTableClient({
 
   return (
     <>
-      <div className="mb-3 flex justify-end gap-2">
+      <div className="mb-3 flex flex-wrap items-center justify-end gap-2">
+        {enableSepa && sepaError && (
+          <span className="mr-auto text-sm text-rose-600">{sepaError}</span>
+        )}
+        {enableSepa && (
+          <button
+            type="button"
+            onClick={runSepa}
+            disabled={sepaBusy || selectedFiltered.length === 0}
+            className="rounded-md bg-brand-red px-3 py-1.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+          >
+            {sepaBusy ? "Erzeuge SEPA …" : `Multiline SEPA-Export (${selectedFiltered.length})`}
+          </button>
+        )}
         <button
           type="button"
           onClick={exportCsv}
@@ -547,7 +659,115 @@ export default function ReceiptsTableClient({
       {canReview && historyRow && (
         <HistoryModal row={historyRow} onClose={() => setHistoryRow(null)} />
       )}
+      {sepaMissing && (
+        <MissingIbanModal
+          missing={sepaMissing}
+          onClose={() => setSepaMissing(null)}
+          onContinue={() => {
+            setSepaMissing(null);
+            void runSepa();
+          }}
+        />
+      )}
     </>
+  );
+}
+
+/** Dialog zum Nachpflegen fehlender Lieferanten-IBANs vor dem SEPA-Export. */
+function MissingIbanModal({
+  missing,
+  onClose,
+  onContinue,
+}: {
+  missing: { customerId: number | null; name: string }[];
+  onClose: () => void;
+  onContinue: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-4 sm:items-center"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-xl rounded-xl border border-gray-300 bg-white p-6 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <h3 className="text-lg font-semibold text-gray-900">Fehlende IBANs</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-gray-400 transition-colors hover:text-gray-700"
+            aria-label="Schließen"
+          >
+            ✕
+          </button>
+        </div>
+        <p className="mb-4 text-sm text-gray-600">
+          Für folgende Lieferanten ist keine IBAN hinterlegt. Bitte einmalig eintragen – danach „Export
+          fortsetzen".
+        </p>
+        <div className="space-y-3">
+          {missing.map((m) => (
+            <SupplierIbanRow key={`${m.customerId}-${m.name}`} customerId={m.customerId} name={m.name} />
+          ))}
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+          >
+            Abbrechen
+          </button>
+          <button
+            type="button"
+            onClick={onContinue}
+            className="rounded-md bg-brand-red px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+          >
+            Export fortsetzen
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SupplierIbanRow({ customerId, name }: { customerId: number | null; name: string }) {
+  const [state, action, pending] = useActionState<SaveIbanState, FormData>(saveSupplierIbanAction, {});
+  if (customerId == null) {
+    return (
+      <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+        {name}: keine Lieferanten-ID – nicht exportierbar.
+      </div>
+    );
+  }
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2 border-b border-gray-100 pb-3">
+      <input type="hidden" name="customerId" value={customerId} />
+      <input type="hidden" name="name" value={name} />
+      <span className="w-full text-sm font-medium text-gray-800 sm:w-40 sm:truncate">{name}</span>
+      <input
+        name="iban"
+        required
+        placeholder="IBAN"
+        className="min-w-[12rem] flex-1 rounded-md border border-gray-300 px-2 py-1 text-sm text-gray-900 outline-none focus:border-brand-red/60"
+      />
+      <input
+        name="bic"
+        placeholder="BIC (optional)"
+        className="w-32 rounded-md border border-gray-300 px-2 py-1 text-sm text-gray-900 outline-none focus:border-brand-red/60"
+      />
+      <button
+        type="submit"
+        disabled={pending}
+        className="rounded-md border border-gray-300 px-3 py-1 text-sm font-medium text-gray-700 transition-colors hover:border-brand-red/50 disabled:opacity-50"
+      >
+        {pending ? "…" : "Speichern"}
+      </button>
+      {state.error && <span className="text-xs text-rose-600">{state.error}</span>}
+      {state.success && <span className="text-xs text-emerald-700">✓</span>}
+    </form>
   );
 }
 

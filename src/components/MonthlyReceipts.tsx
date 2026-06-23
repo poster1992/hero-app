@@ -174,6 +174,7 @@ export default async function MonthlyReceipts({
               reviews={reviews}
               reviewers={reviewers}
               canReview={canReview}
+              enableSepa={type === "output"}
             />
           )}
         </div>
