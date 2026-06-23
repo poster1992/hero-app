@@ -14,6 +14,47 @@ export interface AskResult {
   error?: string;
 }
 
+// Modell-Reihenfolge mit Fallback bei Überlast (Opus → Sonnet → Haiku).
+const MODELS: { model: string; thinking: boolean }[] = [
+  { model: "claude-opus-4-8", thinking: true },
+  { model: "claude-sonnet-4-6", thinking: true },
+  { model: "claude-haiku-4-5", thinking: false },
+];
+
+function isTransient(e: unknown): boolean {
+  return (
+    e instanceof Anthropic.APIError &&
+    (e.status === 529 || e.status === 429 || (e.status ?? 0) >= 500)
+  );
+}
+
+/** Erzeugt eine Antwort und weicht bei Überlast auf das nächste Modell aus. */
+async function createWithFallback(
+  client: Anthropic,
+  base: Omit<Anthropic.MessageCreateParamsNonStreaming, "model" | "thinking">,
+  startIdx: number
+): Promise<{ res: Anthropic.Message; idx: number }> {
+  let lastErr: unknown;
+  for (let i = startIdx; i < MODELS.length; i++) {
+    const cfg = MODELS[i];
+    try {
+      const res = await client.messages.create({
+        ...base,
+        model: cfg.model,
+        ...(cfg.thinking ? { thinking: { type: "adaptive" } } : {}),
+      });
+      return { res, idx: i };
+    } catch (e) {
+      if (isTransient(e)) {
+        lastErr = e;
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw lastErr;
+}
+
 function systemPrompt(): string {
   return [
     "Du bist der Daten-Assistent von FLOORTEC – einem Bodenleger-/Handwerksbetrieb.",
@@ -37,21 +78,20 @@ export async function askData(history: ChatMsg[]): Promise<AskResult> {
     };
   }
 
-  const client = new Anthropic();
+  const client = new Anthropic({ maxRetries: 2, timeout: 120_000 });
   const messages: Anthropic.MessageParam[] = history
     .filter((m) => m.content.trim())
     .map((m) => ({ role: m.role, content: m.content }));
 
+  let modelIdx = 0;
   try {
     for (let step = 0; step < 6; step++) {
-      const res = await client.messages.create({
-        model: "claude-opus-4-8",
-        max_tokens: 4096,
-        system: systemPrompt(),
-        thinking: { type: "adaptive" },
-        tools: TOOLS,
-        messages,
-      });
+      const { res, idx } = await createWithFallback(
+        client,
+        { max_tokens: 4096, system: systemPrompt(), tools: TOOLS, messages },
+        modelIdx
+      );
+      modelIdx = idx; // bei Überlast gewähltes Ersatzmodell für den Rest des Gesprächs behalten
 
       if (res.stop_reason === "tool_use") {
         // Vollständigen Inhalt (inkl. Thinking-Blöcke) zurückgeben – für adaptives Denken nötig.
@@ -85,6 +125,20 @@ export async function askData(history: ChatMsg[]): Promise<AskResult> {
     }
     return { answer: "", error: "Zu viele Schritte – bitte die Frage konkretisieren." };
   } catch (e) {
+    if (e instanceof Anthropic.APIError) {
+      if (e.status === 529 || e.status === 429) {
+        return {
+          answer: "",
+          error: "Der KI-Dienst ist gerade überlastet. Bitte in ein paar Sekunden noch einmal fragen.",
+        };
+      }
+      if (e.status === 401) {
+        return { answer: "", error: "KI-Zugang ungültig: API-Key prüfen (ANTHROPIC_API_KEY)." };
+      }
+      if (e.status && e.status >= 500) {
+        return { answer: "", error: "KI-Dienst vorübergehend nicht erreichbar. Bitte erneut versuchen." };
+      }
+    }
     return { answer: "", error: e instanceof Error ? e.message : "Fehler bei der KI-Anfrage." };
   }
 }
