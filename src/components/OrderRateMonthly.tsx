@@ -28,8 +28,8 @@ export default function OrderRateMonthly({
       <h2 className="mb-4 text-lg font-medium text-gray-900">Auftragsquote pro Monat {year}</h2>
 
       {/* Tabelle: Monate waagerecht, Kennzahlen senkrecht */}
-      <div>
-        <table className="w-full table-fixed border-collapse text-xs">
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[760px] table-fixed border-collapse text-xs">
           <thead className="bg-gray-50">
             <tr className="text-xs uppercase tracking-wide text-gray-500">
               <th className="sticky left-0 bg-gray-50 px-2 py-2 text-left font-semibold">Kennzahl</th>

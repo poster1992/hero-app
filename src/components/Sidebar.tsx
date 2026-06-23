@@ -192,6 +192,7 @@ const STORAGE_KEY = "sidebar-collapsed";
 export default function Sidebar({ allowedModules }: { allowedModules: string[] }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({});
   const navItems = NAV_ITEMS.filter((item) => allowedModules.includes(item.module));
 
@@ -208,38 +209,75 @@ export default function Sidebar({ allowedModules }: { allowedModules: string[] }
   };
 
   return (
-    <aside
-      className={`relative flex w-full shrink-0 flex-col border-b border-neutral-800 bg-black text-gray-200 transition-[width] duration-200 md:sticky md:top-0 md:h-screen md:border-b-0 md:border-r md:border-neutral-800 ${
-        collapsed ? "md:w-16" : "md:w-72"
-      }`}
-    >
-      {/* Kopfzeile: Logo + Ein-/Ausklappen */}
-      <div
-        className={`relative flex items-center px-3 py-5 ${
-          collapsed ? "md:flex-col md:justify-center md:gap-2" : "justify-center"
-        }`}
-      >
-        <Link href="/start" title="Zur Modulübersicht" className="flex items-center">
-          {collapsed ? (
-            <span className="hidden h-8 w-8 items-center justify-center rounded-md bg-brand-red text-sm font-bold text-white md:flex">
-              F
-            </span>
-          ) : (
-            <Logo />
-          )}
-        </Link>
+    <>
+      {/* Mobile Topbar mit Hamburger (nur < md) */}
+      <div className="flex items-center gap-3 border-b border-neutral-800 bg-black px-4 py-3 md:hidden">
         <button
           type="button"
-          onClick={toggle}
-          title={collapsed ? "Menü ausklappen" : "Menü einklappen"}
-          aria-label={collapsed ? "Menü ausklappen" : "Menü einklappen"}
-          className={`hidden h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-white/10 hover:text-white md:flex ${
-            collapsed ? "" : "absolute right-3 top-1/2 -translate-y-1/2"
+          onClick={() => setMobileOpen(true)}
+          aria-label="Menü öffnen"
+          className="flex h-9 w-9 items-center justify-center rounded-md text-gray-200 transition-colors hover:bg-white/10"
+        >
+          <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" aria-hidden>
+            <path d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+        </button>
+        <Link href="/start" title="Zur Modulübersicht" className="flex items-center">
+          <Logo />
+        </Link>
+      </div>
+
+      {/* Backdrop (nur mobil, wenn Drawer offen) */}
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/60 md:hidden"
+          onClick={() => setMobileOpen(false)}
+          aria-hidden
+        />
+      )}
+
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] shrink-0 transform flex-col overflow-y-auto bg-black text-gray-200 transition-transform duration-200 md:sticky md:top-0 md:z-auto md:h-screen md:max-w-none md:translate-x-0 md:border-r md:border-neutral-800 md:transition-[width] ${
+          mobileOpen ? "translate-x-0" : "-translate-x-full"
+        } ${collapsed ? "md:w-16" : "md:w-72"}`}
+      >
+        {/* Kopfzeile: Logo + Ein-/Ausklappen */}
+        <div
+          className={`relative flex items-center px-3 py-5 ${
+            collapsed ? "md:flex-col md:justify-center md:gap-2" : "justify-center"
           }`}
         >
-          {collapsed ? "›" : "‹"}
-        </button>
-      </div>
+          <Link href="/start" title="Zur Modulübersicht" className="flex items-center">
+            {collapsed ? (
+              <span className="hidden h-8 w-8 items-center justify-center rounded-md bg-brand-red text-sm font-bold text-white md:flex">
+                F
+              </span>
+            ) : (
+              <Logo />
+            )}
+          </Link>
+          {/* Schließen (nur mobil) */}
+          <button
+            type="button"
+            onClick={() => setMobileOpen(false)}
+            aria-label="Menü schließen"
+            className="absolute right-3 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-white/10 hover:text-white md:hidden"
+          >
+            ✕
+          </button>
+          {/* Ein-/Ausklappen (nur ab md) */}
+          <button
+            type="button"
+            onClick={toggle}
+            title={collapsed ? "Menü ausklappen" : "Menü einklappen"}
+            aria-label={collapsed ? "Menü ausklappen" : "Menü einklappen"}
+            className={`hidden h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-white/10 hover:text-white md:flex ${
+              collapsed ? "" : "absolute right-3 top-1/2 -translate-y-1/2"
+            }`}
+          >
+            {collapsed ? "›" : "‹"}
+          </button>
+        </div>
 
       <nav className="flex flex-1 flex-col gap-1 px-3 py-2">
         {navItems.map((item) => {
@@ -289,7 +327,12 @@ export default function Sidebar({ allowedModules }: { allowedModules: string[] }
                   )}
                 </button>
               ) : (
-                <Link href={item.href} title={item.label} className={rowClass}>
+                <Link
+                  href={item.href}
+                  title={item.label}
+                  onClick={() => setMobileOpen(false)}
+                  className={rowClass}
+                >
                   <NavIcon name={item.icon} />
                   <span className={collapsed ? "md:hidden" : ""}>{item.label}</span>
                 </Link>
@@ -303,6 +346,7 @@ export default function Sidebar({ allowedModules }: { allowedModules: string[] }
                       <Link
                         key={child.href}
                         href={child.href}
+                        onClick={() => setMobileOpen(false)}
                         className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm transition-colors ${
                           childActive
                             ? "bg-white/10 font-medium text-white"
@@ -348,6 +392,7 @@ export default function Sidebar({ allowedModules }: { allowedModules: string[] }
           </button>
         </form>
       </div>
-    </aside>
+      </aside>
+    </>
   );
 }

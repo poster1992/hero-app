@@ -126,9 +126,9 @@ export default async function DashboardPage({
 
   return (
     <div className="mx-auto flex w-full max-w-[1600px] flex-1 flex-col gap-6 px-4 py-8">
-      <header className="relative flex items-center justify-center gap-4">
+      <header className="flex flex-col items-center gap-3 sm:relative sm:flex-row sm:justify-center sm:gap-4">
         <DashboardTitle text="Unternehmensübersicht" />
-        <div className="absolute right-0">
+        <div className="sm:absolute sm:right-0">
           <YearSelector year={year} basePath="/dashboard/cockpit" />
         </div>
       </header>

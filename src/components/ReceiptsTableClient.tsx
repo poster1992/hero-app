@@ -277,7 +277,7 @@ export default function ReceiptsTableClient({
   ];
 
   const table = (
-    <table className="w-full table-fixed text-left text-sm">
+    <table className="w-full min-w-[820px] table-fixed text-left text-sm">
       <colgroup>
         {colWidths.map((w, i) => (
           <col key={i} style={{ width: w }} />
@@ -533,7 +533,7 @@ export default function ReceiptsTableClient({
           {zipping ? `PDFs … ${zipping}` : `⬇ Export PDFs (${filtered.filter((r) => r.file).length})`}
         </button>
       </div>
-      {table}
+      <div className="overflow-x-auto">{table}</div>
       {canReview && activeRow && (
         <ReviewModal
           row={activeRow}

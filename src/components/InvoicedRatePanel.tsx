@@ -37,7 +37,7 @@ export default function InvoicedRatePanel({
         />
       </div>
 
-      <div className="mt-4 grid grid-cols-3 gap-3 text-sm">
+      <div className="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
         <div>
           <div className="text-xs text-gray-500">Auftragsbestätigungen</div>
           <div className="font-semibold tabular-nums text-gray-900">

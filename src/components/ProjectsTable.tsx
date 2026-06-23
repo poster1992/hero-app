@@ -267,8 +267,8 @@ export default function ProjectsTable({ projects }: { projects: ProjectRow[] }) 
         {filtered.length === 0 ? (
           <p className="px-5 py-8 text-center text-sm text-gray-500">Keine Projekte gefunden.</p>
         ) : (
-          <div className="max-h-[calc(100vh-16rem)] overflow-y-auto overflow-x-hidden">
-          <table className="w-full table-fixed text-left text-xs">
+          <div className="max-h-[calc(100vh-16rem)] overflow-auto">
+          <table className="w-full min-w-[1100px] table-fixed text-left text-xs">
             <colgroup>
               <col style={{ width: "3%" }} />
               <col style={{ width: "11%" }} />

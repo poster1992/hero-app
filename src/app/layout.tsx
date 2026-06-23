@@ -21,7 +21,8 @@ export const metadata: Metadata = {
 // Bildschirmbreite herunter (feste Layout-Breite). Desktop-Browser ignorieren
 // dieses Meta und nutzen ihre echte Fensterbreite. Pinch-Zoom bleibt erlaubt.
 export const viewport: Viewport = {
-  width: 1280,
+  width: "device-width",
+  initialScale: 1,
   viewportFit: "cover",
 };
 

@@ -107,7 +107,8 @@ export default function StockOutPanel({ report }: { report: StockOutReport }) {
                 Keine Ausbuchungen in diesem Zeitraum.
               </p>
             ) : (
-              <table className="w-full text-sm">
+              <div className="overflow-x-auto">
+              <table className="w-full min-w-[560px] text-sm">
                 <thead>
                   <tr className="border-b border-gray-300 text-xs uppercase tracking-wide text-gray-500">
                     <th className="py-2 pr-4 text-left font-medium">Datum</th>
@@ -153,6 +154,7 @@ export default function StockOutPanel({ report }: { report: StockOutReport }) {
                   </tr>
                 </tfoot>
               </table>
+              </div>
             )}
           </div>
         </div>
