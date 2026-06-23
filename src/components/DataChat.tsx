@@ -58,6 +58,14 @@ const CAPABILITIES: Capability[] = [
     title: "Lager",
     examples: ["Wie hoch ist der Lagerausgang diese Woche?"],
   },
+  {
+    icon: "🧠",
+    title: "Gedächtnis",
+    examples: [
+      "Merke dir: Mit „Abschlag\" meine ich die Abschlagsrechnung.",
+      "Was hast du dir gemerkt?",
+    ],
+  },
 ];
 
 export default function DataChat() {

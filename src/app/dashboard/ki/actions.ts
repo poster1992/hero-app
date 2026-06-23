@@ -3,6 +3,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { getSession } from "@/lib/session";
 import { TOOLS, runTool } from "@/lib/ai-tools";
+import { listMemories, type MemoryItem } from "@/lib/ai-memory";
 
 export interface ChatMsg {
   role: "user" | "assistant";
@@ -14,11 +15,11 @@ export interface AskResult {
   error?: string;
 }
 
-// Modell-Reihenfolge mit Fallback bei Überlast (Opus → Sonnet → Haiku).
+// Standardmodell Haiku (günstig); Fallback bei Überlast: Haiku → Sonnet → Opus.
 const MODELS: { model: string; thinking: boolean }[] = [
-  { model: "claude-opus-4-8", thinking: true },
-  { model: "claude-sonnet-4-6", thinking: true },
   { model: "claude-haiku-4-5", thinking: false },
+  { model: "claude-sonnet-4-6", thinking: true },
+  { model: "claude-opus-4-8", thinking: true },
 ];
 
 function isTransient(e: unknown): boolean {
@@ -55,8 +56,8 @@ async function createWithFallback(
   throw lastErr;
 }
 
-function systemPrompt(): string {
-  return [
+function systemPrompt(memories: MemoryItem[]): string {
+  const base = [
     "Du bist der Daten-Assistent von FLOORTEC – einem Bodenleger-/Handwerksbetrieb.",
     "Beantworte Fragen zu Umsatz, Kosten, Gewinn, offenen Posten, Angeboten/Aufträgen,",
     "Mitarbeiterleistung und Lager ausschließlich auf Basis der bereitgestellten Werkzeuge.",
@@ -64,7 +65,14 @@ function systemPrompt(): string {
     `Das aktuelle Jahr ist ${new Date().getUTCFullYear()}; nutze es, wenn kein Jahr genannt wird.`,
     "Antworte auf Deutsch, kurz und konkret. Nenne Geldbeträge mit € und sage dazu, ob netto oder brutto.",
     "Wenn Daten fehlen oder ein Werkzeug einen Fehler liefert, sage das offen statt zu raten.",
+    "Gedächtnis: Wenn der Nutzer dir etwas dauerhaft beibringt (Begriff, Definition, Regel, Vorliebe)",
+    "oder dich bittet, dir etwas zu merken, speichere es mit dem Werkzeug 'notiz_speichern'.",
+    "Beachte die unten gemerkten Notizen bei deinen Antworten. Veraltete/falsche Notizen kannst du mit 'notiz_loeschen' entfernen.",
   ].join(" ");
+
+  if (memories.length === 0) return base;
+  const notes = memories.map((m) => `- [#${m.id}] ${m.content}`).join("\n");
+  return `${base}\n\nGemerktes Wissen (vom Nutzer beigebracht – beachten):\n${notes}`;
 }
 
 /** Runs one assistant turn with tool use over the existing data layer. */
@@ -83,12 +91,20 @@ export async function askData(history: ChatMsg[]): Promise<AskResult> {
     .filter((m) => m.content.trim())
     .map((m) => ({ role: m.role, content: m.content }));
 
+  let memories: MemoryItem[] = [];
+  try {
+    memories = await listMemories();
+  } catch {
+    // Gedächtnis optional – ohne es funktioniert der Chat trotzdem.
+  }
+  const system = systemPrompt(memories);
+
   let modelIdx = 0;
   try {
     for (let step = 0; step < 6; step++) {
       const { res, idx } = await createWithFallback(
         client,
-        { max_tokens: 4096, system: systemPrompt(), tools: TOOLS, messages },
+        { max_tokens: 4096, system, tools: TOOLS, messages },
         modelIdx
       );
       modelIdx = idx; // bei Überlast gewähltes Ersatzmodell für den Rest des Gesprächs behalten

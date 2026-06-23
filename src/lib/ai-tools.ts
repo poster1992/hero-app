@@ -4,6 +4,7 @@ import { getEmployeeProfit } from "./employee-profit";
 import { getOfferConfirmationVolume } from "./hero-api";
 import { getStockOutboundReport } from "./materials";
 import { getProjectProfits } from "./project-profit";
+import { addMemory, listMemories, deleteMemory } from "./ai-memory";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const currentYear = () => new Date().getUTCFullYear();
@@ -48,6 +49,33 @@ export const TOOLS: Anthropic.Tool[] = [
     description:
       "Liefert den Warenwert (EK) des Lagerausgangs für heute, diese Woche und diesen Monat.",
     input_schema: { type: "object", properties: {} },
+  },
+  {
+    name: "notiz_speichern",
+    description:
+      "Speichert eine dauerhafte Notiz ins Gedächtnis (über Sitzungen hinweg). Nutze dies, wenn der Nutzer dir etwas beibringt oder bittet, dir etwas zu merken: Begriffe/Definitionen, Regeln, Vorlieben oder wiederkehrende Fakten. Formuliere die Notiz knapp und eigenständig verständlich.",
+    input_schema: {
+      type: "object",
+      properties: {
+        inhalt: { type: "string", description: "Die zu merkende Information, knapp formuliert." },
+      },
+      required: ["inhalt"],
+    },
+  },
+  {
+    name: "notizen_auflisten",
+    description: "Listet alle gespeicherten Gedächtnis-Notizen (mit IDs) auf.",
+    input_schema: { type: "object", properties: {} },
+  },
+  {
+    name: "notiz_loeschen",
+    description:
+      "Löscht eine Gedächtnis-Notiz anhand ihrer ID (z. B. wenn sie veraltet oder falsch ist).",
+    input_schema: {
+      type: "object",
+      properties: { id: { type: "integer", description: "ID der zu löschenden Notiz." } },
+      required: ["id"],
+    },
   },
   {
     name: "projekte_ohne_abschlagsrechnung",
@@ -155,6 +183,21 @@ export async function runTool(name: string, input: Record<string, unknown>): Pro
           dieser_monat: s.totals.monthly,
         },
       };
+    }
+    case "notiz_speichern": {
+      const inhalt = typeof input?.inhalt === "string" ? input.inhalt : "";
+      const id = await addMemory(inhalt, null);
+      return id > 0 ? { gespeichert: true, id } : { gespeichert: false, grund: "leerer Inhalt" };
+    }
+    case "notizen_auflisten": {
+      const items = await listMemories();
+      return { notizen: items.map((m) => ({ id: m.id, inhalt: m.content })) };
+    }
+    case "notiz_loeschen": {
+      const id = Number(input?.id);
+      if (!Number.isFinite(id) || id <= 0) return { geloescht: false, grund: "ungültige ID" };
+      await deleteMemory(id);
+      return { geloescht: true, id };
     }
     case "projekte_ohne_abschlagsrechnung": {
       const suche = typeof input?.suche === "string" ? input.suche.trim().toLowerCase() : "";
