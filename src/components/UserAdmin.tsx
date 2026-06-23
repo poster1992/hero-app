@@ -5,14 +5,57 @@ import {
   createUserAction,
   setActiveAction,
   setPasswordAction,
+  setRoleAction,
   type CreateUserState,
   type PasswordState,
+  type RoleState,
 } from "@/app/dashboard/benutzer/actions";
 import type { AppUser } from "@/lib/users";
 
 interface RoleOption {
   key: string;
   label: string;
+}
+
+/** Inline-Formular zum Ändern der Rolle (Rechte-Gruppe) eines Benutzers. */
+function RoleSelectForm({
+  userId,
+  username,
+  currentRole,
+  roles,
+}: {
+  userId: number;
+  username: string;
+  currentRole: string;
+  roles: RoleOption[];
+}) {
+  const [state, action, pending] = useActionState<RoleState, FormData>(setRoleAction, {});
+  return (
+    <form action={action} className="flex items-center gap-2">
+      <input type="hidden" name="id" value={userId} />
+      <input type="hidden" name="username" value={username} />
+      <select
+        name="role"
+        defaultValue={currentRole}
+        className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-900 outline-none focus:border-brand-red/60"
+      >
+        {roles.map((r) => (
+          <option key={r.key} value={r.key}>
+            {r.label}
+          </option>
+        ))}
+      </select>
+      <button
+        type="submit"
+        disabled={pending}
+        className="rounded-md border border-gray-300 px-3 py-1 text-xs font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900 disabled:opacity-50"
+      >
+        {pending ? "…" : "Ändern"}
+      </button>
+      {state.error && <span className="text-xs text-rose-600">{state.error}</span>}
+      {state.success && <span className="text-xs text-emerald-700">✓</span>}
+    </form>
+  );
 }
 
 /** Inline-Formular zum Zurücksetzen/Ändern des Passworts eines Benutzers. */
@@ -128,7 +171,18 @@ export default function UserAdmin({
                 <td className="px-4 py-2 text-gray-900">{u.username}</td>
                 <td className="px-4 py-2 text-gray-600">{u.displayName ?? "—"}</td>
                 <td className="px-4 py-2 text-gray-600">{u.email ?? "—"}</td>
-                <td className="px-4 py-2 text-gray-600">{roleLabel(u.role)}</td>
+                <td className="px-4 py-2 text-gray-600">
+                  {u.username === currentUsername ? (
+                    roleLabel(u.role)
+                  ) : (
+                    <RoleSelectForm
+                      userId={u.id}
+                      username={u.username}
+                      currentRole={u.role}
+                      roles={roles}
+                    />
+                  )}
+                </td>
                 <td className="px-4 py-2">
                   {u.isActive ? (
                     <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">

@@ -132,6 +132,11 @@ export async function setUserPassword(id: number, password: string): Promise<voi
   ]);
 }
 
+/** Changes a user's role (rights group). */
+export async function setUserRole(id: number, role: string): Promise<void> {
+  await getPool().query<ResultSetHeader>("UPDATE users SET role = ? WHERE id = ?", [role, id]);
+}
+
 /** Activates or deactivates a user. */
 export async function setUserActive(id: number, active: boolean): Promise<void> {
   await getPool().query<ResultSetHeader>("UPDATE users SET is_active = ? WHERE id = ?", [

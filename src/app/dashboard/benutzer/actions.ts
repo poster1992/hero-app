@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getSession } from "@/lib/session";
-import { createUser, setUserActive, setUserPassword } from "@/lib/users";
+import { createUser, setUserActive, setUserPassword, setUserRole } from "@/lib/users";
 import { roleExists } from "@/lib/role-store";
 
 const PATH = "/dashboard/benutzer";
@@ -82,6 +82,40 @@ export async function setPasswordAction(
 
   revalidatePath(PATH);
   return { success: "Passwort gesetzt." };
+}
+
+export interface RoleState {
+  error?: string;
+  success?: string;
+}
+
+export async function setRoleAction(
+  _prev: RoleState,
+  formData: FormData
+): Promise<RoleState> {
+  const session = await getSession();
+  if (session?.role !== "administrator") return { error: "Kein Zugriff." };
+
+  const id = Number(formData.get("id"));
+  const role = String(formData.get("role") ?? "");
+  const username = String(formData.get("username") ?? "");
+
+  if (!Number.isFinite(id)) return { error: "Ungültiger Benutzer." };
+  if (session.username === username) {
+    return { error: "Eigene Rolle nicht änderbar." };
+  }
+  if (!(await roleExists(role))) {
+    return { error: "Ungültige Rolle." };
+  }
+
+  try {
+    await setUserRole(id, role);
+  } catch {
+    return { error: "Rolle konnte nicht geändert werden." };
+  }
+
+  revalidatePath(PATH);
+  return { success: "Rolle geändert." };
 }
 
 export async function setActiveAction(formData: FormData): Promise<void> {
