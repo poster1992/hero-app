@@ -3,7 +3,6 @@
 import { useState } from "react";
 import {
   Bar,
-  CartesianGrid,
   ComposedChart,
   Legend,
   Line,
@@ -179,7 +178,6 @@ export default function MonthlyChart({
       </div>
       <ResponsiveContainer width="100%" height={360}>
       <ComposedChart data={chartData} margin={{ top: 8, right: 16, left: 8, bottom: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
         <XAxis dataKey="label" stroke="#9ca3af" tick={{ fill: "#374151" }} />
         <YAxis
           stroke="#9ca3af"

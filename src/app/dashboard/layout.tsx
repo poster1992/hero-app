@@ -1,6 +1,7 @@
 import Sidebar from "@/components/Sidebar";
 import GlobalSearch from "@/components/GlobalSearch";
 import PreviewBanner from "@/components/PreviewBanner";
+import DataChatWidget from "@/components/DataChatWidget";
 import { getEffectiveRole } from "@/lib/session";
 import { getAllowedModules } from "@/lib/role-store";
 
@@ -21,6 +22,7 @@ export default async function DashboardLayout({
         </div>
         <div className="flex flex-1 flex-col">{children}</div>
       </main>
+      <DataChatWidget />
     </div>
   );
 }
