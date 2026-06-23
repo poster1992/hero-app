@@ -1,12 +1,44 @@
 "use client";
 
 import { useActionState } from "react";
-import { createUserAction, setActiveAction, type CreateUserState } from "@/app/dashboard/benutzer/actions";
+import {
+  createUserAction,
+  setActiveAction,
+  setPasswordAction,
+  type CreateUserState,
+  type PasswordState,
+} from "@/app/dashboard/benutzer/actions";
 import type { AppUser } from "@/lib/users";
 
 interface RoleOption {
   key: string;
   label: string;
+}
+
+/** Inline-Formular zum Zurücksetzen/Ändern des Passworts eines Benutzers. */
+function PasswordResetForm({ userId }: { userId: number }) {
+  const [state, action, pending] = useActionState<PasswordState, FormData>(setPasswordAction, {});
+  return (
+    <form action={action} className="flex items-center justify-end gap-2">
+      <input type="hidden" name="id" value={userId} />
+      <input
+        name="password"
+        type="text"
+        required
+        placeholder="neues Passwort"
+        className="w-32 rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-900 outline-none focus:border-brand-red/60"
+      />
+      <button
+        type="submit"
+        disabled={pending}
+        className="rounded-md border border-gray-300 px-3 py-1 text-xs font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900 disabled:opacity-50"
+      >
+        {pending ? "…" : "Setzen"}
+      </button>
+      {state.error && <span className="text-xs text-rose-600">{state.error}</span>}
+      {state.success && <span className="text-xs text-emerald-700">✓</span>}
+    </form>
+  );
 }
 
 export default function UserAdmin({
@@ -86,6 +118,7 @@ export default function UserAdmin({
               <th className="px-4 py-2 font-semibold">E-Mail</th>
               <th className="px-4 py-2 font-semibold">Rolle</th>
               <th className="px-4 py-2 font-semibold">Status</th>
+              <th className="px-4 py-2 text-right font-semibold">Passwort</th>
               <th className="px-4 py-2 text-right font-semibold">Aktion</th>
             </tr>
           </thead>
@@ -106,6 +139,9 @@ export default function UserAdmin({
                       inaktiv
                     </span>
                   )}
+                </td>
+                <td className="px-4 py-2 text-right">
+                  <PasswordResetForm userId={u.id} />
                 </td>
                 <td className="px-4 py-2 text-right">
                   {u.username === currentUsername ? (

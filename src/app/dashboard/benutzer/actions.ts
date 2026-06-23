@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getSession } from "@/lib/session";
-import { createUser, setUserActive } from "@/lib/users";
+import { createUser, setUserActive, setUserPassword } from "@/lib/users";
 import { roleExists } from "@/lib/role-store";
 
 const PATH = "/dashboard/benutzer";
@@ -53,6 +53,35 @@ export async function createUserAction(
 
   revalidatePath(PATH);
   return { success: `Benutzer „${username}" wurde angelegt.` };
+}
+
+export interface PasswordState {
+  error?: string;
+  success?: string;
+}
+
+export async function setPasswordAction(
+  _prev: PasswordState,
+  formData: FormData
+): Promise<PasswordState> {
+  if (!(await ensureAdmin())) return { error: "Kein Zugriff." };
+
+  const id = Number(formData.get("id"));
+  const password = String(formData.get("password") ?? "");
+
+  if (!Number.isFinite(id)) return { error: "Ungültiger Benutzer." };
+  if (password.length < 4) {
+    return { error: "Mind. 4 Zeichen." };
+  }
+
+  try {
+    await setUserPassword(id, password);
+  } catch {
+    return { error: "Passwort konnte nicht gesetzt werden." };
+  }
+
+  revalidatePath(PATH);
+  return { success: "Passwort gesetzt." };
 }
 
 export async function setActiveAction(formData: FormData): Promise<void> {

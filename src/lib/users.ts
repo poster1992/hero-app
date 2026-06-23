@@ -123,6 +123,15 @@ export async function createUser(input: {
   );
 }
 
+/** Sets (resets) a user's password to a new value. */
+export async function setUserPassword(id: number, password: string): Promise<void> {
+  const hash = await bcrypt.hash(password, 10);
+  await getPool().query<ResultSetHeader>("UPDATE users SET password_hash = ? WHERE id = ?", [
+    hash,
+    id,
+  ]);
+}
+
 /** Activates or deactivates a user. */
 export async function setUserActive(id: number, active: boolean): Promise<void> {
   await getPool().query<ResultSetHeader>("UPDATE users SET is_active = ? WHERE id = ?", [
