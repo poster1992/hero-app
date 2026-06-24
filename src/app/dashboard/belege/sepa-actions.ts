@@ -10,6 +10,8 @@ export interface SepaItem {
   name: string;
   amount: number;
   reference: string;
+  /** HERO-Beleg-ID (für die OCR-Prüfung vor dem Export). */
+  heroId?: string;
 }
 
 export interface SepaResult {

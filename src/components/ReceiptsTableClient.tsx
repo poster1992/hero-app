@@ -12,6 +12,11 @@ import {
   type SepaItem,
   type SaveIbanState,
 } from "@/app/dashboard/belege/sepa-actions";
+import {
+  analyzeReceiptsForExport,
+  type OcrCheckInput,
+  type OcrFinding,
+} from "@/app/dashboard/belege/ocr-check-actions";
 
 export interface ReviewHistoryItem {
   actionLabel: string;
@@ -195,6 +200,13 @@ export default function ReceiptsTableClient({
   const [sepaMissing, setSepaMissing] = useState<
     { customerId: number | null; name: string }[] | null
   >(null);
+  // OCR-Prüfung vor dem Export
+  const [ocrBusy, setOcrBusy] = useState(false);
+  const [ocrFindings, setOcrFindings] = useState<OcrFinding[] | null>(null);
+  // Gewählte Anpassungen (Skonto-Beträge / übersprungene Belege), bleiben über
+  // den IBAN-Nachpflege-Dialog hinweg erhalten.
+  const [sepaOverrides, setSepaOverrides] = useState<Record<string, number>>({});
+  const [sepaSkip, setSepaSkip] = useState<string[]>([]);
 
   const selectedFiltered = filtered.filter((r) => selected.has(r.id));
   const allFilteredSelected = filtered.length > 0 && filtered.every((r) => selected.has(r.id));
@@ -223,13 +235,23 @@ export default function ReceiptsTableClient({
     URL.revokeObjectURL(url);
   };
 
-  const runSepa = async () => {
-    const items: SepaItem[] = selectedFiltered.map((r) => ({
-      customerId: r.supplierId ?? null,
-      name: r.party,
-      amount: sepaAmount(r),
-      reference: r.number,
-    }));
+  // Baut die SEPA-Datei mit ggf. angepassten Beträgen / übersprungenen Belegen.
+  const runSepa = async (over?: Record<string, number>, skip?: string[]) => {
+    const ov = over ?? sepaOverrides;
+    const sk = skip ?? sepaSkip;
+    const items: SepaItem[] = selectedFiltered
+      .filter((r) => !sk.includes(r.id))
+      .map((r) => ({
+        customerId: r.supplierId ?? null,
+        name: r.party,
+        amount: ov[r.id] ?? sepaAmount(r),
+        reference: r.number,
+        heroId: r.id,
+      }));
+    if (items.length === 0) {
+      setSepaError("Keine Belege für den Export übrig.");
+      return;
+    }
     setSepaBusy(true);
     setSepaError(null);
     try {
@@ -249,6 +271,53 @@ export default function ReceiptsTableClient({
     } finally {
       setSepaBusy(false);
     }
+  };
+
+  // Startet den Export: erst OCR-Prüfung der Belege, dann ggf. Entscheidungs-Dialog.
+  const startSepa = async () => {
+    setSepaError(null);
+    setSepaOverrides({});
+    setSepaSkip([]);
+    setOcrBusy(true);
+    try {
+      const inputs: OcrCheckInput[] = selectedFiltered.map((r) => ({
+        heroId: r.id,
+        customerId: r.supplierId ?? null,
+        name: r.party,
+        amount: sepaAmount(r),
+      }));
+      const res = await analyzeReceiptsForExport(inputs);
+      if (res.error) {
+        // OCR-Ausfall darf die Zahlung nicht blockieren: Hinweis + normaler Export.
+        setSepaError(`OCR-Prüfung übersprungen: ${res.error}`);
+        await runSepa({}, []);
+        return;
+      }
+      const flagged = res.findings.filter((f) => f.amountMismatch || f.skontoAvailable || f.error);
+      if (flagged.length > 0) {
+        setOcrFindings(res.findings);
+        return;
+      }
+      // Nichts auffällig → direkt exportieren.
+      await runSepa({}, []);
+    } finally {
+      setOcrBusy(false);
+    }
+  };
+
+  // Übernimmt die Entscheidungen aus dem OCR-Dialog und startet den Export.
+  const confirmOcr = (decisions: Record<string, "original" | "skonto" | "skip">) => {
+    const over: Record<string, number> = {};
+    const skip: string[] = [];
+    for (const f of ocrFindings ?? []) {
+      const d = decisions[f.heroId] ?? "original";
+      if (d === "skip") skip.push(f.heroId);
+      else if (d === "skonto" && f.skontoAmount != null) over[f.heroId] = f.skontoAmount;
+    }
+    setSepaOverrides(over);
+    setSepaSkip(skip);
+    setOcrFindings(null);
+    void runSepa(over, skip);
   };
 
   const [zipping, setZipping] = useState<string | null>(null);
@@ -630,11 +699,15 @@ export default function ReceiptsTableClient({
         {enableSepa && (
           <button
             type="button"
-            onClick={runSepa}
-            disabled={sepaBusy || selectedFiltered.length === 0}
+            onClick={startSepa}
+            disabled={ocrBusy || sepaBusy || selectedFiltered.length === 0}
             className="rounded-md bg-brand-red px-3 py-1.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
           >
-            {sepaBusy ? "Erzeuge SEPA …" : `Multiline SEPA-Export (${selectedFiltered.length})`}
+            {ocrBusy
+              ? "Prüfe Belege (OCR) …"
+              : sepaBusy
+                ? "Erzeuge SEPA …"
+                : `Multiline SEPA-Export (${selectedFiltered.length})`}
           </button>
         )}
         <button
@@ -668,6 +741,13 @@ export default function ReceiptsTableClient({
       {canReview && historyRow && (
         <HistoryModal row={historyRow} onClose={() => setHistoryRow(null)} />
       )}
+      {ocrFindings && (
+        <OcrReviewModal
+          findings={ocrFindings}
+          onClose={() => setOcrFindings(null)}
+          onConfirm={confirmOcr}
+        />
+      )}
       {sepaMissing && (
         <MissingIbanModal
           missing={sepaMissing}
@@ -679,6 +759,135 @@ export default function ReceiptsTableClient({
         />
       )}
     </>
+  );
+}
+
+/** Dialog: OCR-Ergebnisse prüfen und je Beleg Originalbetrag / Skonto / Überspringen wählen. */
+function OcrReviewModal({
+  findings,
+  onClose,
+  onConfirm,
+}: {
+  findings: OcrFinding[];
+  onClose: () => void;
+  onConfirm: (decisions: Record<string, "original" | "skonto" | "skip">) => void;
+}) {
+  const flagged = findings.filter((f) => f.amountMismatch || f.skontoAvailable || f.error);
+  const okCount = findings.length - flagged.length;
+  const [decisions, setDecisions] = useState<Record<string, "original" | "skonto" | "skip">>(() => {
+    const init: Record<string, "original" | "skonto" | "skip"> = {};
+    for (const f of flagged) init[f.heroId] = "original";
+    return init;
+  });
+  const set = (id: string, v: "original" | "skonto" | "skip") =>
+    setDecisions((p) => ({ ...p, [id]: v }));
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-4 sm:items-center"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-2xl rounded-xl border border-gray-300 bg-white p-6 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <h3 className="text-lg font-semibold text-gray-900">Beleg-Prüfung (OCR)</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-gray-400 transition-colors hover:text-gray-700"
+            aria-label="Schließen"
+          >
+            ✕
+          </button>
+        </div>
+        <p className="mb-4 text-sm text-gray-600">
+          Die markierten Belege wurden per OCR geprüft. Bitte bei Auffälligkeiten je Beleg
+          entscheiden.
+          {okCount > 0 && (
+            <span className="text-gray-500">
+              {" "}
+              {okCount} unauffällige{okCount === 1 ? "r Beleg wird" : " Belege werden"} regulär
+              exportiert.
+            </span>
+          )}
+        </p>
+
+        <div className="max-h-[55vh] space-y-3 overflow-y-auto">
+          {flagged.map((f) => (
+            <div
+              key={f.heroId}
+              className={`rounded-lg border p-3 ${
+                f.error
+                  ? "border-amber-300 bg-amber-50"
+                  : f.amountMismatch
+                    ? "border-rose-300 bg-rose-50"
+                    : "border-emerald-300 bg-emerald-50"
+              }`}
+            >
+              <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
+                <span className="text-sm font-medium text-gray-900">{f.name}</span>
+                <span className="text-xs text-gray-600">
+                  Zahlbetrag {currencyFormatter.format(f.plannedAmount)}
+                </span>
+              </div>
+              <p className="mb-2 text-xs text-gray-700">
+                {f.error ? `⚠ ${f.error}` : f.message}
+              </p>
+              <div className="flex flex-wrap gap-3 text-sm">
+                <label className="flex items-center gap-1.5 text-gray-700">
+                  <input
+                    type="radio"
+                    name={`d-${f.heroId}`}
+                    checked={(decisions[f.heroId] ?? "original") === "original"}
+                    onChange={() => set(f.heroId, "original")}
+                  />
+                  Originalbetrag ({currencyFormatter.format(f.plannedAmount)})
+                </label>
+                {f.skontoAvailable && f.skontoAmount != null && (
+                  <label className="flex items-center gap-1.5 text-gray-700">
+                    <input
+                      type="radio"
+                      name={`d-${f.heroId}`}
+                      checked={decisions[f.heroId] === "skonto"}
+                      onChange={() => set(f.heroId, "skonto")}
+                    />
+                    Skonto zahlen ({currencyFormatter.format(f.skontoAmount)})
+                  </label>
+                )}
+                <label className="flex items-center gap-1.5 text-gray-700">
+                  <input
+                    type="radio"
+                    name={`d-${f.heroId}`}
+                    checked={decisions[f.heroId] === "skip"}
+                    onChange={() => set(f.heroId, "skip")}
+                  />
+                  Überspringen
+                </label>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+          >
+            Abbrechen
+          </button>
+          <button
+            type="button"
+            onClick={() => onConfirm(decisions)}
+            className="rounded-md bg-brand-red px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+          >
+            Export fortsetzen
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
