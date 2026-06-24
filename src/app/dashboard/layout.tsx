@@ -1,8 +1,9 @@
+import { redirect } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import GlobalSearch from "@/components/GlobalSearch";
 import PreviewBanner from "@/components/PreviewBanner";
 import DataChatWidget from "@/components/DataChatWidget";
-import { getEffectiveRole } from "@/lib/session";
+import { getSession, getEffectiveRole } from "@/lib/session";
 import { getAllowedModules } from "@/lib/role-store";
 
 export default async function DashboardLayout({
@@ -10,6 +11,9 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
+  // Zentrale Auth-Sperre: ohne gültige Session kommt niemand an Dashboard-Seiten.
+  if (!(await getSession())) redirect("/login");
+
   const { role, isPreview } = await getEffectiveRole();
   const allowedModules = await getAllowedModules(role);
   return (
