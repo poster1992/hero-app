@@ -3,6 +3,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { getSession } from "@/lib/session";
 import { getReceiptsInRange, type Receipt } from "@/lib/hero-api";
+import { getDocumentUrl } from "@/lib/invoices";
 import { getSupplierIbanMap } from "@/lib/supplier-ibans";
 
 const HERO_HOST = "https://login.hero-software.de";
@@ -35,6 +36,10 @@ export interface OcrFinding {
   skontoAmount: number | null;
   /** Quelle der Skonto-Werte. */
   skontoSource: "beleg" | "hinterlegt" | null;
+  /** Rechnungsbetrag war nicht lesbar (z.B. leeres/weißes Dokument). */
+  unreadable: boolean;
+  /** Auth-Proxy-URL zum Öffnen des Belegs (PDF/Bild), null wenn kein Dokument. */
+  docUrl: string | null;
   /** Menschlich lesbarer Hinweis. */
   message: string;
   /** OCR/Lade-Fehler – Beleg konnte nicht geprüft werden. */
@@ -54,6 +59,8 @@ interface ExtractedInvoice {
   skonto_percent: number | null;
   skonto_days: number | null;
   skonto_deadline: string | null;
+  /** Auf der Rechnung ausgewiesener Skonto-Zahlbetrag (falls genannt). */
+  skonto_amount: number | null;
 }
 
 /** Lädt das Beleg-Dokument von HERO und gibt Base64 + MIME zurück. */
@@ -100,9 +107,13 @@ async function extractInvoice(
               "Dies ist eine Eingangsrechnung. Lies den Rechnungs-Gesamtbetrag (brutto, der zu zahlende Betrag) " +
               "und die Skonto-Konditionen aus. Antworte AUSSCHLIESSLICH mit einem JSON-Objekt, ohne Erklärung, " +
               'in genau diesem Format: {"total_gross": number|null, "currency": "EUR"|string|null, ' +
-              '"skonto_percent": number|null, "skonto_days": number|null, "skonto_deadline": "YYYY-MM-DD"|null}. ' +
-              "total_gross ist der Bruttoendbetrag der Rechnung. skonto_percent/skonto_days/skonto_deadline nur, " +
-              "wenn auf der Rechnung explizit Skonto genannt ist, sonst null. Zahlen ohne Tausenderpunkt, Punkt als Dezimaltrennzeichen.",
+              '"skonto_percent": number|null, "skonto_days": number|null, "skonto_deadline": "YYYY-MM-DD"|null, ' +
+              '"skonto_amount": number|null}. ' +
+              "total_gross ist der Bruttoendbetrag der Rechnung. skonto_percent/skonto_days/skonto_deadline/skonto_amount nur, " +
+              "wenn auf der Rechnung explizit Skonto genannt ist, sonst null. skonto_amount ist der ausgewiesene Skonto-Zahlbetrag " +
+              "(der reduzierte zu zahlende Betrag), falls die Rechnung ihn nennt – sonst null. " +
+              "Wenn das Dokument leer/unlesbar ist, gib für alle Felder null zurück. " +
+              "Zahlen ohne Tausenderpunkt, Punkt als Dezimaltrennzeichen.",
           },
         ],
       },
@@ -158,6 +169,8 @@ export async function analyzeReceiptsForExport(items: OcrCheckInput[]): Promise<
 
   const findings = await Promise.all(
     items.map(async (it): Promise<OcrFinding> => {
+      const receipt = byId.get(it.heroId);
+      const docUrl = receipt?.fileUpload?.src ? getDocumentUrl(receipt.fileUpload.src) : null;
       const base: OcrFinding = {
         heroId: it.heroId,
         name: it.name,
@@ -169,10 +182,11 @@ export async function analyzeReceiptsForExport(items: OcrCheckInput[]): Promise<
         skontoDeadline: null,
         skontoAmount: null,
         skontoSource: null,
+        unreadable: false,
+        docUrl,
         message: "",
       };
 
-      const receipt = byId.get(it.heroId);
       if (!receipt?.fileUpload?.src) {
         return { ...base, error: "Kein Beleg-Dokument zum Prüfen vorhanden." };
       }
@@ -216,25 +230,37 @@ export async function analyzeReceiptsForExport(items: OcrCheckInput[]): Promise<
 
       let skontoAvailable = false;
       let skontoAmount: number | null = null;
+      let skontoFromBeleg = false;
       if (percent != null) {
         // Ohne Frist sicherheitshalber als verfügbar behandeln; mit Frist nur wenn noch offen.
         skontoAvailable = deadline == null || deadline >= today;
-        skontoAmount = round2(base.plannedAmount * (1 - percent / 100));
+        // Vom Beleg ausgewiesenen Skontobetrag bevorzugen, sonst aus Prozentsatz rechnen.
+        if (source === "beleg" && typeof extracted.skonto_amount === "number" && extracted.skonto_amount > 0) {
+          skontoAmount = round2(extracted.skonto_amount);
+          skontoFromBeleg = true;
+        } else {
+          skontoAmount = round2(base.plannedAmount * (1 - percent / 100));
+        }
       }
 
+      const unreadable = ocrTotal == null;
       const parts: string[] = [];
-      if (ocrTotal != null) {
+      if (unreadable) {
+        parts.push("Rechnungsbetrag nicht lesbar – Beleg bitte manuell prüfen");
+      } else {
         parts.push(
           amountMismatch
-            ? `Rechnung lt. Beleg ${ocrTotal.toFixed(2)} € ≠ Zahlbetrag ${base.plannedAmount.toFixed(2)} €`
-            : `Rechnungsbetrag bestätigt (${ocrTotal.toFixed(2)} €)`
+            ? `Rechnung lt. Beleg ${ocrTotal!.toFixed(2)} € ≠ Zahlbetrag ${base.plannedAmount.toFixed(2)} €`
+            : `Rechnungsbetrag bestätigt (${ocrTotal!.toFixed(2)} €)`
         );
       }
       if (percent != null && skontoAvailable && skontoAmount != null) {
         parts.push(
           `${percent.toLocaleString("de-DE")} % Skonto` +
             (deadline ? ` bis ${deadline.split("-").reverse().join(".")}` : "") +
-            ` → ${skontoAmount.toFixed(2)} € (${source === "beleg" ? "Beleg" : "hinterlegt"})`
+            ` → ${skontoAmount.toFixed(2)} € (${
+              skontoFromBeleg ? "Beleg" : source === "beleg" ? "Beleg, gerechnet" : "hinterlegt"
+            })`
         );
       } else if (percent != null && !skontoAvailable) {
         parts.push(`Skontofrist abgelaufen${deadline ? ` (${deadline.split("-").reverse().join(".")})` : ""}`);
@@ -249,6 +275,7 @@ export async function analyzeReceiptsForExport(items: OcrCheckInput[]): Promise<
         skontoDeadline: deadline,
         skontoAmount,
         skontoSource: source,
+        unreadable,
         message: parts.join(" · ") || "Keine Auffälligkeiten.",
       };
     })

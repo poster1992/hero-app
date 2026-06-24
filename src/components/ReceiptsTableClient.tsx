@@ -293,7 +293,9 @@ export default function ReceiptsTableClient({
         await runSepa({}, []);
         return;
       }
-      const flagged = res.findings.filter((f) => f.amountMismatch || f.skontoAvailable || f.error);
+      const flagged = res.findings.filter(
+        (f) => f.amountMismatch || f.skontoAvailable || f.error || f.unreadable
+      );
       if (flagged.length > 0) {
         setOcrFindings(res.findings);
         return;
@@ -772,7 +774,9 @@ function OcrReviewModal({
   onClose: () => void;
   onConfirm: (decisions: Record<string, "original" | "skonto" | "skip">) => void;
 }) {
-  const flagged = findings.filter((f) => f.amountMismatch || f.skontoAvailable || f.error);
+  const flagged = findings.filter(
+    (f) => f.amountMismatch || f.skontoAvailable || f.error || f.unreadable
+  );
   const okCount = findings.length - flagged.length;
   const [decisions, setDecisions] = useState<Record<string, "original" | "skonto" | "skip">>(() => {
     const init: Record<string, "original" | "skonto" | "skip"> = {};
@@ -819,11 +823,11 @@ function OcrReviewModal({
             <div
               key={f.heroId}
               className={`rounded-lg border p-3 ${
-                f.error
-                  ? "border-amber-300 bg-amber-50"
+                f.error || f.unreadable
+                  ? "border-amber-500/40 bg-amber-500/10"
                   : f.amountMismatch
-                    ? "border-rose-300 bg-rose-50"
-                    : "border-emerald-300 bg-emerald-50"
+                    ? "border-rose-500/40 bg-rose-500/10"
+                    : "border-emerald-500/40 bg-emerald-500/10"
               }`}
             >
               <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
@@ -835,6 +839,16 @@ function OcrReviewModal({
               <p className="mb-2 text-xs text-gray-700">
                 {f.error ? `⚠ ${f.error}` : f.message}
               </p>
+              {f.docUrl && (
+                <a
+                  href={f.docUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mb-2 inline-block text-xs font-medium text-brand-red hover:underline"
+                >
+                  Beleg öffnen ↗
+                </a>
+              )}
               <div className="flex flex-wrap gap-3 text-sm">
                 <label className="flex items-center gap-1.5 text-gray-700">
                   <input
