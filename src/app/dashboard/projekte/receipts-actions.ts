@@ -92,17 +92,29 @@ export async function getProjectReceipts(projectId: number): Promise<ProjectRece
   const from = `${now.getUTCFullYear() - 6}-01-01T00:00:00Z`;
   const to = `${now.getUTCFullYear() + 1}-12-31T23:59:59Z`;
   const receipts = await getReceiptsInRange(from, to);
+  const round2 = (n: number) => Math.round(n * 100) / 100;
   return receipts
     .filter((r) => r.receiptPositions.some((p) => p.projectMatch?.id === projectId))
     .map((r) => {
       const status = getInvoiceStatus(r);
       const file = r.fileUpload;
+      // Nur der diesem Projekt zugeordnete Anteil des Belegs – ein Beleg kann auf
+      // mehrere Projekte aufgeteilt sein. Gleiche Vorzeichen-Logik wie "Ist Material"
+      // (getCostNetByProject): Belege (output) +, Gutschriften (income) −.
+      const sign = r.type === "output" ? 1 : r.type === "income" ? -1 : 0;
+      const projPos = r.receiptPositions.filter((p) => p.projectMatch?.id === projectId);
+      const net = round2(
+        projPos.reduce((s, p) => s + (sign === 1 ? p.valueExclVat : -Math.abs(p.valueExclVat)), 0)
+      );
+      const gross = round2(
+        projPos.reduce((s, p) => s + (sign === 1 ? p.valueInclVat : -Math.abs(p.valueInclVat)), 0)
+      );
       return {
         id: r.id,
         number: r.number,
         date: r.receiptDate,
-        net: r.netValue,
-        gross: r.value,
+        net,
+        gross,
         statusLabel: status.label,
         docUrl: file?.src ? getDocumentUrl(file.src) : null,
         filename: file?.filename ?? null,

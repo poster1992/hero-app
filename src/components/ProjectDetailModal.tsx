@@ -519,7 +519,7 @@ export default function ProjectDetailModal({
                         )}
                       </span>
                       <span className="shrink-0 text-right text-sm tabular-nums text-gray-700">
-                        {euro.format(r.gross)}
+                        {euro.format(r.net)}
                       </span>
                       <span className="w-5 shrink-0 text-right text-gray-400">
                         {r.docUrl ? "↗" : ""}
