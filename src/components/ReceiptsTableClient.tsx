@@ -320,15 +320,8 @@ export default function ReceiptsTableClient({
     }
   };
 
-  // Übernimmt die Entscheidungen aus dem OCR-Dialog und startet den Export.
-  const confirmOcr = (decisions: Record<string, "original" | "skonto" | "skip">) => {
-    const over: Record<string, number> = {};
-    const skip: string[] = [];
-    for (const f of ocrFindings ?? []) {
-      const d = decisions[f.heroId] ?? "original";
-      if (d === "skip") skip.push(f.heroId);
-      else if (d === "skonto" && f.skontoAmount != null) over[f.heroId] = f.skontoAmount;
-    }
+  // Übernimmt die im Dialog berechneten Beträge / übersprungenen Belege und exportiert.
+  const confirmOcr = (over: Record<string, number>, skip: string[]) => {
     setSepaOverrides(over);
     setSepaSkip(skip);
     setOcrFindings(null);
@@ -778,6 +771,8 @@ export default function ReceiptsTableClient({
 }
 
 /** Dialog: OCR-Ergebnisse prüfen und je Beleg Originalbetrag / Skonto / Überspringen wählen. */
+type OcrDecision = "original" | "skonto" | "custom" | "skip";
+
 function OcrReviewModal({
   findings,
   onClose,
@@ -785,18 +780,49 @@ function OcrReviewModal({
 }: {
   findings: OcrFinding[];
   onClose: () => void;
-  onConfirm: (decisions: Record<string, "original" | "skonto" | "skip">) => void;
+  onConfirm: (overrides: Record<string, number>, skip: string[]) => void;
 }) {
   const attention = findings.filter(
     (f) => f.amountMismatch || f.error || f.unreadable
   ).length;
-  const [decisions, setDecisions] = useState<Record<string, "original" | "skonto" | "skip">>(() => {
-    const init: Record<string, "original" | "skonto" | "skip"> = {};
+  const [decisions, setDecisions] = useState<Record<string, OcrDecision>>(() => {
+    const init: Record<string, OcrDecision> = {};
     for (const f of findings) init[f.heroId] = "original";
     return init;
   });
-  const set = (id: string, v: "original" | "skonto" | "skip") =>
-    setDecisions((p) => ({ ...p, [id]: v }));
+  // Manuell eingegebene Beträge je Beleg (vorbelegt mit dem OCR-Betrag bei Abweichung).
+  const [customAmounts, setCustomAmounts] = useState<Record<string, string>>(() => {
+    const init: Record<string, string> = {};
+    for (const f of findings) {
+      if (f.amountMismatch && f.ocrTotal != null) init[f.heroId] = f.ocrTotal.toFixed(2);
+    }
+    return init;
+  });
+  const set = (id: string, v: OcrDecision) => setDecisions((p) => ({ ...p, [id]: v }));
+
+  const parseAmount = (s: string): number | null => {
+    const n = Number(s.replace(/\s/g, "").replace(",", "."));
+    return Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : null;
+  };
+  // Beleg mit "Anderer Betrag", aber ungültiger Eingabe → Export blockieren.
+  const hasInvalidCustom = findings.some(
+    (f) => decisions[f.heroId] === "custom" && parseAmount(customAmounts[f.heroId] ?? "") == null
+  );
+
+  const submit = () => {
+    const over: Record<string, number> = {};
+    const skip: string[] = [];
+    for (const f of findings) {
+      const d = decisions[f.heroId] ?? "original";
+      if (d === "skip") skip.push(f.heroId);
+      else if (d === "skonto" && f.skontoAmount != null) over[f.heroId] = f.skontoAmount;
+      else if (d === "custom") {
+        const amt = parseAmount(customAmounts[f.heroId] ?? "");
+        if (amt != null) over[f.heroId] = amt;
+      }
+    }
+    onConfirm(over, skip);
+  };
 
   return (
     <div
@@ -887,6 +913,34 @@ function OcrReviewModal({
                   <input
                     type="radio"
                     name={`d-${f.heroId}`}
+                    checked={decisions[f.heroId] === "custom"}
+                    onChange={() => set(f.heroId, "custom")}
+                  />
+                  Anderer Betrag
+                  <span className="flex items-center gap-1">
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={customAmounts[f.heroId] ?? ""}
+                      placeholder="0,00"
+                      onFocus={() => set(f.heroId, "custom")}
+                      onChange={(e) =>
+                        setCustomAmounts((p) => ({ ...p, [f.heroId]: e.target.value }))
+                      }
+                      className={`w-24 rounded-md border px-2 py-0.5 text-right text-sm outline-none focus:border-brand-red/60 ${
+                        decisions[f.heroId] === "custom" &&
+                        parseAmount(customAmounts[f.heroId] ?? "") == null
+                          ? "border-rose-500"
+                          : "border-gray-300"
+                      }`}
+                    />
+                    <span className="text-gray-500">€</span>
+                  </span>
+                </label>
+                <label className="flex items-center gap-1.5 text-gray-700">
+                  <input
+                    type="radio"
+                    name={`d-${f.heroId}`}
                     checked={decisions[f.heroId] === "skip"}
                     onChange={() => set(f.heroId, "skip")}
                   />
@@ -907,8 +961,9 @@ function OcrReviewModal({
           </button>
           <button
             type="button"
-            onClick={() => onConfirm(decisions)}
-            className="rounded-md bg-brand-red px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+            onClick={submit}
+            disabled={hasInvalidCustom}
+            className="rounded-md bg-brand-red px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
           >
             Export fortsetzen
           </button>
