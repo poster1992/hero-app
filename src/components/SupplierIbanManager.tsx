@@ -13,6 +13,8 @@ export interface SupplierIbanItem {
   iban: string;
   bic: string;
   directDebit: boolean;
+  skontoDays: number | null;
+  skontoPercent: number | null;
 }
 
 function SupplierRow({ item }: { item: SupplierIbanItem }) {
@@ -50,6 +52,28 @@ function SupplierRow({ item }: { item: SupplierIbanItem }) {
             placeholder="BIC (optional)"
             className="w-32 rounded-md border border-gray-300 px-2 py-1 text-sm text-gray-900 outline-none focus:border-brand-red/60"
           />
+          <div className="flex items-center gap-1">
+            <input
+              name="skontoDays"
+              type="number"
+              min={0}
+              max={365}
+              defaultValue={item.skontoDays ?? ""}
+              placeholder="Tage"
+              className="w-16 rounded-md border border-gray-300 px-2 py-1 text-sm text-gray-900 outline-none focus:border-brand-red/60"
+            />
+            <input
+              name="skontoPercent"
+              type="number"
+              min={0}
+              max={100}
+              step="0.01"
+              defaultValue={item.skontoPercent ?? ""}
+              placeholder="%"
+              className="w-16 rounded-md border border-gray-300 px-2 py-1 text-sm text-gray-900 outline-none focus:border-brand-red/60"
+            />
+            <span className="text-xs text-gray-500">Skonto (Tage / %)</span>
+          </div>
           <button
             type="submit"
             disabled={pending}
@@ -128,7 +152,7 @@ export default function SupplierIbanManager({ suppliers }: { suppliers: Supplier
             <tr className="text-xs uppercase tracking-wide text-gray-500">
               <th className="px-4 py-3 font-semibold"> </th>
               <th className="px-4 py-3 font-semibold">Lieferant</th>
-              <th className="px-4 py-3 font-semibold">IBAN / BIC</th>
+              <th className="px-4 py-3 font-semibold">IBAN / BIC / Skonto</th>
               <th className="px-4 py-3 font-semibold">Bankeinzug</th>
             </tr>
           </thead>

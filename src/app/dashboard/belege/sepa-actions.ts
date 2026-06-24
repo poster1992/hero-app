@@ -37,6 +37,10 @@ export async function saveSupplierIbanAction(
   const name = String(formData.get("name") ?? "").trim() || null;
   const iban = cleanIban(String(formData.get("iban") ?? ""));
   const bic = String(formData.get("bic") ?? "").trim().toUpperCase() || null;
+  const rawSkontoDays = String(formData.get("skontoDays") ?? "").trim();
+  const skontoDays = rawSkontoDays !== "" ? Number(rawSkontoDays) : null;
+  const rawSkontoPercent = String(formData.get("skontoPercent") ?? "").trim().replace(",", ".");
+  const skontoPercent = rawSkontoPercent !== "" ? Number(rawSkontoPercent) : null;
 
   if (!Number.isFinite(customerId)) return { error: "Kein Lieferant." };
   if (!/^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/.test(iban)) {
@@ -45,9 +49,15 @@ export async function saveSupplierIbanAction(
   if (bic && !/^[A-Z0-9]{8}([A-Z0-9]{3})?$/.test(bic)) {
     return { error: "Ungültige BIC." };
   }
+  if (skontoDays !== null && (!Number.isInteger(skontoDays) || skontoDays < 0 || skontoDays > 365)) {
+    return { error: "Ungültige Skontofrist (0–365 Tage)." };
+  }
+  if (skontoPercent !== null && (!Number.isFinite(skontoPercent) || skontoPercent < 0 || skontoPercent > 100)) {
+    return { error: "Ungültiger Skontosatz (0–100 %)." };
+  }
 
   try {
-    await upsertSupplierIban({ customerId, supplierName: name, iban, bic });
+    await upsertSupplierIban({ customerId, supplierName: name, iban, bic, skontoDays, skontoPercent });
   } catch {
     return { error: "Speichern fehlgeschlagen." };
   }
