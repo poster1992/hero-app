@@ -273,7 +273,7 @@ export default function ReceiptsTableClient({
     }
   };
 
-  // Startet den Export: erst OCR-Prüfung der Belege, dann ggf. Entscheidungs-Dialog.
+  // Startet den Export: OCR-Prüfung der Belege, dann IMMER der Sichtkontroll-Dialog.
   const startSepa = async () => {
     setSepaError(null);
     setSepaOverrides({});
@@ -288,20 +288,33 @@ export default function ReceiptsTableClient({
       }));
       const res = await analyzeReceiptsForExport(inputs);
       if (res.error) {
-        // OCR-Ausfall darf die Zahlung nicht blockieren: Hinweis + normaler Export.
-        setSepaError(`OCR-Prüfung übersprungen: ${res.error}`);
-        await runSepa({}, []);
-        return;
+        // OCR-Ausfall blockiert die Zahlung nicht – Hinweis anzeigen, Kontrolle bleibt.
+        setSepaError(`OCR-Hinweis: ${res.error}`);
       }
-      const flagged = res.findings.filter(
-        (f) => f.amountMismatch || f.skontoAvailable || f.error || f.unreadable
-      );
-      if (flagged.length > 0) {
-        setOcrFindings(res.findings);
-        return;
-      }
-      // Nichts auffällig → direkt exportieren.
-      await runSepa({}, []);
+      // Immer ALLE ausgewählten Belege zeigen – auch ohne OCR-Treffer (Sichtkontrolle).
+      const byId = new Map(res.findings.map((f) => [f.heroId, f]));
+      const findings: OcrFinding[] = selectedFiltered.map((r) => {
+        const found = byId.get(r.id);
+        if (found) return found;
+        return {
+          heroId: r.id,
+          name: r.party,
+          plannedAmount: sepaAmount(r),
+          ocrTotal: null,
+          amountMismatch: false,
+          skontoAvailable: false,
+          skontoPercent: null,
+          skontoDeadline: null,
+          skontoAmount: null,
+          skontoSource: null,
+          unreadable: true,
+          docUrl: r.file?.docUrl ?? null,
+          message: res.error
+            ? "OCR nicht verfügbar – Beleg bitte manuell prüfen."
+            : "Nicht geprüft – Beleg bitte manuell prüfen.",
+        };
+      });
+      setOcrFindings(findings);
     } finally {
       setOcrBusy(false);
     }
@@ -774,13 +787,12 @@ function OcrReviewModal({
   onClose: () => void;
   onConfirm: (decisions: Record<string, "original" | "skonto" | "skip">) => void;
 }) {
-  const flagged = findings.filter(
-    (f) => f.amountMismatch || f.skontoAvailable || f.error || f.unreadable
-  );
-  const okCount = findings.length - flagged.length;
+  const attention = findings.filter(
+    (f) => f.amountMismatch || f.error || f.unreadable
+  ).length;
   const [decisions, setDecisions] = useState<Record<string, "original" | "skonto" | "skip">>(() => {
     const init: Record<string, "original" | "skonto" | "skip"> = {};
-    for (const f of flagged) init[f.heroId] = "original";
+    for (const f of findings) init[f.heroId] = "original";
     return init;
   });
   const set = (id: string, v: "original" | "skonto" | "skip") =>
@@ -807,19 +819,18 @@ function OcrReviewModal({
           </button>
         </div>
         <p className="mb-4 text-sm text-gray-600">
-          Die markierten Belege wurden per OCR geprüft. Bitte bei Auffälligkeiten je Beleg
-          entscheiden.
-          {okCount > 0 && (
-            <span className="text-gray-500">
+          Sichtkontrolle: Bitte alle {findings.length} ausgewählten Belege prüfen und je Beleg die
+          Zahlung bestätigen.
+          {attention > 0 && (
+            <span className="text-amber-400">
               {" "}
-              {okCount} unauffällige{okCount === 1 ? "r Beleg wird" : " Belege werden"} regulär
-              exportiert.
+              {attention} Beleg{attention === 1 ? "" : "e"} mit Hinweis – farblich markiert.
             </span>
           )}
         </p>
 
         <div className="max-h-[55vh] space-y-3 overflow-y-auto">
-          {flagged.map((f) => (
+          {findings.map((f) => (
             <div
               key={f.heroId}
               className={`rounded-lg border p-3 ${
@@ -827,7 +838,9 @@ function OcrReviewModal({
                   ? "border-amber-500/40 bg-amber-500/10"
                   : f.amountMismatch
                     ? "border-rose-500/40 bg-rose-500/10"
-                    : "border-emerald-500/40 bg-emerald-500/10"
+                    : f.skontoAvailable
+                      ? "border-emerald-500/40 bg-emerald-500/10"
+                      : "border-gray-300 bg-gray-50"
               }`}
             >
               <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
