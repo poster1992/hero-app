@@ -74,6 +74,12 @@ export interface ReceiptRow {
   open?: number;
   /** Lieferant zieht per Bankeinzug ein. */
   directDebit?: boolean;
+  /** OCR: Zahlungsziel laut Beleg. */
+  zahlungszielOcr?: string | null;
+  /** OCR: zu zahlender Skonto-Betrag. */
+  skontoBetrag?: number | null;
+  /** OCR: Ersparnis durch Skonto. */
+  ersparnis?: number | null;
 }
 
 const currencyFormatter = new Intl.NumberFormat("de-DE", {
@@ -129,6 +135,7 @@ export default function ReceiptsTableClient({
   exportName = "hero-belege",
   enableSepa = false,
   enablePaidStatus = false,
+  showOcr = false,
 }: {
   rows: ReceiptRow[];
   partyLabel?: string;
@@ -139,6 +146,8 @@ export default function ReceiptsTableClient({
   exportName?: string;
   enableSepa?: boolean;
   enablePaidStatus?: boolean;
+  /** Zeigt die OCR-Spalten Zahlungsziel / Skonto-Betrag / Ersparnis. */
+  showOcr?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -437,10 +446,11 @@ export default function ReceiptsTableClient({
     "10%", // Status
     "8%", // Dokument
     ...(canReview ? ["11%"] : []), // Prüfung
+    ...(showOcr ? ["9%", "9%", "9%"] : []), // Zahlungsziel / Skonto-Betrag / Ersparnis
   ];
 
   const table = (
-    <table className="w-full min-w-[820px] table-fixed text-left text-sm">
+    <table className={`w-full table-fixed text-left text-sm ${showOcr ? "min-w-[1120px]" : "min-w-[820px]"}`}>
       <colgroup>
         {colWidths.map((w, i) => (
           <col key={i} style={{ width: w }} />
@@ -470,6 +480,13 @@ export default function ReceiptsTableClient({
           <th className="px-3 py-3 font-medium">Status</th>
           <th className="px-3 py-3 font-medium">Dokument</th>
           {canReview && <th className="px-3 py-3 font-medium">Prüfung</th>}
+          {showOcr && (
+            <>
+              <th className="px-3 py-3 font-medium">Zahlungsziel</th>
+              <th className="px-3 py-3 font-medium text-right">Skonto-Betrag</th>
+              <th className="px-3 py-3 font-medium text-right">Ersparnis</th>
+            </>
+          )}
         </tr>
         <tr className="border-b border-gray-200">
           {enableSepa && <th className="px-3 pb-3" />}
@@ -558,13 +575,20 @@ export default function ReceiptsTableClient({
             />
           </th>
           {canReview && <th className="px-3 pb-3" />}
+          {showOcr && (
+            <>
+              <th className="px-3 pb-3" />
+              <th className="px-3 pb-3" />
+              <th className="px-3 pb-3" />
+            </>
+          )}
         </tr>
       </thead>
       <tbody>
         {filtered.length === 0 ? (
           <tr>
             <td
-              colSpan={leadingCols + 5 + (canReview ? 1 : 0)}
+              colSpan={leadingCols + 5 + (canReview ? 1 : 0) + (showOcr ? 3 : 0)}
               className="px-3 py-8 text-center text-sm text-gray-500"
             >
               Keine Treffer für den Filter.
@@ -703,6 +727,19 @@ export default function ReceiptsTableClient({
                   </div>
                 </td>
               )}
+              {showOcr && (
+                <>
+                  <td className="px-3 py-2.5 whitespace-nowrap text-gray-700">
+                    {row.zahlungszielOcr || "—"}
+                  </td>
+                  <td className="px-3 py-2.5 whitespace-nowrap text-right text-gray-800">
+                    {row.skontoBetrag != null ? currencyFormatter.format(row.skontoBetrag) : "—"}
+                  </td>
+                  <td className="px-3 py-2.5 whitespace-nowrap text-right text-emerald-600">
+                    {row.ersparnis != null ? currencyFormatter.format(row.ersparnis) : "—"}
+                  </td>
+                </>
+              )}
             </tr>
           ))
         )}
@@ -721,7 +758,7 @@ export default function ReceiptsTableClient({
           <td className="px-3 py-3 whitespace-nowrap text-right">
             {currencyFormatter.format(totals.gross)}
           </td>
-          <td className="px-3 py-3" colSpan={2 + (canReview ? 1 : 0)} />
+          <td className="px-3 py-3" colSpan={2 + (canReview ? 1 : 0) + (showOcr ? 3 : 0)} />
         </tr>
       </tfoot>
     </table>

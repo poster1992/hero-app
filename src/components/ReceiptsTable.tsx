@@ -9,6 +9,7 @@ import type { Receipt } from "@/lib/hero-api";
 import { reviewStatusLabel, type ReceiptReview } from "@/lib/receipt-reviews";
 import { getSupplierIbanMap } from "@/lib/supplier-ibans";
 import type { PaymentOverride } from "@/lib/receipt-payment-status";
+import type { ReceiptOcrFields } from "@/lib/receipt-ocr";
 
 const dateFormatter = new Intl.DateTimeFormat("de-DE");
 
@@ -22,6 +23,8 @@ export default async function ReceiptsTable({
   enableSepa = false,
   enablePaidStatus = false,
   paymentOverrides,
+  ocrMap,
+  showOcr = false,
 }: {
   receipts: Receipt[];
   partyLabel?: string;
@@ -34,6 +37,10 @@ export default async function ReceiptsTable({
   enablePaidStatus?: boolean;
   /** Lokale Zahlstatus-Overrides je HERO-Beleg-ID. */
   paymentOverrides?: Map<string, PaymentOverride>;
+  /** OCR-Felder je HERO-Beleg-ID (Zahlungsziel/Skonto). */
+  ocrMap?: Map<string, ReceiptOcrFields>;
+  /** OCR-Spalten anzeigen. */
+  showOcr?: boolean;
 }) {
   // Bankeinzug-Kennzeichen je Lieferant (nur für Belege/SEPA-Ansicht laden).
   let ibanMap: Awaited<ReturnType<typeof getSupplierIbanMap>> = new Map();
@@ -94,6 +101,9 @@ export default async function ReceiptsTable({
       statusTone: status.tone,
       paidOverride: ov?.status ?? null,
       paidOverrideInfo,
+      zahlungszielOcr: ocrMap?.get(r.id)?.zahlungsziel ?? null,
+      skontoBetrag: ocrMap?.get(r.id)?.skontoBetrag ?? null,
+      ersparnis: ocrMap?.get(r.id)?.ersparnis ?? null,
       file:
         file?.src != null
           ? {
@@ -116,6 +126,7 @@ export default async function ReceiptsTable({
       canReview={canReview}
       enableSepa={enableSepa}
       enablePaidStatus={enablePaidStatus}
+      showOcr={showOcr}
     />
   );
 }

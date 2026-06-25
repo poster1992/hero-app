@@ -3,6 +3,8 @@ import ManualBelege from "@/components/ManualBelege";
 import { listManualReceipts } from "@/lib/manual-receipts";
 import { listReceiptReviews } from "@/lib/receipt-reviews";
 import { getPaymentOverrideMap } from "@/lib/receipt-payment-status";
+import { getReceiptOcrMap, searchOcrHeroIds } from "@/lib/receipt-ocr";
+import { getOcrStatus } from "@/app/dashboard/belege/ocr-index";
 import { listUsers, getUserByUsername } from "@/lib/users";
 import { getAllowedModules } from "@/lib/role-store";
 import { getSession } from "@/lib/session";
@@ -40,6 +42,18 @@ export default async function BelegePage({
   const year = parseYear(yearParam);
   const month = parseMonth(monthParam);
   const view = parseView(viewParam);
+  const q = (Array.isArray(params.q) ? params.q[0] : params.q)?.trim() ?? "";
+
+  // OCR: extrahierte Felder, Indexierungs-Status, Schlagwortsuche.
+  let ocrMap: Awaited<ReturnType<typeof getReceiptOcrMap>> = new Map();
+  let ocrStatus = { total: 0, done: 0 };
+  let searchIds: Set<string> | null = null;
+  try {
+    [ocrMap, ocrStatus] = await Promise.all([getReceiptOcrMap(), getOcrStatus()]);
+    if (q) searchIds = await searchOcrHeroIds(q);
+  } catch {
+    // OCR optional – ohne Index bleiben die Spalten leer.
+  }
 
   let manual: Awaited<ReturnType<typeof listManualReceipts>> = [];
   try {
@@ -90,6 +104,10 @@ export default async function BelegePage({
         reviewers={reviewers}
         canReview={canReview}
         paymentOverrides={paymentOverrides}
+        ocrMap={ocrMap}
+        ocrStatus={ocrStatus}
+        searchIds={searchIds}
+        q={q}
       />
       <ManualBelege year={year} month={month} view={view} />
     </>

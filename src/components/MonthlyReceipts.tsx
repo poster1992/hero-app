@@ -8,6 +8,9 @@ import type { ReceiptType } from "@/lib/hero-api";
 import type { ManualReceipt } from "@/lib/manual-receipts";
 import type { ReceiptReview } from "@/lib/receipt-reviews";
 import type { PaymentOverride } from "@/lib/receipt-payment-status";
+import type { ReceiptOcrFields } from "@/lib/receipt-ocr";
+import type { OcrStatus } from "@/app/dashboard/belege/ocr-index";
+import OcrIndexPanel from "@/components/OcrIndexPanel";
 
 const currencyFormatter = new Intl.NumberFormat("de-DE", {
   style: "currency",
@@ -36,6 +39,10 @@ export default async function MonthlyReceipts({
   reviewers = [],
   canReview = false,
   paymentOverrides,
+  ocrMap,
+  ocrStatus,
+  searchIds,
+  q = "",
 }: {
   title: string;
   type: ReceiptType;
@@ -52,6 +59,14 @@ export default async function MonthlyReceipts({
   canReview?: boolean;
   /** Lokale Zahlstatus-Overrides je HERO-Beleg-ID (nur Belege). */
   paymentOverrides?: Map<string, PaymentOverride>;
+  /** OCR-Felder je HERO-Beleg-ID (Zahlungsziel/Skonto). */
+  ocrMap?: Map<string, ReceiptOcrFields>;
+  /** Fortschritt der OCR-Indexierung (für den Button). */
+  ocrStatus?: OcrStatus;
+  /** Schlagwortsuche: passende HERO-Beleg-IDs (oder null = keine Suche aktiv). */
+  searchIds?: Set<string> | null;
+  /** Aktueller Suchbegriff (für das Eingabefeld). */
+  q?: string;
 }) {
   let monthly: Awaited<ReturnType<typeof getReceiptsByMonth>> | null = null;
   let error: string | null = null;
@@ -90,6 +105,12 @@ export default async function MonthlyReceipts({
     heading = `${MONTH_LABELS[month - 1]} ${year}`;
   }
 
+  // Schlagwortsuche (Volltext im Beleg-Dokument): auf Treffer einschränken.
+  if (searchIds) {
+    receipts = receipts.filter((r) => searchIds.has(r.id));
+    heading = `Suche „${q}" (${receipts.length})`;
+  }
+
   // Manuelle Belege passend zur aktuellen Ansicht (Monat/Alle/Offen/Fällig).
   let manualFiltered: ManualReceipt[];
   if (view === "all") {
@@ -101,6 +122,9 @@ export default async function MonthlyReceipts({
   } else {
     manualFiltered = manual.filter((r) => r.date && Number(r.date.slice(5, 7)) === month);
   }
+
+  // Manuelle Belege haben keinen OCR-Volltext → bei aktiver Suche ausblenden.
+  if (searchIds) manualFiltered = [];
 
   const summary = mergeManualIntoSummary(summarizeReceipts(receipts), manualFiltered);
 
@@ -166,7 +190,39 @@ export default async function MonthlyReceipts({
         })}
       </div>
 
-      {view === "month" && (
+      {type === "output" && (
+        <div className="flex flex-wrap items-center gap-3">
+          <form action={basePath} method="get" className="flex items-center gap-2">
+            <input type="hidden" name="view" value={view} />
+            <input type="hidden" name="year" value={year} />
+            <input type="hidden" name="month" value={month} />
+            <input
+              type="text"
+              name="q"
+              defaultValue={q}
+              placeholder="In Belegen suchen (Volltext) …"
+              className="w-64 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:border-brand-red focus:outline-none"
+            />
+            <button
+              type="submit"
+              className="rounded-md bg-brand-red px-3 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-90"
+            >
+              Suchen
+            </button>
+            {q && (
+              <a
+                href={`${basePath}?view=${view}&year=${year}&month=${month}`}
+                className="text-sm text-gray-500 transition-colors hover:text-gray-800"
+              >
+                zurücksetzen
+              </a>
+            )}
+          </form>
+          {ocrStatus && <OcrIndexPanel status={ocrStatus} />}
+        </div>
+      )}
+
+      {view === "month" && !searchIds && (
         <MonthTabs year={year} month={month} basePath={basePath} counts={counts} view={view} />
       )}
 
@@ -199,6 +255,8 @@ export default async function MonthlyReceipts({
               enableSepa={type === "output"}
               enablePaidStatus={type === "output"}
               paymentOverrides={paymentOverrides}
+              ocrMap={ocrMap}
+              showOcr={type === "output"}
             />
           )}
         </div>
