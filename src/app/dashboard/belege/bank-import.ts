@@ -263,19 +263,20 @@ async function loadOpenBelege(): Promise<{ openBelege: OpenBeleg[]; supplierCoun
 function matchOne(
   t: BankTxn,
   openBelege: OpenBeleg[],
-  supplierCount: Map<string, number>,
   used: Set<string>
 ): { heroId: string | null; score: number; reason: string } {
   const hayText = norm(`${t.name} ${t.purpose}`);
   const hay = hayText.replace(/\s/g, "");
-  let best: { b: OpenBeleg; score: number; signals: number; strongName: boolean; reason: string } | null = null;
+  // numHit = Kandidat, dessen VOLLSTÄNDIGE Beleg-Nr. im Verwendungszweck steht
+  //          → nur dann wird automatisch vorgeschlagen.
+  // displayBest = bester Kandidat nach Score (nur als Hinweis, ohne Vorauswahl).
+  let numHit: { b: OpenBeleg; score: number; reason: string } | null = null;
+  let displayBest: { b: OpenBeleg; score: number; reason: string } | null = null;
   for (const b of openBelege) {
     if (used.has(b.heroId)) continue;
     const normSup = norm(b.supplier);
     const nameTokens = normSup.split(" ").filter((w) => w.length >= 4);
     const nameMatch = nameTokens.some((w) => hayText.includes(w));
-    const fullNameMatch = nameTokens.length > 0 && nameTokens.every((w) => hayText.includes(w));
-    const strongName = fullNameMatch && (supplierCount.get(normSup) ?? 0) === 1;
     const numMatch = !!b.number && b.number.length >= 4 && hay.includes(b.number.toLowerCase().replace(/\s/g, ""));
     const ibanMatch = !!b.iban && hay.includes(b.iban.toLowerCase());
     const zweckMatch = numMatch || ibanMatch;
@@ -289,14 +290,19 @@ function matchOne(
     if (zweckMatch) { score += 2; signals++; reasons.push(numMatch ? "Beleg-Nr." : "IBAN"); }
     if (amountMatch) { score += 1; signals++; reasons.push(skontoHit ? "Betrag (Skonto)" : "Betrag"); }
     if (signals === 0) continue;
-    if (!best || score > best.score) best = { b, score, signals, strongName, reason: reasons.join(" + ") };
+    const reason = reasons.join(" + ");
+    if (numMatch && (!numHit || score > numHit.score)) numHit = { b, score, reason };
+    if (!displayBest || score > displayBest.score) displayBest = { b, score, reason };
   }
-  const confident = !!best && (best.signals >= 2 || best.strongName);
-  if (confident && best) used.add(best.b.heroId);
+  // Vorschlag NUR bei vollständigem Beleg-Nr.-Treffer im Verwendungszweck.
+  if (numHit) {
+    used.add(numHit.b.heroId);
+    return { heroId: numHit.b.heroId, score: numHit.score, reason: numHit.reason };
+  }
   return {
-    heroId: confident ? best!.b.heroId : null,
-    score: best?.score ?? 0,
-    reason: best ? (confident ? best.reason : `unsicher: ${best.reason}`) : "kein Treffer",
+    heroId: null,
+    score: displayBest?.score ?? 0,
+    reason: displayBest ? `unsicher: ${displayBest.reason}` : "kein Treffer",
   };
 }
 
@@ -399,11 +405,11 @@ export async function getPendingBankList(): Promise<BankAnalysisResult> {
   if (!(await getSession())) return { matches: [], openBelege: [], error: "Kein Zugriff." };
   try {
     const [pending, loaded] = await Promise.all([listPendingTxns(), loadOpenBelege()]);
-    const { openBelege, supplierCount } = loaded;
+    const { openBelege } = loaded;
     const used = new Set<string>();
     const matches: BankMatch[] = pending.map((p) => {
       const txn: BankTxn = { date: p.date, amount: p.amount, direction: "out", name: p.name, purpose: p.purpose };
-      const m = matchOne(txn, openBelege, supplierCount, used);
+      const m = matchOne(txn, openBelege, used);
       return { txnId: p.id, txn, heroId: m.heroId, score: m.score, reason: m.reason };
     });
     return {

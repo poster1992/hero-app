@@ -54,6 +54,8 @@ export default function KontoauszugClient({
   const [result, setResult] = useState<BankAnalysisResult>(initial);
   const [history, setHistory] = useState<StatementImport[]>(initialHistory);
   const [sel, setSel] = useState<Record<number, string[]>>(() => syncSel(initial.matches, {}));
+  // Welche zugeordneten Buchungen sollen gespeichert werden (Häkchen je Zeile).
+  const [save, setSave] = useState<Record<number, boolean>>({});
   const [error, setError] = useState<string | null>(initial.error ?? null);
   const [info, setInfo] = useState<string | null>(null);
   const [confirming, startConfirm] = useTransition();
@@ -135,16 +137,35 @@ export default function KontoauszugClient({
     return new Set([...seen.entries()].filter(([, n]) => n > 1).map(([id]) => id));
   }, [sel]);
 
-  const assignedTxns = useMemo(
-    () => result.matches.filter((m) => (sel[m.txnId] ?? []).length > 0).length,
+  // Eine Zeile ist gespeichert-markiert, wenn sie zugeordnet UND angehakt ist.
+  // Standard: zugeordnete Zeilen sind angehakt (kann je Zeile abgewählt werden).
+  const isChecked = (txnId: number) =>
+    (sel[txnId] ?? []).length > 0 && (save[txnId] ?? true);
+  const toggleSave = (txnId: number) => setSave((p) => ({ ...p, [txnId]: !(p[txnId] ?? true) }));
+
+  const selectableTxnIds = useMemo(
+    () => result.matches.filter((m) => (sel[m.txnId] ?? []).length > 0).map((m) => m.txnId),
     [result, sel]
   );
+  const checkedCount = useMemo(
+    () => selectableTxnIds.filter((id) => isChecked(id)).length,
+    [selectableTxnIds, save] // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const allChecked = selectableTxnIds.length > 0 && checkedCount === selectableTxnIds.length;
+  const toggleAll = () => {
+    const v = !allChecked;
+    setSave((p) => {
+      const n = { ...p };
+      for (const id of selectableTxnIds) n[id] = v;
+      return n;
+    });
+  };
 
   const confirm = () => {
     const lines: ConfirmLine[] = [];
     for (const m of result.matches) {
       const heroIds = sel[m.txnId] ?? [];
-      if (heroIds.length === 0) continue;
+      if (heroIds.length === 0 || !isChecked(m.txnId)) continue;
       lines.push({
         txnId: m.txnId,
         heroIds,
@@ -152,24 +173,20 @@ export default function KontoauszugClient({
       });
     }
     if (lines.length === 0) {
-      setError("Keine Zuordnung gewählt.");
+      setError("Keine Buchung zum Speichern ausgewählt.");
       return;
     }
     setError(null);
     setInfo(null);
-    // nur noch die nicht gespeicherten Auswahlen behalten
-    const keep: Record<number, string[]> = {};
-    for (const m of result.matches) {
-      if ((sel[m.txnId] ?? []).length === 0) keep[m.txnId] = sel[m.txnId] ?? [];
-    }
     startConfirm(async () => {
       const res = await confirmBankMatches(lines);
       if (res.error) {
         setError(res.error);
         return;
       }
-      setInfo(`${res.count} Beleg(e) als „bezahlt" gespeichert · zugeordnete Buchungen entfernt.`);
-      await reloadList(keep);
+      setInfo(`${res.count} Beleg(e) als „bezahlt" gespeichert · gespeicherte Buchungen entfernt.`);
+      // Gespeicherte Buchungen verschwinden serverseitig; übrige Auswahl bleibt erhalten.
+      await reloadList(sel);
     });
   };
 
@@ -228,6 +245,16 @@ export default function KontoauszugClient({
               <table className="w-full min-w-[860px] text-left text-sm">
                 <thead>
                   <tr className="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-700">
+                    <th className="px-3 py-3 text-center font-medium">
+                      <input
+                        type="checkbox"
+                        checked={allChecked}
+                        onChange={toggleAll}
+                        disabled={selectableTxnIds.length === 0}
+                        title="Alle zugeordneten auswählen"
+                        aria-label="Alle auswählen"
+                      />
+                    </th>
                     <th className="px-4 py-3 font-medium">Datum</th>
                     <th className="px-4 py-3 font-medium text-right">Betrag</th>
                     <th className="px-4 py-3 font-medium">Empfänger / Zweck</th>
@@ -250,6 +277,16 @@ export default function KontoauszugClient({
                       Math.abs(sumSkonto - m.txn.amount) > 0.02;
                     return (
                       <tr key={m.txnId} className="border-b border-gray-200 last:border-0 align-top hover:bg-gray-100">
+                        <td className="px-3 py-2.5 text-center">
+                          <input
+                            type="checkbox"
+                            checked={isChecked(m.txnId)}
+                            disabled={list.length === 0}
+                            onChange={() => toggleSave(m.txnId)}
+                            title={list.length === 0 ? "Erst einen Beleg zuordnen" : "Zum Speichern auswählen"}
+                            aria-label="Buchung zum Speichern auswählen"
+                          />
+                        </td>
                         <td className="px-4 py-2.5 whitespace-nowrap text-gray-600">{fmtDate(m.txn.date)}</td>
                         <td className="px-4 py-2.5 whitespace-nowrap text-right text-gray-900">
                           {euro.format(m.txn.amount)}
@@ -323,14 +360,16 @@ export default function KontoauszugClient({
                   Ein Beleg ist mehrfach zugeordnet – bitte auflösen.
                 </span>
               )}
-              <span className="text-sm text-gray-600">{assignedTxns} Buchung(en) zugeordnet</span>
+              <span className="text-sm text-gray-600">
+                {checkedCount} von {selectableTxnIds.length} ausgewählt
+              </span>
               <button
                 type="button"
                 onClick={confirm}
-                disabled={confirming || assignedTxns === 0 || dupHeroIds.size > 0}
+                disabled={confirming || checkedCount === 0 || dupHeroIds.size > 0}
                 className="rounded-md bg-brand-red px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
               >
-                {confirming ? "Speichere …" : `Speichern & aus Liste entfernen (${assignedTxns})`}
+                {confirming ? "Speichere …" : `Ausgewählte speichern & entfernen (${checkedCount})`}
               </button>
             </div>
           </>
