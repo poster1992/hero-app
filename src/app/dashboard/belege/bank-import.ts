@@ -1,5 +1,6 @@
 "use server";
 
+import { createHash } from "node:crypto";
 import Anthropic from "@anthropic-ai/sdk";
 import * as XLSX from "xlsx";
 import { getSession } from "@/lib/session";
@@ -8,6 +9,7 @@ import { getReceiptsInRange } from "@/lib/hero-api";
 import { getInvoiceStatus, getCustomerName } from "@/lib/invoices";
 import { getSupplierIbanMap } from "@/lib/supplier-ibans";
 import { getPaymentOverrideMap, setPaymentOverride } from "@/lib/receipt-payment-status";
+import { findStatementImport, recordStatementImport } from "@/lib/bank-imports";
 
 export interface BankTxn {
   /** YYYY-MM-DD oder null. */
@@ -35,6 +37,9 @@ export interface BankMatch {
   /** 0 = kein Treffer, höher = sicherer. */
   score: number;
   reason: string;
+  /** Diese Buchung (Betrag bzw. Betrag+Datum) wurde schon einmal eingelesen. */
+  alreadyImported?: boolean;
+  alreadyImportedInfo?: string;
 }
 
 export interface BankAnalysisResult {
@@ -42,6 +47,13 @@ export interface BankAnalysisResult {
   openBelege: OpenBeleg[];
   error?: string;
   info?: string;
+  /** Datei-Hash des Auszugs (für die Doppel-Erkennung beim Bestätigen). */
+  statementHash?: string;
+  filename?: string;
+  txCount?: number;
+  total?: number;
+  /** Warnung, wenn dieser Auszug bereits eingelesen wurde. */
+  warning?: string;
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -118,6 +130,23 @@ export async function analyzeBankStatement(formData: FormData): Promise<BankAnal
   const buf = Buffer.from(await file.arrayBuffer());
   const client = new Anthropic({ maxRetries: 2, timeout: 180_000 });
 
+  // Doppel-Erkennung: wurde genau diese Auszugsdatei schon einmal eingelesen?
+  const statementHash = createHash("sha256").update(buf).digest("hex");
+  let warning: string | undefined;
+  try {
+    const prior = await findStatementImport(statementHash);
+    if (prior) {
+      const when = prior.importedAt ? prior.importedAt.slice(0, 10).split("-").reverse().join(".") : null;
+      warning =
+        "Dieser Kontoauszug wurde bereits eingelesen" +
+        (when ? ` am ${when}` : "") +
+        (prior.importedByName ? ` von ${prior.importedByName}` : "") +
+        ". Bitte prüfen, damit keine Doppelzahlung markiert wird.";
+    }
+  } catch {
+    // Doppel-Erkennung optional.
+  }
+
   // 1) Buchungen extrahieren – je nach Dateityp
   let txns: BankTxn[];
   try {
@@ -140,6 +169,9 @@ export async function analyzeBankStatement(formData: FormData): Promise<BankAnal
 
   // 2) Offene Belege laden (HERO offen UND nicht lokal bezahlt; bzw. lokal offen)
   let openBelege: OpenBeleg[];
+  // Bereits per Kontoauszug erfasste Buchungen (aus den gespeicherten Notizen).
+  const importedAmount = new Set<string>();
+  const importedAmountDate = new Set<string>();
   try {
     const now = new Date();
     const from = `${now.getUTCFullYear() - 3}-01-01T00:00:00Z`;
@@ -149,6 +181,13 @@ export async function analyzeBankStatement(formData: FormData): Promise<BankAnal
       getSupplierIbanMap(),
       getPaymentOverrideMap(),
     ]);
+    for (const ov of overrides.values()) {
+      const mm = (ov.note ?? "").match(/Kontoauszug\s+(\d{2}\.\d{2}\.\d{4}|—)\s+·\s+([\d.]+,\d{2})/);
+      if (!mm) continue;
+      const amt = Number(mm[2].replace(/\./g, "").replace(",", ".")).toFixed(2);
+      importedAmount.add(amt);
+      if (mm[1] !== "—") importedAmountDate.add(`${amt}|${mm[1].split(".").reverse().join("-")}`);
+    }
     openBelege = receipts
       .filter((r) => r.type === "output")
       .filter((r) => {
@@ -191,12 +230,38 @@ export async function analyzeBankStatement(formData: FormData): Promise<BankAnal
         if (!best || score > best.score) best = { b, score, reason: reasons.join(" + ") };
       }
       if (best) used.add(best.b.heroId);
-      return { txn: t, heroId: best?.b.heroId ?? null, score: best?.score ?? 0, reason: best?.reason ?? "kein Treffer" };
+
+      // Wurde diese Buchung (Betrag+Datum, sonst Betrag) schon eingelesen?
+      const amtKey = t.amount.toFixed(2);
+      let alreadyImported = false;
+      let alreadyImportedInfo: string | undefined;
+      if (t.date && importedAmountDate.has(`${amtKey}|${t.date}`)) {
+        alreadyImported = true;
+        alreadyImportedInfo = "Betrag und Datum bereits eingelesen";
+      } else if (importedAmount.has(amtKey)) {
+        alreadyImported = true;
+        alreadyImportedInfo = "Betrag bereits eingelesen";
+      }
+
+      return {
+        txn: t,
+        heroId: best?.b.heroId ?? null,
+        score: best?.score ?? 0,
+        reason: best?.reason ?? "kein Treffer",
+        alreadyImported,
+        alreadyImportedInfo,
+      };
     });
 
+  const total = round2(matches.reduce((s, m) => s + m.txn.amount, 0));
   return {
     matches,
     openBelege,
+    statementHash,
+    filename: file.name,
+    txCount: matches.length,
+    total,
+    warning,
     info: `${matches.length} Abgänge erkannt, ${openBelege.length} offene Belege.`,
   };
 }
@@ -206,8 +271,18 @@ export interface ConfirmAssignment {
   note: string;
 }
 
+export interface BankStatementMeta {
+  hash: string;
+  filename: string;
+  txCount: number;
+  total: number;
+}
+
 /** Setzt die bestätigten Belege lokal auf „bezahlt" inkl. Kontoauszug-Notiz. */
-export async function confirmBankMatches(assignments: ConfirmAssignment[]): Promise<{ count: number; error?: string }> {
+export async function confirmBankMatches(
+  assignments: ConfirmAssignment[],
+  statement?: BankStatementMeta
+): Promise<{ count: number; error?: string }> {
   const session = await getSession();
   if (!session) return { count: 0, error: "Kein Zugriff." };
   let userId: number | null = null;
@@ -224,6 +299,20 @@ export async function confirmBankMatches(assignments: ConfirmAssignment[]): Prom
       count++;
     } catch {
       /* einzelnen Beleg überspringen */
+    }
+  }
+  // Auszug vermerken (für die Doppel-Erkennung beim nächsten Einlesen).
+  if (statement?.hash) {
+    try {
+      await recordStatementImport({
+        fileHash: statement.hash,
+        filename: statement.filename,
+        txCount: statement.txCount,
+        total: statement.total,
+        userId,
+      });
+    } catch {
+      /* optional */
     }
   }
   return { count };

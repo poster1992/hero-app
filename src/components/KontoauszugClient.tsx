@@ -100,8 +100,16 @@ export default function KontoauszugClient() {
       return;
     }
     setError(null);
+    const statement = result.statementHash
+      ? {
+          hash: result.statementHash,
+          filename: result.filename ?? "",
+          txCount: result.txCount ?? result.matches.length,
+          total: result.total ?? 0,
+        }
+      : undefined;
     startConfirm(async () => {
-      const res = await confirmBankMatches(assignments);
+      const res = await confirmBankMatches(assignments, statement);
       if (res.error) {
         setError(res.error);
         return;
@@ -159,6 +167,17 @@ export default function KontoauszugClient() {
             <h2 className="text-lg font-medium text-gray-900">Abgleich · Sichtkontrolle (nur Abgänge)</h2>
             <span className="text-sm text-gray-600">{result.info}</span>
           </div>
+          {result.warning && (
+            <div className="border-b border-amber-500/30 bg-amber-500/10 px-5 py-3 text-sm text-amber-300">
+              ⚠ {result.warning}
+            </div>
+          )}
+          {result.matches.some((m) => m.alreadyImported) && (
+            <div className="border-b border-amber-500/30 bg-amber-500/10 px-5 py-3 text-sm text-amber-300">
+              ⚠ {result.matches.filter((m) => m.alreadyImported).length} Buchung(en) wurden anhand von
+              Betrag/Datum evtl. bereits eingelesen – unten markiert. Bitte vor dem Bestätigen prüfen.
+            </div>
+          )}
           <div className="overflow-x-auto">
             <table className="w-full min-w-[860px] text-left text-sm">
               <thead>
@@ -186,17 +205,27 @@ export default function KontoauszugClient() {
                         <div className="text-xs text-gray-500 break-words">{m.txn.purpose}</div>
                       </td>
                       <td className="px-4 py-2.5">
-                        <span
-                          className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${
-                            m.score >= 3
-                              ? "bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/30"
-                              : m.score > 0
-                                ? "bg-amber-500/15 text-amber-300 ring-1 ring-amber-500/30"
-                                : "bg-gray-400/20 text-gray-400 ring-1 ring-gray-400/30"
-                          }`}
-                        >
-                          {m.reason}
-                        </span>
+                        <div className="flex flex-col items-start gap-1">
+                          <span
+                            className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${
+                              m.score >= 3
+                                ? "bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/30"
+                                : m.score > 0
+                                  ? "bg-amber-500/15 text-amber-300 ring-1 ring-amber-500/30"
+                                  : "bg-gray-400/20 text-gray-400 ring-1 ring-gray-400/30"
+                            }`}
+                          >
+                            {m.reason}
+                          </span>
+                          {m.alreadyImported && (
+                            <span
+                              title={m.alreadyImportedInfo}
+                              className="whitespace-nowrap rounded-full bg-rose-500/15 px-2 py-0.5 text-xs font-medium text-rose-300 ring-1 ring-rose-500/30"
+                            >
+                              ⚠ bereits eingelesen
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-2.5">
                         {/* gewählte Belege als Chips */}
