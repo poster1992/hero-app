@@ -16,6 +16,7 @@ import {
 import type { StatementImport } from "@/lib/bank-imports";
 
 const euro = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
+const eurCost = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR", maximumFractionDigits: 4 });
 function fmtDate(d: string | null): string {
   if (!d) return "—";
   const [y, m, day] = d.split("-");
@@ -102,6 +103,7 @@ export default function KontoauszugClient({
       }
       const parts = [`${res.added} neue Buchung(en) hinzugefügt`];
       if (res.added < res.total) parts.push(`${res.total - res.added} bereits bekannt`);
+      if (res.costEur != null) parts.push(`OCR-Kosten ca. ${eurCost.format(res.costEur)}`);
       if (res.warning) parts.push(res.warning);
       setInfo(parts.join(" · "));
       if (fileRef.current) fileRef.current.value = "";
@@ -352,6 +354,7 @@ export default function KontoauszugClient({
                   <th className="px-4 py-3 font-medium">Eingelesen</th>
                   <th className="px-4 py-3 font-medium text-right">Buchungen</th>
                   <th className="px-4 py-3 font-medium text-right">Summe</th>
+                  <th className="px-4 py-3 font-medium text-right">OCR-Kosten</th>
                   <th className="px-4 py-3 font-medium" />
                 </tr>
               </thead>
@@ -370,6 +373,9 @@ export default function KontoauszugClient({
                     </td>
                     <td className="px-4 py-2.5 text-right text-gray-700">
                       {s.total != null ? euro.format(s.total) : "—"}
+                    </td>
+                    <td className="px-4 py-2.5 text-right text-gray-600">
+                      {s.costEur != null ? `ca. ${eurCost.format(s.costEur)}` : "—"}
                     </td>
                     <td className="px-4 py-2.5 text-right">
                       <button

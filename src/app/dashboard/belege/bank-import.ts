@@ -58,6 +58,32 @@ export interface BankAnalysisResult {
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
+
+// OCR-Modelle: PDF/Bild brauchen Opus (Vision); reiner Text (CSV/TXT/XLSX) reicht Haiku.
+const MODEL_OPUS = "claude-opus-4-8";
+const MODEL_HAIKU = "claude-haiku-4-5";
+// Preise in USD pro 1 Mio. Tokens.
+const PRICES: Record<string, { in: number; out: number }> = {
+  "claude-opus-4-8": { in: 5, out: 25 },
+  "claude-haiku-4-5": { in: 1, out: 5 },
+};
+const USD_EUR = 0.92;
+
+interface Usage {
+  model: string;
+  in: number;
+  out: number;
+}
+/** Geschätzte Kosten (€) aus den gesammelten Token-Nutzungen. */
+function costEur(usages: Usage[]): number {
+  let usd = 0;
+  for (const u of usages) {
+    const p = PRICES[u.model] ?? PRICES[MODEL_OPUS];
+    usd += (u.in / 1_000_000) * p.in + (u.out / 1_000_000) * p.out;
+  }
+  return Math.round(usd * USD_EUR * 10000) / 10000;
+}
+
 const norm = (s: string) =>
   (s || "")
     .toLowerCase()
@@ -126,7 +152,9 @@ function mapTxns(raw: RawTxn[]): BankTxn[] {
 async function callExtract(
   client: Anthropic,
   payload: { kind: "pdf"; data: string } | { kind: "text"; text: string },
-  maxTokens: number
+  maxTokens: number,
+  model: string,
+  usages?: Usage[]
 ): Promise<BankTxn[]> {
   const content =
     payload.kind === "pdf"
@@ -136,17 +164,23 @@ async function callExtract(
         ]
       : [{ type: "text" as const, text: `${INSTRUCTION}\n\nKontoauszug-Daten:\n${payload.text}` }];
   const res = await client.messages.create({
-    model: "claude-opus-4-8",
+    model,
     max_tokens: maxTokens,
     messages: [{ role: "user", content }],
   });
+  usages?.push({ model, in: res.usage?.input_tokens ?? 0, out: res.usage?.output_tokens ?? 0 });
   const tb = res.content.find((b) => b.type === "text");
   if (!tb || tb.type !== "text") return [];
   return mapTxns(parseTxnObjects(tb.text));
 }
 
 /** Text in Blöcke aufteilen (gegen Token-Limit bei vielen Zeilen) und je Block extrahieren. */
-async function extractFromText(client: Anthropic, text: string): Promise<BankTxn[]> {
+async function extractFromText(
+  client: Anthropic,
+  text: string,
+  model: string,
+  usages?: Usage[]
+): Promise<BankTxn[]> {
   const lines = text.split(/\r?\n/).filter((l) => l.trim() !== "").slice(0, 6000);
   if (lines.length === 0) return [];
   const header = lines.slice(0, 2).join("\n"); // mögliche Spaltenüberschrift als Kontext mitgeben
@@ -156,14 +190,16 @@ async function extractFromText(client: Anthropic, text: string): Promise<BankTxn
     const part = lines.slice(i, i + CHUNK).join("\n");
     chunks.push(i === 0 ? part : `${header}\n${part}`);
   }
-  const all = await Promise.all(chunks.map((c) => callExtract(client, { kind: "text", text: c }, 8000)));
+  const all = await Promise.all(chunks.map((c) => callExtract(client, { kind: "text", text: c }, 8000, model, usages)));
   return all.flat();
 }
 
 /** Liest die auf dem Dokument stehende Kontoauszugsnummer (oder null). */
 async function extractStatementNumber(
   client: Anthropic,
-  payload: { kind: "pdf"; data: string } | { kind: "text"; text: string }
+  payload: { kind: "pdf"; data: string } | { kind: "text"; text: string },
+  model: string,
+  usages?: Usage[]
 ): Promise<string | null> {
   const ask =
     "Auf diesem Kontoauszug steht eine Auszugs-/Kontoauszugsnummer (z.B. \"Auszug Nr. 7\", " +
@@ -177,7 +213,8 @@ async function extractStatementNumber(
             { type: "text" as const, text: ask },
           ]
         : [{ type: "text" as const, text: `${ask}\n\nDokument-Anfang:\n${payload.text.slice(0, 3000)}` }];
-    const res = await client.messages.create({ model: "claude-opus-4-8", max_tokens: 40, messages: [{ role: "user", content }] });
+    const res = await client.messages.create({ model, max_tokens: 40, messages: [{ role: "user", content }] });
+    usages?.push({ model, in: res.usage?.input_tokens ?? 0, out: res.usage?.output_tokens ?? 0 });
     const tb = res.content.find((b) => b.type === "text");
     if (!tb || tb.type !== "text") return null;
     const val = tb.text.trim().replace(/^["']|["']$/g, "").slice(0, 64);
@@ -266,7 +303,7 @@ function matchOne(
 /** Liest den hochgeladenen Auszug, extrahiert die Abgänge und legt sie als offene Posten an. */
 export async function importBankStatement(
   formData: FormData
-): Promise<{ added: number; total: number; warning?: string; error?: string }> {
+): Promise<{ added: number; total: number; warning?: string; error?: string; costEur?: number }> {
   const session = await getSession();
   if (!session) return { added: 0, total: 0, error: "Kein Zugriff." };
   if (!process.env.ANTHROPIC_API_KEY) {
@@ -309,12 +346,15 @@ export async function importBankStatement(
     if (text.includes("�")) text = buf.toString("latin1");
     payload = { kind: "text", text };
   }
+  // PDF → Opus (Vision), reiner Text (CSV/TXT/XLSX) → Haiku (günstiger).
+  const ocrModel = payload.kind === "pdf" ? MODEL_OPUS : MODEL_HAIKU;
+  const usages: Usage[] = [];
   let txns: BankTxn[];
   try {
     txns =
       payload.kind === "pdf"
-        ? await callExtract(client, payload, 16000)
-        : await extractFromText(client, payload.text);
+        ? await callExtract(client, payload, 16000, ocrModel, usages)
+        : await extractFromText(client, payload.text, ocrModel, usages);
   } catch (e) {
     return { added: 0, total: 0, error: e instanceof Error ? e.message : "Auszug konnte nicht gelesen werden." };
   }
@@ -335,7 +375,8 @@ export async function importBankStatement(
       out.map((t) => ({ date: t.date, amount: t.amount, name: t.name, purpose: t.purpose })),
       statementHash
     );
-    const statementNumber = await extractStatementNumber(client, payload);
+    const statementNumber = await extractStatementNumber(client, payload, ocrModel, usages);
+    const cost = costEur(usages);
     await recordStatementImport({
       fileHash: statementHash,
       filename: file.name,
@@ -343,8 +384,11 @@ export async function importBankStatement(
       txCount: out.length,
       total: round2(out.reduce((s, t) => s + t.amount, 0)),
       userId,
+      inputTokens: usages.reduce((s, u) => s + u.in, 0),
+      outputTokens: usages.reduce((s, u) => s + u.out, 0),
+      costEur: cost,
     });
-    return { added, total: out.length, warning };
+    return { added, total: out.length, warning, costEur: cost };
   } catch (e) {
     return { added: 0, total: 0, error: e instanceof Error ? e.message : "Speichern fehlgeschlagen." };
   }
