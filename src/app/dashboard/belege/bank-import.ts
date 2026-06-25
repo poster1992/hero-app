@@ -277,7 +277,10 @@ function matchOne(
     const normSup = norm(b.supplier);
     const nameTokens = normSup.split(" ").filter((w) => w.length >= 4);
     const nameMatch = nameTokens.some((w) => hayText.includes(w));
-    const numMatch = !!b.number && b.number.length >= 4 && hay.includes(b.number.toLowerCase().replace(/\s/g, ""));
+    // Beleg-Nr. muss als EIGENSTÄNDIGE Zahl im Zweck stehen (Ziffern-Grenze davor/danach),
+    // nicht als Teil einer längeren Zahl wie einem Datum (z.B. "062026" in "19062026").
+    const bn = b.number ? b.number.toLowerCase().replace(/[^a-z0-9]/g, "") : "";
+    const numMatch = bn.length >= 4 && new RegExp(`(^|\\D)${bn}(\\D|$)`).test(hay);
     const ibanMatch = !!b.iban && hay.includes(b.iban.toLowerCase());
     const zweckMatch = numMatch || ibanMatch;
     const grossHit = Math.abs(b.gross - t.amount) <= 0.02;
