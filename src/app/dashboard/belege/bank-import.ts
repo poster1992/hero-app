@@ -10,6 +10,7 @@ import { effectiveReceiptStatus, getCustomerName } from "@/lib/invoices";
 import { getSupplierIbanMap } from "@/lib/supplier-ibans";
 import { getPaymentOverrideMap, setPaymentOverride } from "@/lib/receipt-payment-status";
 import { findStatementImport, recordStatementImport } from "@/lib/bank-imports";
+import { addPendingTxns, listPendingTxns, markTxnsDone } from "@/lib/bank-transactions";
 
 export interface BankTxn {
   /** YYYY-MM-DD oder null. */
@@ -33,15 +34,14 @@ export interface OpenBeleg {
 }
 
 export interface BankMatch {
+  /** DB-ID der offenen Buchung (zum Erledigt-Setzen). */
+  txnId: number;
   txn: BankTxn;
   /** Vorgeschlagener Beleg (HERO-ID) oder null. */
   heroId: string | null;
   /** 0 = kein Treffer, höher = sicherer. */
   score: number;
   reason: string;
-  /** Diese Buchung (Betrag bzw. Betrag+Datum) wurde schon einmal eingelesen. */
-  alreadyImported?: boolean;
-  alreadyImportedInfo?: string;
 }
 
 export interface BankAnalysisResult {
@@ -49,13 +49,6 @@ export interface BankAnalysisResult {
   openBelege: OpenBeleg[];
   error?: string;
   info?: string;
-  /** Datei-Hash des Auszugs (für die Doppel-Erkennung beim Bestätigen). */
-  statementHash?: string;
-  filename?: string;
-  txCount?: number;
-  total?: number;
-  /** Warnung, wenn dieser Auszug bereits eingelesen wurde. */
-  warning?: string;
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -161,23 +154,99 @@ async function extractFromText(client: Anthropic, text: string): Promise<BankTxn
   return all.flat();
 }
 
-/** Liest den hochgeladenen Kontoauszug (PDF/CSV/TXT/XLSX) und gleicht ihn mit offenen Belegen ab. */
-export async function analyzeBankStatement(formData: FormData): Promise<BankAnalysisResult> {
-  if (!(await getSession())) return { matches: [], openBelege: [], error: "Kein Zugriff." };
+/** Lädt offene Belege (effektiv nicht bezahlt) + Lieferanten-Häufigkeit für den Abgleich. */
+async function loadOpenBelege(): Promise<{ openBelege: OpenBeleg[]; supplierCount: Map<string, number> }> {
+  const now = new Date();
+  const from = `${now.getUTCFullYear() - 3}-01-01T00:00:00Z`;
+  const to = `${now.getUTCFullYear() + 1}-12-31T23:59:59Z`;
+  const [receipts, ibanMap, overrides] = await Promise.all([
+    getReceiptsInRange(from, to),
+    getSupplierIbanMap(),
+    getPaymentOverrideMap(),
+  ]);
+  const openBelege: OpenBeleg[] = receipts
+    .filter((r) => r.type === "output")
+    .filter((r) => effectiveReceiptStatus(r, overrides.get(r.id)?.status ?? null).tone !== "paid")
+    .map((r) => {
+      const sk = r.customer?.id != null ? ibanMap.get(r.customer.id) : undefined;
+      const gross = round2(r.value);
+      const pct = sk?.skontoPercent ?? null;
+      return {
+        heroId: r.id,
+        number: r.number,
+        supplier: getCustomerName(r),
+        gross,
+        iban: sk?.iban ?? null,
+        skontoAmount: pct && pct > 0 ? round2(gross * (1 - pct / 100)) : null,
+      };
+    });
+  const supplierCount = new Map<string, number>();
+  for (const b of openBelege) {
+    const k = norm(b.supplier);
+    if (k) supplierCount.set(k, (supplierCount.get(k) ?? 0) + 1);
+  }
+  return { openBelege, supplierCount };
+}
+
+/** Bester passender offener Beleg für eine Buchung. Priorität: Name > Zweck > Betrag. */
+function matchOne(
+  t: BankTxn,
+  openBelege: OpenBeleg[],
+  supplierCount: Map<string, number>,
+  used: Set<string>
+): { heroId: string | null; score: number; reason: string } {
+  const hayText = norm(`${t.name} ${t.purpose}`);
+  const hay = hayText.replace(/\s/g, "");
+  let best: { b: OpenBeleg; score: number; signals: number; strongName: boolean; reason: string } | null = null;
+  for (const b of openBelege) {
+    if (used.has(b.heroId)) continue;
+    const normSup = norm(b.supplier);
+    const nameTokens = normSup.split(" ").filter((w) => w.length >= 4);
+    const nameMatch = nameTokens.some((w) => hayText.includes(w));
+    const fullNameMatch = nameTokens.length > 0 && nameTokens.every((w) => hayText.includes(w));
+    const strongName = fullNameMatch && (supplierCount.get(normSup) ?? 0) === 1;
+    const numMatch = !!b.number && b.number.length >= 4 && hay.includes(b.number.toLowerCase().replace(/\s/g, ""));
+    const ibanMatch = !!b.iban && hay.includes(b.iban.toLowerCase());
+    const zweckMatch = numMatch || ibanMatch;
+    const grossHit = Math.abs(b.gross - t.amount) <= 0.02;
+    const skontoHit = !grossHit && b.skontoAmount != null && Math.abs(b.skontoAmount - t.amount) <= 0.02;
+    const amountMatch = grossHit || skontoHit;
+    let score = 0;
+    let signals = 0;
+    const reasons: string[] = [];
+    if (nameMatch) { score += 4; signals++; reasons.push("Name"); }
+    if (zweckMatch) { score += 2; signals++; reasons.push(numMatch ? "Beleg-Nr." : "IBAN"); }
+    if (amountMatch) { score += 1; signals++; reasons.push(skontoHit ? "Betrag (Skonto)" : "Betrag"); }
+    if (signals === 0) continue;
+    if (!best || score > best.score) best = { b, score, signals, strongName, reason: reasons.join(" + ") };
+  }
+  const confident = !!best && (best.signals >= 2 || best.strongName);
+  if (confident && best) used.add(best.b.heroId);
+  return {
+    heroId: confident ? best!.b.heroId : null,
+    score: best?.score ?? 0,
+    reason: best ? (confident ? best.reason : `unsicher: ${best.reason}`) : "kein Treffer",
+  };
+}
+
+/** Liest den hochgeladenen Auszug, extrahiert die Abgänge und legt sie als offene Posten an. */
+export async function importBankStatement(
+  formData: FormData
+): Promise<{ added: number; total: number; warning?: string; error?: string }> {
+  const session = await getSession();
+  if (!session) return { added: 0, total: 0, error: "Kein Zugriff." };
   if (!process.env.ANTHROPIC_API_KEY) {
-    return { matches: [], openBelege: [], error: "OCR ist nicht konfiguriert: ANTHROPIC_API_KEY fehlt." };
+    return { added: 0, total: 0, error: "OCR ist nicht konfiguriert: ANTHROPIC_API_KEY fehlt." };
   }
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) {
-    return { matches: [], openBelege: [], error: "Keine Datei hochgeladen." };
+    return { added: 0, total: 0, error: "Keine Datei hochgeladen." };
   }
 
   const name = file.name.toLowerCase();
   const buf = Buffer.from(await file.arrayBuffer());
-  const client = new Anthropic({ maxRetries: 2, timeout: 180_000 });
-
-  // Doppel-Erkennung: wurde genau diese Auszugsdatei schon einmal eingelesen?
   const statementHash = createHash("sha256").update(buf).digest("hex");
+
   let warning: string | undefined;
   try {
     const prior = await findStatementImport(statementHash);
@@ -187,13 +256,13 @@ export async function analyzeBankStatement(formData: FormData): Promise<BankAnal
         "Dieser Kontoauszug wurde bereits eingelesen" +
         (when ? ` am ${when}` : "") +
         (prior.importedByName ? ` von ${prior.importedByName}` : "") +
-        ". Bitte prüfen, damit keine Doppelzahlung markiert wird.";
+        " – bereits bekannte Buchungen werden nicht doppelt hinzugefügt.";
     }
   } catch {
-    // Doppel-Erkennung optional.
+    // optional
   }
 
-  // 1) Buchungen extrahieren – je nach Dateityp
+  const client = new Anthropic({ maxRetries: 2, timeout: 180_000 });
   let txns: BankTxn[];
   try {
     if (name.endsWith(".pdf") || file.type === "application/pdf") {
@@ -203,159 +272,73 @@ export async function analyzeBankStatement(formData: FormData): Promise<BankAnal
       const csv = XLSX.utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]]);
       txns = await extractFromText(client, csv);
     } else {
-      // CSV / TXT – UTF-8, bei deutschen Bank-Exports ggf. Latin-1.
       let text = buf.toString("utf8");
       if (text.includes("�")) text = buf.toString("latin1");
       txns = await extractFromText(client, text);
     }
   } catch (e) {
-    return { matches: [], openBelege: [], error: e instanceof Error ? e.message : "Auszug konnte nicht gelesen werden." };
-  }
-  if (txns.length === 0) {
-    return { matches: [], openBelege: [], error: "Keine Buchungen erkannt. Bitte Format/Datei prüfen." };
+    return { added: 0, total: 0, error: e instanceof Error ? e.message : "Auszug konnte nicht gelesen werden." };
   }
 
-  // 2) Offene Belege laden (HERO offen UND nicht lokal bezahlt; bzw. lokal offen)
-  let openBelege: OpenBeleg[];
-  // Bereits per Kontoauszug erfasste Buchungen (aus den gespeicherten Notizen).
-  const importedAmount = new Set<string>();
-  const importedAmountDate = new Set<string>();
+  const out = txns.filter((t) => t.direction === "out");
+  if (out.length === 0) {
+    return { added: 0, total: 0, warning, error: "Keine Abgänge erkannt. Bitte Format/Datei prüfen." };
+  }
+
+  let userId: number | null = null;
   try {
-    const now = new Date();
-    const from = `${now.getUTCFullYear() - 3}-01-01T00:00:00Z`;
-    const to = `${now.getUTCFullYear() + 1}-12-31T23:59:59Z`;
-    const [receipts, ibanMap, overrides] = await Promise.all([
-      getReceiptsInRange(from, to),
-      getSupplierIbanMap(),
-      getPaymentOverrideMap(),
-    ]);
-    for (const ov of overrides.values()) {
-      const mm = (ov.note ?? "").match(/Kontoauszug\s+(\d{2}\.\d{2}\.\d{4}|—)\s+·\s+([\d.]+,\d{2})/);
-      if (!mm) continue;
-      const amt = Number(mm[2].replace(/\./g, "").replace(",", ".")).toFixed(2);
-      importedAmount.add(amt);
-      if (mm[1] !== "—") importedAmountDate.add(`${amt}|${mm[1].split(".").reverse().join("-")}`);
-    }
-    openBelege = receipts
-      .filter((r) => r.type === "output")
-      .filter((r) => {
-        const ov = overrides.get(r.id);
-        // Offen = effektiv nicht bezahlt (Override > [ab Cutoff lokal] > HERO).
-        return effectiveReceiptStatus(r, ov?.status ?? null).tone !== "paid";
-      })
-      .map((r) => {
-        const sk = r.customer?.id != null ? ibanMap.get(r.customer.id) : undefined;
-        const gross = round2(r.value);
-        const pct = sk?.skontoPercent ?? null;
-        return {
-          heroId: r.id,
-          number: r.number,
-          supplier: getCustomerName(r),
-          gross,
-          iban: sk?.iban ?? null,
-          skontoAmount: pct && pct > 0 ? round2(gross * (1 - pct / 100)) : null,
-        };
-      });
-  } catch (e) {
-    return { matches: [], openBelege: [], error: e instanceof Error ? e.message : "Belege konnten nicht geladen werden." };
+    userId = (await getUserByUsername(session.username))?.id ?? null;
+  } catch {
+    /* ignore */
   }
-
-  // 3) Abgleich je Abgang – Priorität: Name > Zweck (Beleg-Nr./IBAN) > Betrag.
-  // Wie oft kommt ein Lieferant unter den offenen Belegen vor? (für eindeutigen Namens-Treffer)
-  const supplierCount = new Map<string, number>();
-  for (const b of openBelege) {
-    const k = norm(b.supplier);
-    if (k) supplierCount.set(k, (supplierCount.get(k) ?? 0) + 1);
-  }
-  const used = new Set<string>();
-  const matches: BankMatch[] = txns
-    .filter((t) => t.direction === "out")
-    .map((t) => {
-      const hayText = norm(`${t.name} ${t.purpose}`);
-      const hay = hayText.replace(/\s/g, "");
-      let best: { b: OpenBeleg; score: number; signals: number; strongName: boolean; reason: string } | null = null;
-      for (const b of openBelege) {
-        if (used.has(b.heroId)) continue;
-        // Priorität: 1. Name, 2. Zweck (Beleg-Nr./IBAN im Verwendungszweck), 3. Betrag.
-        const normSup = norm(b.supplier);
-        const nameTokens = normSup.split(" ").filter((w) => w.length >= 4);
-        const nameMatch = nameTokens.some((w) => hayText.includes(w));
-        // Vollständiger Namenstreffer (alle Namensbestandteile vorhanden) bei nur
-        // EINEM offenen Beleg dieses Lieferanten = eindeutig/sicher (Name allein reicht).
-        const fullNameMatch = nameTokens.length > 0 && nameTokens.every((w) => hayText.includes(w));
-        const strongName = fullNameMatch && (supplierCount.get(normSup) ?? 0) === 1;
-        const numMatch = !!b.number && b.number.length >= 4 && hay.includes(b.number.toLowerCase().replace(/\s/g, ""));
-        const ibanMatch = !!b.iban && hay.includes(b.iban.toLowerCase());
-        const zweckMatch = numMatch || ibanMatch;
-        // Betrag: voller Bruttobetrag ODER (falls hinterlegt) Skonto-Betrag.
-        const grossHit = Math.abs(b.gross - t.amount) <= 0.02;
-        const skontoHit = !grossHit && b.skontoAmount != null && Math.abs(b.skontoAmount - t.amount) <= 0.02;
-        const amountMatch = grossHit || skontoHit;
-        let score = 0;
-        let signals = 0;
-        const reasons: string[] = [];
-        if (nameMatch) { score += 4; signals++; reasons.push("Name"); }
-        if (zweckMatch) { score += 2; signals++; reasons.push(numMatch ? "Beleg-Nr." : "IBAN"); }
-        if (amountMatch) { score += 1; signals++; reasons.push(skontoHit ? "Betrag (Skonto)" : "Betrag"); }
-        if (signals === 0) continue;
-        if (!best || score > best.score) best = { b, score, signals, strongName, reason: reasons.join(" + ") };
-      }
-      // Sicher = mind. ZWEI Kriterien, ODER ein eindeutiger vollständiger Namenstreffer.
-      const confident = !!best && (best.signals >= 2 || best.strongName);
-      if (confident && best) used.add(best.b.heroId);
-
-      // Wurde diese Buchung (Betrag+Datum, sonst Betrag) schon eingelesen?
-      const amtKey = t.amount.toFixed(2);
-      let alreadyImported = false;
-      let alreadyImportedInfo: string | undefined;
-      if (t.date && importedAmountDate.has(`${amtKey}|${t.date}`)) {
-        alreadyImported = true;
-        alreadyImportedInfo = "Betrag und Datum bereits eingelesen";
-      } else if (importedAmount.has(amtKey)) {
-        alreadyImported = true;
-        alreadyImportedInfo = "Betrag bereits eingelesen";
-      }
-
-      return {
-        txn: t,
-        heroId: confident ? best!.b.heroId : null,
-        score: best?.score ?? 0,
-        reason: best ? (confident ? best.reason : `unsicher: ${best.reason}`) : "kein Treffer",
-        alreadyImported,
-        alreadyImportedInfo,
-      };
+  try {
+    const added = await addPendingTxns(
+      out.map((t) => ({ date: t.date, amount: t.amount, name: t.name, purpose: t.purpose })),
+      statementHash
+    );
+    await recordStatementImport({
+      fileHash: statementHash,
+      filename: file.name,
+      txCount: out.length,
+      total: round2(out.reduce((s, t) => s + t.amount, 0)),
+      userId,
     });
-
-  const total = round2(matches.reduce((s, m) => s + m.txn.amount, 0));
-  return {
-    matches,
-    openBelege,
-    statementHash,
-    filename: file.name,
-    txCount: matches.length,
-    total,
-    warning,
-    info: `${matches.length} Abgänge erkannt, ${openBelege.length} offene Belege.`,
-  };
+    return { added, total: out.length, warning };
+  } catch (e) {
+    return { added: 0, total: 0, error: e instanceof Error ? e.message : "Speichern fehlgeschlagen." };
+  }
 }
 
-export interface ConfirmAssignment {
-  heroId: string;
+/** Aktuelle offene (noch nicht zugeordnete) Buchungen inkl. Beleg-Vorschlägen. */
+export async function getPendingBankList(): Promise<BankAnalysisResult> {
+  if (!(await getSession())) return { matches: [], openBelege: [], error: "Kein Zugriff." };
+  try {
+    const [pending, loaded] = await Promise.all([listPendingTxns(), loadOpenBelege()]);
+    const { openBelege, supplierCount } = loaded;
+    const used = new Set<string>();
+    const matches: BankMatch[] = pending.map((p) => {
+      const txn: BankTxn = { date: p.date, amount: p.amount, direction: "out", name: p.name, purpose: p.purpose };
+      const m = matchOne(txn, openBelege, supplierCount, used);
+      return { txnId: p.id, txn, heroId: m.heroId, score: m.score, reason: m.reason };
+    });
+    return {
+      matches,
+      openBelege,
+      info: `${matches.length} offene Buchung(en) · ${openBelege.length} offene Belege.`,
+    };
+  } catch (e) {
+    return { matches: [], openBelege: [], error: e instanceof Error ? e.message : "Laden fehlgeschlagen." };
+  }
+}
+
+export interface ConfirmLine {
+  txnId: number;
+  heroIds: string[];
   note: string;
 }
 
-export interface BankStatementMeta {
-  hash: string;
-  filename: string;
-  txCount: number;
-  total: number;
-}
-
-/** Setzt die bestätigten Belege lokal auf „bezahlt" inkl. Kontoauszug-Notiz. */
-export async function confirmBankMatches(
-  assignments: ConfirmAssignment[],
-  statement?: BankStatementMeta
-): Promise<{ count: number; error?: string }> {
+/** Setzt die zugeordneten Belege auf „bezahlt" und nimmt die Buchungen aus der Liste. */
+export async function confirmBankMatches(lines: ConfirmLine[]): Promise<{ count: number; error?: string }> {
   const session = await getSession();
   if (!session) return { count: 0, error: "Kein Zugriff." };
   let userId: number | null = null;
@@ -364,29 +347,24 @@ export async function confirmBankMatches(
   } catch {
     /* ignore */
   }
+  const doneTxnIds: number[] = [];
   let count = 0;
-  for (const a of assignments) {
-    if (!a.heroId) continue;
-    try {
-      await setPaymentOverride(a.heroId, "bezahlt", userId, a.note?.slice(0, 255) || null);
-      count++;
-    } catch {
-      /* einzelnen Beleg überspringen */
+  for (const ln of lines) {
+    if (!ln.heroIds || ln.heroIds.length === 0) continue;
+    for (const heroId of ln.heroIds) {
+      try {
+        await setPaymentOverride(heroId, "bezahlt", userId, ln.note?.slice(0, 255) || null);
+        count++;
+      } catch {
+        /* einzelnen Beleg überspringen */
+      }
     }
+    doneTxnIds.push(ln.txnId);
   }
-  // Auszug vermerken (für die Doppel-Erkennung beim nächsten Einlesen).
-  if (statement?.hash) {
-    try {
-      await recordStatementImport({
-        fileHash: statement.hash,
-        filename: statement.filename,
-        txCount: statement.txCount,
-        total: statement.total,
-        userId,
-      });
-    } catch {
-      /* optional */
-    }
+  try {
+    await markTxnsDone(doneTxnIds);
+  } catch {
+    /* optional */
   }
   return { count };
 }

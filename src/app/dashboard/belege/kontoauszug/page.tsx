@@ -1,10 +1,13 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
+import { getPendingBankList } from "@/app/dashboard/belege/bank-import";
 import KontoauszugClient from "@/components/KontoauszugClient";
 
 export default async function KontoauszugPage() {
   if (!(await getSession())) redirect("/login");
+
+  const initial = await getPendingBankList();
 
   return (
     <div className="flex w-full max-w-full flex-1 flex-col gap-6 px-6 py-8">
@@ -12,8 +15,9 @@ export default async function KontoauszugPage() {
         <div>
           <h1 className="text-2xl font-semibold text-gray-900">Kontoauszug einlesen</h1>
           <p className="mt-1 text-sm text-gray-600">
-            Auszug hochladen (PDF/CSV/XLSX) → Buchungen werden ausgelesen und den offenen Belegen
-            zugeordnet. Nach der Sichtkontrolle werden die Belege lokal auf „bezahlt" gesetzt.
+            Auszug hochladen (PDF/CSV/XLSX) → Abgänge kommen in die Liste und werden den offenen
+            Belegen zugeordnet. Beim Speichern verschwinden die zugeordneten Buchungen; offene bleiben
+            (auch über mehrere Auszüge hinweg).
           </p>
         </div>
         <Link
@@ -24,7 +28,7 @@ export default async function KontoauszugPage() {
         </Link>
       </header>
 
-      <KontoauszugClient />
+      <KontoauszugClient initial={initial} />
     </div>
   );
 }

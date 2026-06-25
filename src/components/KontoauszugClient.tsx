@@ -3,10 +3,12 @@
 import { useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import {
-  analyzeBankStatement,
+  importBankStatement,
+  getPendingBankList,
   confirmBankMatches,
   type BankAnalysisResult,
-  type ConfirmAssignment,
+  type BankMatch,
+  type ConfirmLine,
   type OpenBeleg,
 } from "@/app/dashboard/belege/bank-import";
 
@@ -17,22 +19,27 @@ function fmtDate(d: string | null): string {
   return y && m && day ? `${day}.${m}.${y}` : d;
 }
 
-export default function KontoauszugClient() {
+/** Auswahl je Buchung (txnId → Liste zugeordneter Beleg-IDs), Vorschläge vorbelegt. */
+function syncSel(matches: BankMatch[], prev: Record<number, string[]>): Record<number, string[]> {
+  const next: Record<number, string[]> = {};
+  for (const m of matches) next[m.txnId] = prev[m.txnId] ?? (m.heroId ? [m.heroId] : []);
+  return next;
+}
+
+export default function KontoauszugClient({ initial }: { initial: BankAnalysisResult }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, startBusy] = useTransition();
-  const [result, setResult] = useState<BankAnalysisResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  // Auswahl je Buchungszeile: Liste von HERO-Beleg-IDs (Mehrfachzuordnung möglich).
-  const [sel, setSel] = useState<Record<number, string[]>>({});
+  const [result, setResult] = useState<BankAnalysisResult>(initial);
+  const [sel, setSel] = useState<Record<number, string[]>>(() => syncSel(initial.matches, {}));
+  const [error, setError] = useState<string | null>(initial.error ?? null);
+  const [info, setInfo] = useState<string | null>(null);
   const [confirming, startConfirm] = useTransition();
-  const [done, setDone] = useState<string | null>(null);
 
-  const reset = () => {
-    setResult(null);
-    setSel({});
-    setError(null);
-    setDone(null);
-    if (fileRef.current) fileRef.current.value = "";
+  const reloadList = async (prev: Record<number, string[]>) => {
+    const r = await getPendingBankList();
+    setResult(r);
+    setSel(syncSel(r.matches, prev));
+    if (r.error) setError(r.error);
   };
 
   const run = () => {
@@ -42,81 +49,84 @@ export default function KontoauszugClient() {
       return;
     }
     setError(null);
-    setDone(null);
-    setResult(null);
+    setInfo(null);
     const fd = new FormData();
     fd.set("file", f);
     startBusy(async () => {
-      const res = await analyzeBankStatement(fd);
-      if (res.error) setError(res.error);
-      setResult(res);
-      const init: Record<number, string[]> = {};
-      res.matches.forEach((m, i) => (init[i] = m.heroId ? [m.heroId] : []));
-      setSel(init);
+      const res = await importBankStatement(fd);
+      if (res.error) {
+        setError(res.error);
+        if (res.warning) setInfo(res.warning);
+        return;
+      }
+      const parts = [`${res.added} neue Buchung(en) hinzugefügt`];
+      if (res.added < res.total) parts.push(`${res.total - res.added} bereits bekannt`);
+      if (res.warning) parts.push(res.warning);
+      setInfo(parts.join(" · "));
+      if (fileRef.current) fileRef.current.value = "";
+      await reloadList(sel);
     });
   };
 
-  const addBeleg = (i: number, heroId: string) => {
+  const addBeleg = (txnId: number, heroId: string) => {
     if (!heroId) return;
     setSel((p) => {
-      const cur = p[i] ?? [];
+      const cur = p[txnId] ?? [];
       if (cur.includes(heroId)) return p;
-      return { ...p, [i]: [...cur, heroId] };
+      return { ...p, [txnId]: [...cur, heroId] };
     });
   };
-  const removeBeleg = (i: number, heroId: string) =>
-    setSel((p) => ({ ...p, [i]: (p[i] ?? []).filter((x) => x !== heroId) }));
+  const removeBeleg = (txnId: number, heroId: string) =>
+    setSel((p) => ({ ...p, [txnId]: (p[txnId] ?? []).filter((x) => x !== heroId) }));
 
   const belegById = useMemo(() => {
     const m = new Map<string, { number: string; supplier: string; gross: number; skontoAmount: number | null }>();
-    for (const b of result?.openBelege ?? []) m.set(b.heroId, b);
+    for (const b of result.openBelege) m.set(b.heroId, b);
     return m;
   }, [result]);
 
-  // Ein Beleg darf insgesamt nur einmal zugeordnet sein.
+  // Ein Beleg darf insgesamt nur einer Buchung zugeordnet sein.
   const dupHeroIds = useMemo(() => {
     const seen = new Map<string, number>();
     for (const list of Object.values(sel)) for (const id of list) seen.set(id, (seen.get(id) ?? 0) + 1);
     return new Set([...seen.entries()].filter(([, n]) => n > 1).map(([id]) => id));
   }, [sel]);
 
-  const chosenCount = useMemo(
-    () => Object.values(sel).reduce((s, l) => s + l.length, 0),
-    [sel]
+  const assignedTxns = useMemo(
+    () => result.matches.filter((m) => (sel[m.txnId] ?? []).length > 0).length,
+    [result, sel]
   );
 
   const confirm = () => {
-    if (!result) return;
-    const assignments: ConfirmAssignment[] = [];
-    result.matches.forEach((m, i) => {
-      for (const heroId of sel[i] ?? []) {
-        assignments.push({
-          heroId,
-          note: `Kontoauszug ${fmtDate(m.txn.date)} · ${euro.format(m.txn.amount)}`,
-        });
-      }
-    });
-    if (assignments.length === 0) {
+    const lines: ConfirmLine[] = [];
+    for (const m of result.matches) {
+      const heroIds = sel[m.txnId] ?? [];
+      if (heroIds.length === 0) continue;
+      lines.push({
+        txnId: m.txnId,
+        heroIds,
+        note: `Kontoauszug ${fmtDate(m.txn.date)} · ${euro.format(m.txn.amount)}`,
+      });
+    }
+    if (lines.length === 0) {
       setError("Keine Zuordnung gewählt.");
       return;
     }
     setError(null);
-    const statement = result.statementHash
-      ? {
-          hash: result.statementHash,
-          filename: result.filename ?? "",
-          txCount: result.txCount ?? result.matches.length,
-          total: result.total ?? 0,
-        }
-      : undefined;
+    setInfo(null);
+    // nur noch die nicht gespeicherten Auswahlen behalten
+    const keep: Record<number, string[]> = {};
+    for (const m of result.matches) {
+      if ((sel[m.txnId] ?? []).length === 0) keep[m.txnId] = sel[m.txnId] ?? [];
+    }
     startConfirm(async () => {
-      const res = await confirmBankMatches(assignments, statement);
+      const res = await confirmBankMatches(lines);
       if (res.error) {
         setError(res.error);
         return;
       }
-      setDone(`${res.count} Beleg(e) als „bezahlt" markiert.`);
-      reset();
+      setInfo(`${res.count} Beleg(e) als „bezahlt" gespeichert · zugeordnete Buchungen entfernt.`);
+      await reloadList(keep);
     });
   };
 
@@ -137,85 +147,62 @@ export default function KontoauszugClient() {
             disabled={busy}
             className="rounded-md bg-brand-red px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
           >
-            {busy ? "Lese Auszug (OCR) …" : "Kontoauszug einlesen"}
+            {busy ? "Lese Auszug …" : "Kontoauszug einlesen"}
           </button>
-          {result && (
-            <button
-              type="button"
-              onClick={reset}
-              className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900"
-            >
-              Abbrechen
-            </button>
-          )}
           <span className="text-xs text-gray-500">PDF, CSV/TXT oder XLSX · nur Abgänge</span>
         </div>
         {error && <p className="mt-3 text-sm text-rose-400">{error}</p>}
-        {done && (
-          <p className="mt-3 text-sm text-emerald-400">
-            {done}{" "}
-            <Link href="/dashboard/belege" className="text-brand-red hover:underline">
-              → zu den Belegen
-            </Link>
-          </p>
-        )}
+        {info && <p className="mt-3 text-sm text-amber-300">{info}</p>}
       </div>
 
-      {/* Ergebnis / Sichtkontrolle */}
-      {result && result.matches.length > 0 && (
-        <div className="rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-5 py-4">
-            <h2 className="text-lg font-medium text-gray-900">Abgleich · Sichtkontrolle (nur Abgänge)</h2>
-            <span className="text-sm text-gray-600">{result.info}</span>
-          </div>
-          {result.warning && (
-            <div className="border-b border-amber-500/30 bg-amber-500/10 px-5 py-3 text-sm text-amber-300">
-              ⚠ {result.warning}
-            </div>
-          )}
-          {result.matches.some((m) => m.alreadyImported) && (
-            <div className="border-b border-amber-500/30 bg-amber-500/10 px-5 py-3 text-sm text-amber-300">
-              ⚠ {result.matches.filter((m) => m.alreadyImported).length} Buchung(en) wurden anhand von
-              Betrag/Datum evtl. bereits eingelesen – unten markiert. Bitte vor dem Bestätigen prüfen.
-            </div>
-          )}
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[860px] text-left text-sm">
-              <thead>
-                <tr className="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-700">
-                  <th className="px-4 py-3 font-medium">Datum</th>
-                  <th className="px-4 py-3 font-medium text-right">Betrag</th>
-                  <th className="px-4 py-3 font-medium">Empfänger / Zweck</th>
-                  <th className="px-4 py-3 font-medium">Treffer</th>
-                  <th className="px-4 py-3 font-medium">Beleg-Zuordnung (mehrere möglich)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {result.matches.map((m, i) => {
-                  const list = sel[i] ?? [];
-                  const sumGross = list.reduce((s, id) => s + (belegById.get(id)?.gross ?? 0), 0);
-                  const sumSkonto = list.reduce((s, id) => {
-                    const b = belegById.get(id);
-                    return s + ((b?.skontoAmount ?? b?.gross) ?? 0);
-                  }, 0);
-                  const hasSkonto = list.some((id) => belegById.get(id)?.skontoAmount != null);
-                  // Stimmig, wenn Brutto- ODER Skonto-Summe zum Buchungsbetrag passt.
-                  const sumOff =
-                    list.length > 0 &&
-                    Math.abs(sumGross - m.txn.amount) > 0.02 &&
-                    Math.abs(sumSkonto - m.txn.amount) > 0.02;
-                  return (
-                    <tr key={i} className="border-b border-gray-200 last:border-0 align-top hover:bg-gray-100">
-                      <td className="px-4 py-2.5 whitespace-nowrap text-gray-600">{fmtDate(m.txn.date)}</td>
-                      <td className="px-4 py-2.5 whitespace-nowrap text-right text-gray-900">
-                        {euro.format(m.txn.amount)}
-                      </td>
-                      <td className="px-4 py-2.5 text-gray-700">
-                        <div className="font-medium text-gray-800">{m.txn.name || "—"}</div>
-                        <div className="text-xs text-gray-500 break-words">{m.txn.purpose}</div>
-                      </td>
-                      <td className="px-4 py-2.5">
-                        <div className="flex flex-col items-start gap-1">
+      {/* Persistente Liste offener Buchungen */}
+      <div className="rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-5 py-4">
+          <h2 className="text-lg font-medium text-gray-900">Offene Buchungen · Sichtkontrolle</h2>
+          <span className="text-sm text-gray-600">{result.info}</span>
+        </div>
+
+        {result.matches.length === 0 ? (
+          <p className="px-5 py-8 text-center text-sm text-gray-500">
+            Keine offenen Buchungen. Lade oben einen Kontoauszug hoch.
+          </p>
+        ) : (
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[860px] text-left text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-700">
+                    <th className="px-4 py-3 font-medium">Datum</th>
+                    <th className="px-4 py-3 font-medium text-right">Betrag</th>
+                    <th className="px-4 py-3 font-medium">Empfänger / Zweck</th>
+                    <th className="px-4 py-3 font-medium">Treffer</th>
+                    <th className="px-4 py-3 font-medium">Beleg-Zuordnung (mehrere möglich)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {result.matches.map((m) => {
+                    const list = sel[m.txnId] ?? [];
+                    const sumGross = list.reduce((s, id) => s + (belegById.get(id)?.gross ?? 0), 0);
+                    const sumSkonto = list.reduce((s, id) => {
+                      const b = belegById.get(id);
+                      return s + ((b?.skontoAmount ?? b?.gross) ?? 0);
+                    }, 0);
+                    const hasSkonto = list.some((id) => belegById.get(id)?.skontoAmount != null);
+                    const sumOff =
+                      list.length > 0 &&
+                      Math.abs(sumGross - m.txn.amount) > 0.02 &&
+                      Math.abs(sumSkonto - m.txn.amount) > 0.02;
+                    return (
+                      <tr key={m.txnId} className="border-b border-gray-200 last:border-0 align-top hover:bg-gray-100">
+                        <td className="px-4 py-2.5 whitespace-nowrap text-gray-600">{fmtDate(m.txn.date)}</td>
+                        <td className="px-4 py-2.5 whitespace-nowrap text-right text-gray-900">
+                          {euro.format(m.txn.amount)}
+                        </td>
+                        <td className="px-4 py-2.5 text-gray-700">
+                          <div className="font-medium text-gray-800">{m.txn.name || "—"}</div>
+                          <div className="text-xs text-gray-500 break-words">{m.txn.purpose}</div>
+                        </td>
+                        <td className="px-4 py-2.5">
                           <span
                             className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${
                               m.heroId
@@ -227,89 +214,72 @@ export default function KontoauszugClient() {
                           >
                             {m.reason}
                           </span>
-                          {m.alreadyImported && (
-                            <span
-                              title={m.alreadyImportedInfo}
-                              className="whitespace-nowrap rounded-full bg-rose-500/15 px-2 py-0.5 text-xs font-medium text-rose-300 ring-1 ring-rose-500/30"
-                            >
-                              ⚠ bereits eingelesen
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-4 py-2.5">
-                        {/* gewählte Belege als Chips */}
-                        <div className="flex flex-col gap-1.5">
-                          {list.map((id) => {
-                            const b = belegById.get(id);
-                            const dup = dupHeroIds.has(id);
-                            return (
-                              <span
-                                key={id}
-                                className={`inline-flex items-center justify-between gap-2 rounded-md border px-2 py-1 text-xs ${
-                                  dup ? "border-rose-500 text-rose-300" : "border-gray-300 text-gray-700"
-                                }`}
-                              >
-                                <span className="truncate">
-                                  {b ? `${b.number} · ${b.supplier} · ${euro.format(b.gross)}` : id}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => removeBeleg(i, id)}
-                                  className="shrink-0 text-gray-400 hover:text-rose-400"
-                                  aria-label="Entfernen"
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <div className="flex flex-col gap-1.5">
+                            {list.map((id) => {
+                              const b = belegById.get(id);
+                              const dup = dupHeroIds.has(id);
+                              return (
+                                <span
+                                  key={id}
+                                  className={`inline-flex items-center justify-between gap-2 rounded-md border px-2 py-1 text-xs ${
+                                    dup ? "border-rose-500 text-rose-300" : "border-gray-300 text-gray-700"
+                                  }`}
                                 >
-                                  ✕
-                                </button>
+                                  <span className="truncate">
+                                    {b ? `${b.number} · ${b.supplier} · ${euro.format(b.gross)}` : id}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => removeBeleg(m.txnId, id)}
+                                    className="shrink-0 text-gray-400 hover:text-rose-400"
+                                    aria-label="Entfernen"
+                                  >
+                                    ✕
+                                  </button>
+                                </span>
+                              );
+                            })}
+                            <BelegPicker
+                              belege={result.openBelege}
+                              exclude={list}
+                              onPick={(id) => addBeleg(m.txnId, id)}
+                            />
+                            {list.length > 0 && (
+                              <span className={`text-xs ${sumOff ? "text-amber-400" : "text-gray-500"}`}>
+                                Summe zugeordnet: {euro.format(sumGross)}
+                                {hasSkonto ? ` (mit Skonto ${euro.format(sumSkonto)})` : ""}
+                                {sumOff ? ` ≠ Buchung ${euro.format(m.txn.amount)}` : ""}
                               </span>
-                            );
-                          })}
-                          {/* Beleg suchen + hinzufügen (nach Nr./Lieferant) */}
-                          <BelegPicker
-                            belege={result.openBelege}
-                            exclude={list}
-                            onPick={(id) => addBeleg(i, id)}
-                          />
-                          {list.length > 0 && (
-                            <span className={`text-xs ${sumOff ? "text-amber-400" : "text-gray-500"}`}>
-                              Summe zugeordnet: {euro.format(sumGross)}
-                              {hasSkonto ? ` (mit Skonto ${euro.format(sumSkonto)})` : ""}
-                              {sumOff ? ` ≠ Buchung ${euro.format(m.txn.amount)}` : ""}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          <div className="flex flex-wrap items-center justify-end gap-3 border-t border-gray-200 px-5 py-4">
-            {dupHeroIds.size > 0 && (
-              <span className="mr-auto text-sm text-rose-400">
-                Ein Beleg ist mehrfach zugeordnet – bitte auflösen.
-              </span>
-            )}
-            <span className="text-sm text-gray-600">{chosenCount} Beleg(e) zugeordnet</span>
-            <button
-              type="button"
-              onClick={reset}
-              className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900"
-            >
-              Abbrechen
-            </button>
-            <button
-              type="button"
-              onClick={confirm}
-              disabled={confirming || chosenCount === 0 || dupHeroIds.size > 0}
-              className="rounded-md bg-brand-red px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-            >
-              {confirming ? "Speichere …" : `Als bezahlt bestätigen (${chosenCount})`}
-            </button>
-          </div>
-        </div>
-      )}
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-3 border-t border-gray-200 px-5 py-4">
+              {dupHeroIds.size > 0 && (
+                <span className="mr-auto text-sm text-rose-400">
+                  Ein Beleg ist mehrfach zugeordnet – bitte auflösen.
+                </span>
+              )}
+              <span className="text-sm text-gray-600">{assignedTxns} Buchung(en) zugeordnet</span>
+              <button
+                type="button"
+                onClick={confirm}
+                disabled={confirming || assignedTxns === 0 || dupHeroIds.size > 0}
+                className="rounded-md bg-brand-red px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+              >
+                {confirming ? "Speichere …" : `Speichern & aus Liste entfernen (${assignedTxns})`}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }
