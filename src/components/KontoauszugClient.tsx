@@ -132,6 +132,19 @@ export default function KontoauszugClient({ initial }: { initial: BankAnalysisRe
 
   return (
     <div className="flex flex-col gap-5">
+      {/* Lade-Overlay während Einlesen / Speichern */}
+      {(busy || confirming) && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-4 rounded-xl border border-gray-300 bg-white px-10 py-8 shadow-2xl">
+            <span className="h-10 w-10 animate-spin rounded-full border-4 border-gray-300 border-t-brand-red" />
+            <p className="text-sm font-medium text-gray-800">
+              {busy ? "Kontoauszug wird eingelesen …" : "Wird gespeichert …"}
+            </p>
+            <p className="text-xs text-gray-500">Das kann bei vielen Buchungen einen Moment dauern.</p>
+          </div>
+        </div>
+      )}
+
       {/* Upload */}
       <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
         <div className="flex flex-wrap items-center gap-3">
