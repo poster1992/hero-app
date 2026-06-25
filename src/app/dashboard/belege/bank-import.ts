@@ -62,8 +62,13 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 const norm = (s: string) =>
   (s || "")
     .toLowerCase()
-    .replace(/[^a-z0-9äöüß ]/g, " ")
-    .replace(/\b(gmbh|ag|kg|ohg|ug|mbh|co|e\.?k|sarl|s\.?a\.?r\.?l|asbl)\b/g, " ")
+    // Umlaute transliterieren, damit z.B. "Dächert" und "DAECHERT" gleich sind.
+    .replace(/ä/g, "ae")
+    .replace(/ö/g, "oe")
+    .replace(/ü/g, "ue")
+    .replace(/ß/g, "ss")
+    .replace(/[^a-z0-9 ]/g, " ")
+    .replace(/\b(gmbh|mbh|ag|kg|ohg|ug|co|ek|sarl|asbl)\b/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 
@@ -256,18 +261,29 @@ export async function analyzeBankStatement(formData: FormData): Promise<BankAnal
   }
 
   // 3) Abgleich je Abgang – Priorität: Name > Zweck (Beleg-Nr./IBAN) > Betrag.
+  // Wie oft kommt ein Lieferant unter den offenen Belegen vor? (für eindeutigen Namens-Treffer)
+  const supplierCount = new Map<string, number>();
+  for (const b of openBelege) {
+    const k = norm(b.supplier);
+    if (k) supplierCount.set(k, (supplierCount.get(k) ?? 0) + 1);
+  }
   const used = new Set<string>();
   const matches: BankMatch[] = txns
     .filter((t) => t.direction === "out")
     .map((t) => {
       const hayText = norm(`${t.name} ${t.purpose}`);
       const hay = hayText.replace(/\s/g, "");
-      let best: { b: OpenBeleg; score: number; signals: number; reason: string } | null = null;
+      let best: { b: OpenBeleg; score: number; signals: number; strongName: boolean; reason: string } | null = null;
       for (const b of openBelege) {
         if (used.has(b.heroId)) continue;
         // Priorität: 1. Name, 2. Zweck (Beleg-Nr./IBAN im Verwendungszweck), 3. Betrag.
-        const nameTokens = norm(b.supplier).split(" ").filter((w) => w.length >= 4);
+        const normSup = norm(b.supplier);
+        const nameTokens = normSup.split(" ").filter((w) => w.length >= 4);
         const nameMatch = nameTokens.some((w) => hayText.includes(w));
+        // Vollständiger Namenstreffer (alle Namensbestandteile vorhanden) bei nur
+        // EINEM offenen Beleg dieses Lieferanten = eindeutig/sicher (Name allein reicht).
+        const fullNameMatch = nameTokens.length > 0 && nameTokens.every((w) => hayText.includes(w));
+        const strongName = fullNameMatch && (supplierCount.get(normSup) ?? 0) === 1;
         const numMatch = !!b.number && b.number.length >= 4 && hay.includes(b.number.toLowerCase().replace(/\s/g, ""));
         const ibanMatch = !!b.iban && hay.includes(b.iban.toLowerCase());
         const zweckMatch = numMatch || ibanMatch;
@@ -282,11 +298,10 @@ export async function analyzeBankStatement(formData: FormData): Promise<BankAnal
         if (zweckMatch) { score += 2; signals++; reasons.push(numMatch ? "Beleg-Nr." : "IBAN"); }
         if (amountMatch) { score += 1; signals++; reasons.push(skontoHit ? "Betrag (Skonto)" : "Betrag"); }
         if (signals === 0) continue;
-        if (!best || score > best.score) best = { b, score, signals, reason: reasons.join(" + ") };
+        if (!best || score > best.score) best = { b, score, signals, strongName, reason: reasons.join(" + ") };
       }
-      // Sicher = mindestens ZWEI übereinstimmende Kriterien (z.B. Name + Zweck oder
-      // Name + Betrag). Sonst Feld leer lassen – der Bediener ordnet manuell zu.
-      const confident = !!best && best.signals >= 2;
+      // Sicher = mind. ZWEI Kriterien, ODER ein eindeutiger vollständiger Namenstreffer.
+      const confident = !!best && (best.signals >= 2 || best.strongName);
       if (confident && best) used.add(best.b.heroId);
 
       // Wurde diese Buchung (Betrag+Datum, sonst Betrag) schon eingelesen?
