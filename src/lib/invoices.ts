@@ -391,3 +391,28 @@ export function getInvoiceStatus(receipt: Receipt): InvoiceStatus {
   }
   return { label: "Offen", tone: "open" };
 }
+
+/**
+ * Ab diesem Belegdatum zählt für den Zahlstatus NUR noch der lokale Eintrag
+ * (unsere DB), der HERO-Status wird ignoriert. Ohne lokalen Eintrag gilt "Offen".
+ */
+export const LOCAL_STATUS_FROM = "2026-06-01";
+
+/**
+ * Effektiver Zahlstatus eines Belegs: lokaler Override gewinnt immer; ab
+ * LOCAL_STATUS_FROM ohne Override = "Offen" (HERO ignoriert); davor der HERO-Status.
+ */
+export function effectiveReceiptStatus(
+  receipt: Receipt,
+  overrideStatus: "bezahlt" | "offen" | null
+): InvoiceStatus {
+  if (overrideStatus) {
+    return overrideStatus === "bezahlt"
+      ? { label: "Bezahlt", tone: "paid" }
+      : { label: "Offen", tone: "open" };
+  }
+  if ((receipt.receiptDate ?? "").slice(0, 10) >= LOCAL_STATUS_FROM) {
+    return { label: "Offen", tone: "open" };
+  }
+  return getInvoiceStatus(receipt);
+}

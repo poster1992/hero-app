@@ -6,7 +6,7 @@ import * as XLSX from "xlsx";
 import { getSession } from "@/lib/session";
 import { getUserByUsername } from "@/lib/users";
 import { getReceiptsInRange } from "@/lib/hero-api";
-import { getInvoiceStatus, getCustomerName } from "@/lib/invoices";
+import { effectiveReceiptStatus, getCustomerName } from "@/lib/invoices";
 import { getSupplierIbanMap } from "@/lib/supplier-ibans";
 import { getPaymentOverrideMap, setPaymentOverride } from "@/lib/receipt-payment-status";
 import { findStatementImport, recordStatementImport } from "@/lib/bank-imports";
@@ -65,46 +65,47 @@ const norm = (s: string) =>
     .replace(/\s+/g, " ")
     .trim();
 
-interface Extracted {
-  transactions: { date: string | null; amount: number; direction: "out" | "in"; name: string; purpose: string }[];
+interface RawTxn {
+  date: string | null;
+  amount: number;
+  direction: "out" | "in";
+  name: string;
+  purpose: string;
 }
 
-/** Schickt Kontoauszug-Inhalt an Claude und bekommt normalisierte Buchungen. */
-async function extractTransactions(
-  client: Anthropic,
-  payload: { kind: "pdf"; data: string } | { kind: "text"; text: string }
-): Promise<BankTxn[]> {
-  const instruction =
-    "Dies ist ein Kontoauszug. Extrahiere ALLE Buchungszeilen. Antworte AUSSCHLIESSLICH mit JSON in genau diesem Format: " +
-    '{"transactions":[{"date":"YYYY-MM-DD"|null,"amount":number,"direction":"out"|"in","name":string,"purpose":string}]}. ' +
-    "amount immer als positive Zahl (Punkt als Dezimaltrennzeichen, kein Tausenderpunkt). " +
-    'direction = "out" für ABGÄNGE (Geld raus: Belastung, Soll, Lastschrift, Überweisung, negative Beträge/Minuszeichen), ' +
-    '"in" für EINGÄNGE (Geld rein: Gutschrift, Haben, positive Eingänge). Bestimme die Richtung anhand von Vorzeichen bzw. Soll/Haben-Spalte. ' +
-    "name = Empfänger/Auftraggeber, purpose = Verwendungszweck (inkl. Rechnungs-/Belegnummern). Keine Erklärung, nur das JSON-Objekt.";
+const INSTRUCTION =
+  "Dies ist ein Kontoauszug. Extrahiere ALLE Buchungszeilen. Antworte AUSSCHLIESSLICH mit JSON in genau diesem Format: " +
+  '{"transactions":[{"date":"YYYY-MM-DD"|null,"amount":number,"direction":"out"|"in","name":string,"purpose":string}]}. ' +
+  "amount immer als positive Zahl (Punkt als Dezimaltrennzeichen, kein Tausenderpunkt). " +
+  'direction = "out" für ABGÄNGE (Geld raus: Belastung, Soll, Lastschrift, Überweisung, negative Beträge/Minuszeichen), ' +
+  '"in" für EINGÄNGE (Geld rein: Gutschrift, Haben, positive Eingänge). Bestimme die Richtung anhand von Vorzeichen bzw. Soll/Haben-Spalte. ' +
+  "name = Empfänger/Auftraggeber, purpose = Verwendungszweck (inkl. Rechnungs-/Belegnummern). Keine Erklärung, nur das JSON-Objekt.";
 
-  const content =
-    payload.kind === "pdf"
-      ? [
-          { type: "document" as const, source: { type: "base64" as const, media_type: "application/pdf" as const, data: payload.data } },
-          { type: "text" as const, text: instruction },
-        ]
-      : [{ type: "text" as const, text: `${instruction}\n\nKontoauszug-Daten:\n${payload.text}` }];
-
-  const res = await client.messages.create({
-    model: "claude-opus-4-8",
-    max_tokens: 8000,
-    messages: [{ role: "user", content }],
-  });
-  const tb = res.content.find((b) => b.type === "text");
-  if (!tb || tb.type !== "text") return [];
-  const raw = tb.text.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
-  let parsed: Extracted;
+/** Robustes Parsen – rettet auch abgeschnittene JSON-Antworten (sammelt komplette { … }). */
+function parseTxnObjects(text: string): RawTxn[] {
+  const raw = text.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
   try {
-    parsed = JSON.parse(raw) as Extracted;
+    const p = JSON.parse(raw) as { transactions?: RawTxn[] };
+    if (Array.isArray(p.transactions)) return p.transactions;
   } catch {
-    return [];
+    // Salvage unten
   }
-  return (parsed.transactions ?? [])
+  const objs: RawTxn[] = [];
+  const re = /\{[^{}]*\}/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(raw))) {
+    try {
+      const o = JSON.parse(m[0]);
+      if (o && o.amount != null) objs.push(o as RawTxn);
+    } catch {
+      /* unvollständiges Objekt überspringen */
+    }
+  }
+  return objs;
+}
+
+function mapTxns(raw: RawTxn[]): BankTxn[] {
+  return raw
     .map((t) => ({
       date: t.date ?? null,
       amount: round2(Math.abs(Number(t.amount) || 0)),
@@ -113,6 +114,44 @@ async function extractTransactions(
       purpose: String(t.purpose ?? ""),
     }))
     .filter((t) => t.amount > 0);
+}
+
+/** Ein Claude-Aufruf für einen Block (PDF oder Textausschnitt). */
+async function callExtract(
+  client: Anthropic,
+  payload: { kind: "pdf"; data: string } | { kind: "text"; text: string },
+  maxTokens: number
+): Promise<BankTxn[]> {
+  const content =
+    payload.kind === "pdf"
+      ? [
+          { type: "document" as const, source: { type: "base64" as const, media_type: "application/pdf" as const, data: payload.data } },
+          { type: "text" as const, text: INSTRUCTION },
+        ]
+      : [{ type: "text" as const, text: `${INSTRUCTION}\n\nKontoauszug-Daten:\n${payload.text}` }];
+  const res = await client.messages.create({
+    model: "claude-opus-4-8",
+    max_tokens: maxTokens,
+    messages: [{ role: "user", content }],
+  });
+  const tb = res.content.find((b) => b.type === "text");
+  if (!tb || tb.type !== "text") return [];
+  return mapTxns(parseTxnObjects(tb.text));
+}
+
+/** Text in Blöcke aufteilen (gegen Token-Limit bei vielen Zeilen) und je Block extrahieren. */
+async function extractFromText(client: Anthropic, text: string): Promise<BankTxn[]> {
+  const lines = text.split(/\r?\n/).filter((l) => l.trim() !== "").slice(0, 6000);
+  if (lines.length === 0) return [];
+  const header = lines.slice(0, 2).join("\n"); // mögliche Spaltenüberschrift als Kontext mitgeben
+  const CHUNK = 80;
+  const chunks: string[] = [];
+  for (let i = 0; i < lines.length; i += CHUNK) {
+    const part = lines.slice(i, i + CHUNK).join("\n");
+    chunks.push(i === 0 ? part : `${header}\n${part}`);
+  }
+  const all = await Promise.all(chunks.map((c) => callExtract(client, { kind: "text", text: c }, 8000)));
+  return all.flat();
 }
 
 /** Liest den hochgeladenen Kontoauszug (PDF/CSV/TXT/XLSX) und gleicht ihn mit offenen Belegen ab. */
@@ -151,14 +190,16 @@ export async function analyzeBankStatement(formData: FormData): Promise<BankAnal
   let txns: BankTxn[];
   try {
     if (name.endsWith(".pdf") || file.type === "application/pdf") {
-      txns = await extractTransactions(client, { kind: "pdf", data: buf.toString("base64") });
+      txns = await callExtract(client, { kind: "pdf", data: buf.toString("base64") }, 16000);
     } else if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
       const wb = XLSX.read(buf, { type: "buffer" });
       const csv = XLSX.utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]]);
-      txns = await extractTransactions(client, { kind: "text", text: csv.slice(0, 60000) });
+      txns = await extractFromText(client, csv);
     } else {
-      // CSV / TXT
-      txns = await extractTransactions(client, { kind: "text", text: buf.toString("utf8").slice(0, 60000) });
+      // CSV / TXT – UTF-8, bei deutschen Bank-Exports ggf. Latin-1.
+      let text = buf.toString("utf8");
+      if (text.includes("�")) text = buf.toString("latin1");
+      txns = await extractFromText(client, text);
     }
   } catch (e) {
     return { matches: [], openBelege: [], error: e instanceof Error ? e.message : "Auszug konnte nicht gelesen werden." };
@@ -192,8 +233,8 @@ export async function analyzeBankStatement(formData: FormData): Promise<BankAnal
       .filter((r) => r.type === "output")
       .filter((r) => {
         const ov = overrides.get(r.id);
-        if (ov) return ov.status === "offen"; // lokaler Override gewinnt
-        return getInvoiceStatus(r).tone !== "paid"; // HERO offen/überfällig
+        // Offen = effektiv nicht bezahlt (Override > [ab Cutoff lokal] > HERO).
+        return effectiveReceiptStatus(r, ov?.status ?? null).tone !== "paid";
       })
       .map((r) => ({
         heroId: r.id,

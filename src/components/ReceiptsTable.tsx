@@ -1,7 +1,7 @@
 import ReceiptsTableClient, { type ReceiptRow } from "@/components/ReceiptsTableClient";
 import {
   getCustomerName,
-  getInvoiceStatus,
+  effectiveReceiptStatus,
   getReceiptProjects,
   getDocumentUrl,
 } from "@/lib/invoices";
@@ -46,13 +46,10 @@ export default async function ReceiptsTable({
   }
 
   const rows: ReceiptRow[] = receipts.map((r) => {
-    // Effektiver Status: lokaler Override (falls vorhanden) schlägt den HERO-Status.
+    // Effektiver Status: lokaler Override gewinnt; ab 01.06.2026 zählt nur die
+    // lokale DB (HERO ignoriert), davor der HERO-Status.
     const ov = paymentOverrides?.get(r.id) ?? null;
-    const status = ov
-      ? ov.status === "bezahlt"
-        ? ({ label: "Bezahlt", tone: "paid" } as const)
-        : ({ label: "Offen", tone: "open" } as const)
-      : getInvoiceStatus(r);
+    const status = effectiveReceiptStatus(r, ov?.status ?? null);
     const paidOverrideInfo = ov
       ? [ov.setByName, ov.setAt ? dateFormatter.format(new Date(ov.setAt.slice(0, 10) + "T00:00:00")) : null]
           .filter(Boolean)
