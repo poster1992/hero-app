@@ -270,7 +270,10 @@ export async function analyzeBankStatement(formData: FormData): Promise<BankAnal
         if (score === 0) continue;
         if (!best || score > best.score) best = { b, score, reason: reasons.join(" + ") };
       }
-      if (best) used.add(best.b.heroId);
+      // Nur bei SICHEREM Treffer vorschlagen (Betrag + mind. ein weiteres Kriterium,
+      // d.h. Score >= 3). Sonst Feld leer lassen – der Bediener ordnet manuell zu.
+      const confident = !!best && best.score >= 3;
+      if (confident && best) used.add(best.b.heroId);
 
       // Wurde diese Buchung (Betrag+Datum, sonst Betrag) schon eingelesen?
       const amtKey = t.amount.toFixed(2);
@@ -286,9 +289,9 @@ export async function analyzeBankStatement(formData: FormData): Promise<BankAnal
 
       return {
         txn: t,
-        heroId: best?.b.heroId ?? null,
+        heroId: confident ? best!.b.heroId : null,
         score: best?.score ?? 0,
-        reason: best?.reason ?? "kein Treffer",
+        reason: best ? (confident ? best.reason : `unsicher: ${best.reason}`) : "kein Treffer",
         alreadyImported,
         alreadyImportedInfo,
       };
