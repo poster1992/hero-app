@@ -125,12 +125,20 @@ export default async function MonthlyReceipts({
         <h1 className="text-2xl font-semibold text-gray-900">{title}</h1>
         <div className="flex flex-wrap items-center gap-2">
           {type === "output" && (
-            <Link
-              href="/dashboard/belege/ibans"
-              className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900"
-            >
-              Lieferanten-IBANs
-            </Link>
+            <>
+              <Link
+                href="/dashboard/belege/kontoauszug"
+                className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900"
+              >
+                Kontoauszug einlesen
+              </Link>
+              <Link
+                href="/dashboard/belege/ibans"
+                className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900"
+              >
+                Lieferanten-IBANs
+              </Link>
+            </>
           )}
           <YearSelector year={year} basePath={basePath} extraParams={{ view, month: String(month) }} />
         </div>
