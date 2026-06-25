@@ -5,18 +5,33 @@ import Link from "next/link";
 import {
   importBankStatement,
   getPendingBankList,
+  getStatementHistory,
+  deleteStatement,
   confirmBankMatches,
   type BankAnalysisResult,
   type BankMatch,
   type ConfirmLine,
   type OpenBeleg,
 } from "@/app/dashboard/belege/bank-import";
+import type { StatementImport } from "@/lib/bank-imports";
 
 const euro = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
 function fmtDate(d: string | null): string {
   if (!d) return "—";
   const [y, m, day] = d.split("-");
   return y && m && day ? `${day}.${m}.${y}` : d;
+}
+function fmtStamp(s: string | null): string {
+  if (!s) return "—";
+  const d = new Date(s.replace(" ", "T"));
+  if (Number.isNaN(d.getTime())) return s.slice(0, 10);
+  return d.toLocaleString("de-DE", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 /** Auswahl je Buchung (txnId → Liste zugeordneter Beleg-IDs), Vorschläge vorbelegt. */
@@ -26,20 +41,46 @@ function syncSel(matches: BankMatch[], prev: Record<number, string[]>): Record<n
   return next;
 }
 
-export default function KontoauszugClient({ initial }: { initial: BankAnalysisResult }) {
+export default function KontoauszugClient({
+  initial,
+  initialHistory,
+}: {
+  initial: BankAnalysisResult;
+  initialHistory: StatementImport[];
+}) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, startBusy] = useTransition();
   const [result, setResult] = useState<BankAnalysisResult>(initial);
+  const [history, setHistory] = useState<StatementImport[]>(initialHistory);
   const [sel, setSel] = useState<Record<number, string[]>>(() => syncSel(initial.matches, {}));
   const [error, setError] = useState<string | null>(initial.error ?? null);
   const [info, setInfo] = useState<string | null>(null);
   const [confirming, startConfirm] = useTransition();
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   const reloadList = async (prev: Record<number, string[]>) => {
-    const r = await getPendingBankList();
+    const [r, h] = await Promise.all([getPendingBankList(), getStatementHistory()]);
     setResult(r);
+    setHistory(h);
     setSel(syncSel(r.matches, prev));
     if (r.error) setError(r.error);
+  };
+
+  const onDelete = (s: StatementImport) => {
+    const label = s.statementNumber || s.filename || "diesen Auszug";
+    if (!window.confirm(`Kontoauszug „${label}" löschen? Offene Buchungen daraus werden entfernt (bereits zugeordnete bleiben).`)) {
+      return;
+    }
+    setDeleting(s.fileHash);
+    setError(null);
+    setInfo(null);
+    startConfirm(async () => {
+      const res = await deleteStatement(s.fileHash);
+      if (res.error) setError(res.error);
+      else setInfo(`Auszug gelöscht · ${res.removed} offene Buchung(en) entfernt.`);
+      await reloadList(sel);
+      setDeleting(null);
+    });
   };
 
   const run = () => {
@@ -291,6 +332,60 @@ export default function KontoauszugClient({ initial }: { initial: BankAnalysisRe
               </button>
             </div>
           </>
+        )}
+      </div>
+
+      {/* Historie der eingelesenen Kontoauszüge */}
+      <div className="rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
+        <div className="border-b border-gray-200 px-5 py-4">
+          <h2 className="text-lg font-medium text-gray-900">Historie · eingelesene Kontoauszüge</h2>
+        </div>
+        {history.length === 0 ? (
+          <p className="px-5 py-6 text-center text-sm text-gray-500">Noch keine Auszüge eingelesen.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[680px] text-left text-sm">
+              <thead>
+                <tr className="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-700">
+                  <th className="px-4 py-3 font-medium">Auszug-Nr.</th>
+                  <th className="px-4 py-3 font-medium">Datei</th>
+                  <th className="px-4 py-3 font-medium">Eingelesen</th>
+                  <th className="px-4 py-3 font-medium text-right">Buchungen</th>
+                  <th className="px-4 py-3 font-medium text-right">Summe</th>
+                  <th className="px-4 py-3 font-medium" />
+                </tr>
+              </thead>
+              <tbody>
+                {history.map((s) => (
+                  <tr key={s.fileHash} className="border-b border-gray-200 last:border-0 hover:bg-gray-100">
+                    <td className="px-4 py-2.5 font-medium text-gray-900">{s.statementNumber || "—"}</td>
+                    <td className="px-4 py-2.5 break-words text-gray-700">{s.filename || "—"}</td>
+                    <td className="px-4 py-2.5 whitespace-nowrap text-gray-600">
+                      {fmtStamp(s.importedAt)}
+                      {s.importedByName ? ` · ${s.importedByName}` : ""}
+                    </td>
+                    <td className="px-4 py-2.5 text-right text-gray-700">
+                      {s.txCount ?? "—"}
+                      {s.openCount > 0 ? <span className="text-amber-400"> ({s.openCount} offen)</span> : null}
+                    </td>
+                    <td className="px-4 py-2.5 text-right text-gray-700">
+                      {s.total != null ? euro.format(s.total) : "—"}
+                    </td>
+                    <td className="px-4 py-2.5 text-right">
+                      <button
+                        type="button"
+                        onClick={() => onDelete(s)}
+                        disabled={deleting === s.fileHash}
+                        className="rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-brand-red disabled:opacity-50"
+                      >
+                        {deleting === s.fileHash ? "…" : "Löschen"}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </div>

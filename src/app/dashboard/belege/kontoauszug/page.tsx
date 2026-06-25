@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
-import { getPendingBankList } from "@/app/dashboard/belege/bank-import";
+import { getPendingBankList, getStatementHistory } from "@/app/dashboard/belege/bank-import";
 import KontoauszugClient from "@/components/KontoauszugClient";
 
 export default async function KontoauszugPage() {
   if (!(await getSession())) redirect("/login");
 
-  const initial = await getPendingBankList();
+  const [initial, initialHistory] = await Promise.all([getPendingBankList(), getStatementHistory()]);
 
   return (
     <div className="flex w-full max-w-full flex-1 flex-col gap-6 px-6 py-8">
@@ -28,7 +28,7 @@ export default async function KontoauszugPage() {
         </Link>
       </header>
 
-      <KontoauszugClient initial={initial} />
+      <KontoauszugClient initial={initial} initialHistory={initialHistory} />
     </div>
   );
 }

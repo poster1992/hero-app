@@ -9,7 +9,13 @@ import { getReceiptsInRange } from "@/lib/hero-api";
 import { effectiveReceiptStatus, getCustomerName } from "@/lib/invoices";
 import { getSupplierIbanMap } from "@/lib/supplier-ibans";
 import { getPaymentOverrideMap, setPaymentOverride } from "@/lib/receipt-payment-status";
-import { findStatementImport, recordStatementImport } from "@/lib/bank-imports";
+import {
+  findStatementImport,
+  recordStatementImport,
+  listStatementImports,
+  deleteStatementImport,
+  type StatementImport,
+} from "@/lib/bank-imports";
 import { addPendingTxns, listPendingTxns, markTxnsDone } from "@/lib/bank-transactions";
 
 export interface BankTxn {
@@ -154,6 +160,34 @@ async function extractFromText(client: Anthropic, text: string): Promise<BankTxn
   return all.flat();
 }
 
+/** Liest die auf dem Dokument stehende Kontoauszugsnummer (oder null). */
+async function extractStatementNumber(
+  client: Anthropic,
+  payload: { kind: "pdf"; data: string } | { kind: "text"; text: string }
+): Promise<string | null> {
+  const ask =
+    "Auf diesem Kontoauszug steht eine Auszugs-/Kontoauszugsnummer (z.B. \"Auszug Nr. 7\", " +
+    '"Kontoauszug 2026/0007", "Blatt 12", "Auszug 5/2026"). Gib NUR diese Nummer zurück, ohne weiteren Text. ' +
+    "Wenn keine erkennbar ist, antworte mit dem Wort: unbekannt.";
+  try {
+    const content =
+      payload.kind === "pdf"
+        ? [
+            { type: "document" as const, source: { type: "base64" as const, media_type: "application/pdf" as const, data: payload.data } },
+            { type: "text" as const, text: ask },
+          ]
+        : [{ type: "text" as const, text: `${ask}\n\nDokument-Anfang:\n${payload.text.slice(0, 3000)}` }];
+    const res = await client.messages.create({ model: "claude-opus-4-8", max_tokens: 40, messages: [{ role: "user", content }] });
+    const tb = res.content.find((b) => b.type === "text");
+    if (!tb || tb.type !== "text") return null;
+    const val = tb.text.trim().replace(/^["']|["']$/g, "").slice(0, 64);
+    if (!val || /^unbekannt$/i.test(val)) return null;
+    return val;
+  } catch {
+    return null;
+  }
+}
+
 /** Lädt offene Belege (effektiv nicht bezahlt) + Lieferanten-Häufigkeit für den Abgleich. */
 async function loadOpenBelege(): Promise<{ openBelege: OpenBeleg[]; supplierCount: Map<string, number> }> {
   const now = new Date();
@@ -263,19 +297,24 @@ export async function importBankStatement(
   }
 
   const client = new Anthropic({ maxRetries: 2, timeout: 180_000 });
+  // Inhalt je Dateityp aufbereiten (wird für Buchungen UND Auszugsnummer genutzt).
+  let payload: { kind: "pdf"; data: string } | { kind: "text"; text: string };
+  if (name.endsWith(".pdf") || file.type === "application/pdf") {
+    payload = { kind: "pdf", data: buf.toString("base64") };
+  } else if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
+    const wb = XLSX.read(buf, { type: "buffer" });
+    payload = { kind: "text", text: XLSX.utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]]) };
+  } else {
+    let text = buf.toString("utf8");
+    if (text.includes("�")) text = buf.toString("latin1");
+    payload = { kind: "text", text };
+  }
   let txns: BankTxn[];
   try {
-    if (name.endsWith(".pdf") || file.type === "application/pdf") {
-      txns = await callExtract(client, { kind: "pdf", data: buf.toString("base64") }, 16000);
-    } else if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
-      const wb = XLSX.read(buf, { type: "buffer" });
-      const csv = XLSX.utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]]);
-      txns = await extractFromText(client, csv);
-    } else {
-      let text = buf.toString("utf8");
-      if (text.includes("�")) text = buf.toString("latin1");
-      txns = await extractFromText(client, text);
-    }
+    txns =
+      payload.kind === "pdf"
+        ? await callExtract(client, payload, 16000)
+        : await extractFromText(client, payload.text);
   } catch (e) {
     return { added: 0, total: 0, error: e instanceof Error ? e.message : "Auszug konnte nicht gelesen werden." };
   }
@@ -296,9 +335,11 @@ export async function importBankStatement(
       out.map((t) => ({ date: t.date, amount: t.amount, name: t.name, purpose: t.purpose })),
       statementHash
     );
+    const statementNumber = await extractStatementNumber(client, payload);
     await recordStatementImport({
       fileHash: statementHash,
       filename: file.name,
+      statementNumber,
       txCount: out.length,
       total: round2(out.reduce((s, t) => s + t.amount, 0)),
       userId,
@@ -367,4 +408,26 @@ export async function confirmBankMatches(lines: ConfirmLine[]): Promise<{ count:
     /* optional */
   }
   return { count };
+}
+
+/** Historie der eingelesenen Kontoauszüge (neueste zuerst). */
+export async function getStatementHistory(): Promise<StatementImport[]> {
+  if (!(await getSession())) return [];
+  try {
+    return await listStatementImports();
+  } catch {
+    return [];
+  }
+}
+
+/** Löscht einen Auszug aus der Historie und entfernt seine offenen Buchungen. */
+export async function deleteStatement(fileHash: string): Promise<{ removed: number; error?: string }> {
+  if (!(await getSession())) return { removed: 0, error: "Kein Zugriff." };
+  if (!fileHash) return { removed: 0, error: "Kein Auszug angegeben." };
+  try {
+    const removed = await deleteStatementImport(fileHash);
+    return { removed };
+  } catch (e) {
+    return { removed: 0, error: e instanceof Error ? e.message : "Löschen fehlgeschlagen." };
+  }
 }
