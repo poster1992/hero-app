@@ -247,32 +247,35 @@ export async function analyzeBankStatement(formData: FormData): Promise<BankAnal
     return { matches: [], openBelege: [], error: e instanceof Error ? e.message : "Belege konnten nicht geladen werden." };
   }
 
-  // 3) Abgleich: je Abgang den besten offenen Beleg (Betrag + Nr./IBAN/Name)
+  // 3) Abgleich je Abgang – Priorität: Name > Zweck (Beleg-Nr./IBAN) > Betrag.
   const used = new Set<string>();
   const matches: BankMatch[] = txns
     .filter((t) => t.direction === "out")
     .map((t) => {
-      const hay = norm(`${t.name} ${t.purpose}`);
-      let best: { b: OpenBeleg; score: number; reason: string } | null = null;
+      const hayText = norm(`${t.name} ${t.purpose}`);
+      const hay = hayText.replace(/\s/g, "");
+      let best: { b: OpenBeleg; score: number; signals: number; reason: string } | null = null;
       for (const b of openBelege) {
         if (used.has(b.heroId)) continue;
-        const amountMatch = Math.abs(b.gross - t.amount) <= 0.02;
-        const numMatch = b.number && b.number.length >= 4 && hay.replace(/\s/g, "").includes(b.number.toLowerCase().replace(/\s/g, ""));
-        const ibanMatch = b.iban && hay.replace(/\s/g, "").includes(b.iban.toLowerCase());
+        // Priorität: 1. Name, 2. Zweck (Beleg-Nr./IBAN im Verwendungszweck), 3. Betrag.
         const nameTokens = norm(b.supplier).split(" ").filter((w) => w.length >= 4);
-        const nameMatch = nameTokens.some((w) => hay.includes(w));
+        const nameMatch = nameTokens.some((w) => hayText.includes(w));
+        const numMatch = !!b.number && b.number.length >= 4 && hay.includes(b.number.toLowerCase().replace(/\s/g, ""));
+        const ibanMatch = !!b.iban && hay.includes(b.iban.toLowerCase());
+        const zweckMatch = numMatch || ibanMatch;
+        const amountMatch = Math.abs(b.gross - t.amount) <= 0.02;
         let score = 0;
+        let signals = 0;
         const reasons: string[] = [];
-        if (amountMatch) { score += 2; reasons.push("Betrag"); }
-        if (numMatch) { score += 2; reasons.push("Beleg-Nr."); }
-        if (ibanMatch) { score += 1; reasons.push("IBAN"); }
-        if (nameMatch) { score += 1; reasons.push("Name"); }
-        if (score === 0) continue;
-        if (!best || score > best.score) best = { b, score, reason: reasons.join(" + ") };
+        if (nameMatch) { score += 4; signals++; reasons.push("Name"); }
+        if (zweckMatch) { score += 2; signals++; reasons.push(numMatch ? "Beleg-Nr." : "IBAN"); }
+        if (amountMatch) { score += 1; signals++; reasons.push("Betrag"); }
+        if (signals === 0) continue;
+        if (!best || score > best.score) best = { b, score, signals, reason: reasons.join(" + ") };
       }
-      // Nur bei SICHEREM Treffer vorschlagen (Betrag + mind. ein weiteres Kriterium,
-      // d.h. Score >= 3). Sonst Feld leer lassen – der Bediener ordnet manuell zu.
-      const confident = !!best && best.score >= 3;
+      // Sicher = mindestens ZWEI übereinstimmende Kriterien (z.B. Name + Zweck oder
+      // Name + Betrag). Sonst Feld leer lassen – der Bediener ordnet manuell zu.
+      const confident = !!best && best.signals >= 2;
       if (confident && best) used.add(best.b.heroId);
 
       // Wurde diese Buchung (Betrag+Datum, sonst Betrag) schon eingelesen?
