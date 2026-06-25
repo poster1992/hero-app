@@ -151,7 +151,7 @@ export default function UtilizationTable({ data }: { data: UtilizationData }) {
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-left text-sm">
             <thead>
-              <tr className="text-xs uppercase tracking-wide text-gray-700 [&>th]:sticky [&>th]:top-0 [&>th]:z-10 [&>th]:border-b-2 [&>th]:border-gray-300 [&>th]:bg-gray-100">
+              <tr className="text-xs uppercase tracking-wide text-gray-700 [&>th]:sticky [&>th]:top-0 [&>th]:z-10 [&>th]:border-b-2 [&>th]:border-white/10 [&>th]:bg-[#191c20]">
                 <th className="px-4 py-3 font-medium">Mitarbeiter</th>
                 {weeks.map((w) => (
                   <th key={w.index} className="px-3 py-3 text-center font-medium">

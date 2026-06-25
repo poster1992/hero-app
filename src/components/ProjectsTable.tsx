@@ -291,7 +291,7 @@ export default function ProjectsTable({ projects }: { projects: ProjectRow[] }) 
               <col style={{ width: "4%" }} />
             </colgroup>
             <thead>
-              <tr className="text-xs uppercase tracking-wide text-gray-700 [&>th]:sticky [&>th]:top-0 [&>th]:z-10 [&>th]:border-b-2 [&>th]:border-gray-300 [&>th]:bg-gray-100">
+              <tr className="text-xs uppercase tracking-wide text-gray-700 [&>th]:sticky [&>th]:top-0 [&>th]:z-10 [&>th]:border-b-2 [&>th]:border-white/10 [&>th]:bg-[#191c20]">
                 <Th k="nr" label="Nr." />
                 <Th k="name" label="Projekt" />
                 <Th k="customer" label="Kunde" />

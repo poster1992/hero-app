@@ -39,7 +39,7 @@ export default function CustomersTable({ customers }: { customers: CustomerSumma
           <div className="max-h-[calc(100vh-16rem)] overflow-y-auto overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead>
-                <tr className="text-xs uppercase tracking-wide text-gray-700 [&>th]:sticky [&>th]:top-0 [&>th]:z-10 [&>th]:border-b-2 [&>th]:border-gray-300 [&>th]:bg-gray-100">
+                <tr className="text-xs uppercase tracking-wide text-gray-700 [&>th]:sticky [&>th]:top-0 [&>th]:z-10 [&>th]:border-b-2 [&>th]:border-white/10 [&>th]:bg-[#191c20]">
                   <th className="px-4 py-3 font-medium">Nr.</th>
                   <th className="px-4 py-3 font-medium">Name / Firma</th>
                   <th className="px-4 py-3 font-medium">Adresse</th>
