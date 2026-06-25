@@ -38,7 +38,11 @@ function fmtStamp(s: string | null): string {
 /** Auswahl je Buchung (txnId → Liste zugeordneter Beleg-IDs), Vorschläge vorbelegt. */
 function syncSel(matches: BankMatch[], prev: Record<number, string[]>): Record<number, string[]> {
   const next: Record<number, string[]> = {};
-  for (const m of matches) next[m.txnId] = prev[m.txnId] ?? (m.heroId ? [m.heroId] : []);
+  for (const m of matches) {
+    const existing = prev[m.txnId];
+    // Bereits getroffene (nicht-leere) Zuordnung behalten; sonst aktuellen Vorschlag übernehmen.
+    next[m.txnId] = existing && existing.length > 0 ? existing : m.heroId ? [m.heroId] : [];
+  }
   return next;
 }
 
@@ -59,7 +63,17 @@ export default function KontoauszugClient({
   const [error, setError] = useState<string | null>(initial.error ?? null);
   const [info, setInfo] = useState<string | null>(null);
   const [confirming, startConfirm] = useTransition();
+  const [rechecking, startRecheck] = useTransition();
   const [deleting, setDeleting] = useState<string | null>(null);
+
+  const recheck = () => {
+    setError(null);
+    setInfo(null);
+    startRecheck(async () => {
+      await reloadList(sel);
+      setInfo("Offene Buchungen neu geprüft.");
+    });
+  };
 
   const reloadList = async (prev: Record<number, string[]>) => {
     const [r, h] = await Promise.all([getPendingBankList(), getStatementHistory()]);
@@ -193,12 +207,16 @@ export default function KontoauszugClient({
   return (
     <div className="flex flex-col gap-5">
       {/* Lade-Overlay während Einlesen / Speichern */}
-      {(busy || confirming) && (
+      {(busy || confirming || rechecking) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="flex flex-col items-center gap-4 rounded-xl border border-gray-300 bg-white px-10 py-8 shadow-2xl">
             <span className="h-10 w-10 animate-spin rounded-full border-4 border-gray-300 border-t-brand-red" />
             <p className="text-sm font-medium text-gray-800">
-              {busy ? "Kontoauszug wird eingelesen …" : "Wird gespeichert …"}
+              {busy
+                ? "Kontoauszug wird eingelesen …"
+                : rechecking
+                  ? "Offene Buchungen werden neu geprüft …"
+                  : "Wird gespeichert …"}
             </p>
             <p className="text-xs text-gray-500">Das kann bei vielen Buchungen einen Moment dauern.</p>
           </div>
@@ -221,6 +239,15 @@ export default function KontoauszugClient({
             className="rounded-md bg-brand-red px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
           >
             {busy ? "Lese Auszug …" : "Kontoauszug einlesen"}
+          </button>
+          <button
+            type="button"
+            onClick={recheck}
+            disabled={rechecking || busy || result.matches.length === 0}
+            title="Die Buchungen in der Liste erneut gegen die offenen Belege abgleichen"
+            className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900 disabled:opacity-50"
+          >
+            {rechecking ? "Prüfe …" : "Offene Buchungen neu prüfen"}
           </button>
           <span className="text-xs text-gray-500">PDF, CSV/TXT oder XLSX · nur Abgänge</span>
         </div>
