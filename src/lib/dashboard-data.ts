@@ -6,6 +6,8 @@ import {
   isRevenueReduction,
 } from "./hero-api";
 import { listManualReceipts } from "./manual-receipts";
+import { effectiveReceiptStatus, LOCAL_STATUS_FROM } from "./invoices";
+import { getPaymentOverrideMap } from "./receipt-payment-status";
 
 const MONTH_LABELS = [
   "Jan",
@@ -127,6 +129,13 @@ export async function getDashboardData(year: number): Promise<DashboardData> {
     getCustomerInvoices(),
     getOfferConfirmationByMonth(year),
   ]);
+  // Lokale Zahlstatus-Overrides (ab 01.06.2026 maßgeblich statt HERO).
+  let paymentOverrides: Awaited<ReturnType<typeof getPaymentOverrideMap>> = new Map();
+  try {
+    paymentOverrides = await getPaymentOverrideMap();
+  } catch {
+    // ohne Overrides gilt der HERO-Status
+  }
 
   const monthly: MonthlyTotals[] = MONTH_LABELS.map((label, i) => ({
     month: i + 1,
@@ -184,11 +193,24 @@ export async function getDashboardData(year: number): Promise<DashboardData> {
     monthly[monthIndex].outputTax += receipt.value - receipt.netValue;
     totalOutput += receipt.netValue;
     countOutput++;
-    if (receipt.openAmount > 0.005) {
-      openReceiptsTotal += receipt.openAmount;
+    // Offener Betrag nach effektivem Status: lokaler Override gewinnt; ab
+    // 01.06.2026 ohne Override = offen (HERO ignoriert). Im lokalen Regime zählt
+    // der Bruttobetrag, davor der HERO-Offenbetrag.
+    const ovStatus = paymentOverrides.get(receipt.id)?.status ?? null;
+    const localRegime =
+      ovStatus === "offen" ||
+      (ovStatus === null && (receipt.receiptDate ?? "").slice(0, 10) >= LOCAL_STATUS_FROM);
+    const openAmt =
+      effectiveReceiptStatus(receipt, ovStatus).tone === "paid"
+        ? 0
+        : localRegime
+          ? receipt.value
+          : receipt.openAmount;
+    if (openAmt > 0.005) {
+      openReceiptsTotal += openAmt;
       openReceiptsCount++;
       openReceiptsMonthly[monthIndex].count++;
-      openReceiptsMonthly[monthIndex].total += receipt.openAmount;
+      openReceiptsMonthly[monthIndex].total += openAmt;
       const party = receipt.customer
         ? receipt.customer.companyName ||
           [receipt.customer.firstName, receipt.customer.lastName].filter(Boolean).join(" ") ||
@@ -199,7 +221,7 @@ export async function getDashboardData(year: number): Promise<DashboardData> {
         date: receipt.receiptDate,
         number: receipt.number ?? "",
         party,
-        amount: round2(receipt.openAmount),
+        amount: round2(openAmt),
       });
     }
 
