@@ -2,6 +2,7 @@ import MonthlyReceipts, { type ReceiptsView } from "@/components/MonthlyReceipts
 import ManualBelege from "@/components/ManualBelege";
 import { listManualReceipts } from "@/lib/manual-receipts";
 import { listReceiptReviews } from "@/lib/receipt-reviews";
+import { getPaymentOverrideMap } from "@/lib/receipt-payment-status";
 import { listUsers, getUserByUsername } from "@/lib/users";
 import { getAllowedModules } from "@/lib/role-store";
 import { getSession } from "@/lib/session";
@@ -47,6 +48,14 @@ export default async function BelegePage({
     // Manuelle Belege sind optional – Fehler hier blockiert die Seite nicht.
   }
 
+  // Lokale Zahlstatus-Overrides (überschreiben den HERO-Status je Beleg).
+  let paymentOverrides: Awaited<ReturnType<typeof getPaymentOverrideMap>> = new Map();
+  try {
+    paymentOverrides = await getPaymentOverrideMap();
+  } catch {
+    // Optional – ohne Overrides gilt einfach der HERO-Status.
+  }
+
   // Rechnungsprüfung: Status, Prüfer-Liste und Berechtigung.
   let reviews: Awaited<ReturnType<typeof listReceiptReviews>> = new Map();
   let reviewers: { id: number; name: string }[] = [];
@@ -80,6 +89,7 @@ export default async function BelegePage({
         reviews={reviews}
         reviewers={reviewers}
         canReview={canReview}
+        paymentOverrides={paymentOverrides}
       />
       <ManualBelege year={year} month={month} view={view} />
     </>

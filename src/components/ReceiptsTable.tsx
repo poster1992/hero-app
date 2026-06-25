@@ -8,6 +8,7 @@ import {
 import type { Receipt } from "@/lib/hero-api";
 import { reviewStatusLabel, type ReceiptReview } from "@/lib/receipt-reviews";
 import { getSupplierIbanMap } from "@/lib/supplier-ibans";
+import type { PaymentOverride } from "@/lib/receipt-payment-status";
 
 const dateFormatter = new Intl.DateTimeFormat("de-DE");
 
@@ -19,6 +20,8 @@ export default async function ReceiptsTable({
   reviewers = [],
   canReview = false,
   enableSepa = false,
+  enablePaidStatus = false,
+  paymentOverrides,
 }: {
   receipts: Receipt[];
   partyLabel?: string;
@@ -27,6 +30,10 @@ export default async function ReceiptsTable({
   reviewers?: { id: number; name: string }[];
   canReview?: boolean;
   enableSepa?: boolean;
+  /** Erlaubt das manuelle Umstellen des Zahlstatus je Beleg. */
+  enablePaidStatus?: boolean;
+  /** Lokale Zahlstatus-Overrides je HERO-Beleg-ID. */
+  paymentOverrides?: Map<string, PaymentOverride>;
 }) {
   // Bankeinzug-Kennzeichen je Lieferant (nur für Belege/SEPA-Ansicht laden).
   let ibanMap: Awaited<ReturnType<typeof getSupplierIbanMap>> = new Map();
@@ -39,7 +46,18 @@ export default async function ReceiptsTable({
   }
 
   const rows: ReceiptRow[] = receipts.map((r) => {
-    const status = getInvoiceStatus(r);
+    // Effektiver Status: lokaler Override (falls vorhanden) schlägt den HERO-Status.
+    const ov = paymentOverrides?.get(r.id) ?? null;
+    const status = ov
+      ? ov.status === "bezahlt"
+        ? ({ label: "Bezahlt", tone: "paid" } as const)
+        : ({ label: "Offen", tone: "open" } as const)
+      : getInvoiceStatus(r);
+    const paidOverrideInfo = ov
+      ? [ov.setByName, ov.setAt ? dateFormatter.format(new Date(ov.setAt.slice(0, 10) + "T00:00:00")) : null]
+          .filter(Boolean)
+          .join(" · ") || null
+      : null;
     const file = r.fileUpload;
     const rv = reviews?.get(r.id) ?? null;
     return {
@@ -77,6 +95,8 @@ export default async function ReceiptsTable({
       directDebit: r.customer?.id != null ? (ibanMap.get(r.customer.id)?.directDebit ?? false) : false,
       statusLabel: status.label,
       statusTone: status.tone,
+      paidOverride: ov?.status ?? null,
+      paidOverrideInfo,
       file:
         file?.src != null
           ? {
@@ -98,6 +118,7 @@ export default async function ReceiptsTable({
       reviewers={reviewers}
       canReview={canReview}
       enableSepa={enableSepa}
+      enablePaidStatus={enablePaidStatus}
     />
   );
 }

@@ -7,6 +7,7 @@ import { getReceiptsByMonth, summarizeReceipts, mergeManualIntoSummary, MONTH_LA
 import type { ReceiptType } from "@/lib/hero-api";
 import type { ManualReceipt } from "@/lib/manual-receipts";
 import type { ReceiptReview } from "@/lib/receipt-reviews";
+import type { PaymentOverride } from "@/lib/receipt-payment-status";
 
 const currencyFormatter = new Intl.NumberFormat("de-DE", {
   style: "currency",
@@ -34,6 +35,7 @@ export default async function MonthlyReceipts({
   reviews,
   reviewers = [],
   canReview = false,
+  paymentOverrides,
 }: {
   title: string;
   type: ReceiptType;
@@ -48,6 +50,8 @@ export default async function MonthlyReceipts({
   reviews?: Map<string, ReceiptReview>;
   reviewers?: { id: number; name: string }[];
   canReview?: boolean;
+  /** Lokale Zahlstatus-Overrides je HERO-Beleg-ID (nur Belege). */
+  paymentOverrides?: Map<string, PaymentOverride>;
 }) {
   let monthly: Awaited<ReturnType<typeof getReceiptsByMonth>> | null = null;
   let error: string | null = null;
@@ -185,6 +189,8 @@ export default async function MonthlyReceipts({
               reviewers={reviewers}
               canReview={canReview}
               enableSepa={type === "output"}
+              enablePaidStatus={type === "output"}
+              paymentOverrides={paymentOverrides}
             />
           )}
         </div>

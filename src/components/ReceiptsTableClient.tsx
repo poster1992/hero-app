@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import DocumentPreview from "@/components/DocumentPreview";
 import type { InvoiceStatusTone } from "@/lib/invoices";
 import { assignReviewAction, decideReviewAction } from "@/app/dashboard/belege/review-actions";
+import { setReceiptPaymentStatusAction } from "@/app/dashboard/belege/status-actions";
 import {
   buildMultilineSepaAction,
   saveSupplierIbanAction,
@@ -61,6 +62,10 @@ export interface ReceiptRow {
   gross: number;
   statusLabel: string;
   statusTone: InvoiceStatusTone;
+  /** Lokaler Zahlstatus-Override (überschreibt HERO); null = HERO-Status. */
+  paidOverride?: "bezahlt" | "offen" | null;
+  /** Wer/wann den lokalen Status gesetzt hat (für Tooltip). */
+  paidOverrideInfo?: string | null;
   file: FileRef | null;
   review?: ReviewInfo | null;
   /** Lieferanten-Kundennummer (für SEPA-IBAN-Mapping). */
@@ -123,6 +128,7 @@ export default function ReceiptsTableClient({
   canReview = false,
   exportName = "hero-belege",
   enableSepa = false,
+  enablePaidStatus = false,
 }: {
   rows: ReceiptRow[];
   partyLabel?: string;
@@ -132,6 +138,7 @@ export default function ReceiptsTableClient({
   canReview?: boolean;
   exportName?: string;
   enableSepa?: boolean;
+  enablePaidStatus?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -630,11 +637,33 @@ export default function ReceiptsTableClient({
                 {currencyFormatter.format(row.gross)}
               </td>
               <td className="px-3 py-2.5">
-                <span
-                  className={`whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium ${STATUS_STYLES[row.statusTone]}`}
-                >
-                  {row.statusLabel}
-                </span>
+                <div className="flex flex-col items-start gap-1">
+                  <span
+                    title={row.paidOverride ? `Lokal gesetzt${row.paidOverrideInfo ? `: ${row.paidOverrideInfo}` : ""}` : undefined}
+                    className={`whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium ${STATUS_STYLES[row.statusTone]}`}
+                  >
+                    {row.statusLabel}
+                    {row.paidOverride ? " •" : ""}
+                  </span>
+                  {enablePaidStatus && (
+                    <select
+                      value={row.paidOverride ?? "hero"}
+                      disabled={pending}
+                      onChange={(e) => {
+                        const fd = new FormData();
+                        fd.set("heroId", row.id);
+                        fd.set("status", e.target.value);
+                        runAction(fd, setReceiptPaymentStatusAction);
+                      }}
+                      title="Zahlstatus lokal setzen (überschreibt HERO)"
+                      className="rounded border border-gray-300 bg-white px-1 py-0.5 text-[11px] text-gray-700 outline-none focus:border-brand-red/60"
+                    >
+                      <option value="hero">HERO-Status</option>
+                      <option value="bezahlt">Bezahlt</option>
+                      <option value="offen">Offen</option>
+                    </select>
+                  )}
+                </div>
               </td>
               <td className="px-3 py-2.5">
                 {row.file ? (
