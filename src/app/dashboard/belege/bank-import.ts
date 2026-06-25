@@ -65,7 +65,9 @@ async function extractTransactions(
   const instruction =
     "Dies ist ein Kontoauszug. Extrahiere ALLE Buchungszeilen. Antworte AUSSCHLIESSLICH mit JSON in genau diesem Format: " +
     '{"transactions":[{"date":"YYYY-MM-DD"|null,"amount":number,"direction":"out"|"in","name":string,"purpose":string}]}. ' +
-    "amount immer als positive Zahl (Punkt als Dezimaltrennzeichen, kein Tausenderpunkt). direction \"out\" für Abgang/Belastung/Lastschrift/Überweisung (Geld raus), \"in\" für Eingang/Gutschrift. " +
+    "amount immer als positive Zahl (Punkt als Dezimaltrennzeichen, kein Tausenderpunkt). " +
+    'direction = "out" für ABGÄNGE (Geld raus: Belastung, Soll, Lastschrift, Überweisung, negative Beträge/Minuszeichen), ' +
+    '"in" für EINGÄNGE (Geld rein: Gutschrift, Haben, positive Eingänge). Bestimme die Richtung anhand von Vorzeichen bzw. Soll/Haben-Spalte. ' +
     "name = Empfänger/Auftraggeber, purpose = Verwendungszweck (inkl. Rechnungs-/Belegnummern). Keine Erklärung, nur das JSON-Objekt.";
 
   const content =
