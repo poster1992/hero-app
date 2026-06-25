@@ -7,6 +7,7 @@ import {
   confirmBankMatches,
   type BankAnalysisResult,
   type ConfirmAssignment,
+  type OpenBeleg,
 } from "@/app/dashboard/belege/bank-import";
 
 const euro = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
@@ -67,7 +68,7 @@ export default function KontoauszugClient() {
     setSel((p) => ({ ...p, [i]: (p[i] ?? []).filter((x) => x !== heroId) }));
 
   const belegById = useMemo(() => {
-    const m = new Map<string, { number: string; supplier: string; gross: number }>();
+    const m = new Map<string, { number: string; supplier: string; gross: number; skontoAmount: number | null }>();
     for (const b of result?.openBelege ?? []) m.set(b.heroId, b);
     return m;
   }, [result]);
@@ -192,8 +193,17 @@ export default function KontoauszugClient() {
               <tbody>
                 {result.matches.map((m, i) => {
                   const list = sel[i] ?? [];
-                  const sum = list.reduce((s, id) => s + (belegById.get(id)?.gross ?? 0), 0);
-                  const sumOff = list.length > 0 && Math.abs(sum - m.txn.amount) > 0.02;
+                  const sumGross = list.reduce((s, id) => s + (belegById.get(id)?.gross ?? 0), 0);
+                  const sumSkonto = list.reduce((s, id) => {
+                    const b = belegById.get(id);
+                    return s + ((b?.skontoAmount ?? b?.gross) ?? 0);
+                  }, 0);
+                  const hasSkonto = list.some((id) => belegById.get(id)?.skontoAmount != null);
+                  // Stimmig, wenn Brutto- ODER Skonto-Summe zum Buchungsbetrag passt.
+                  const sumOff =
+                    list.length > 0 &&
+                    Math.abs(sumGross - m.txn.amount) > 0.02 &&
+                    Math.abs(sumSkonto - m.txn.amount) > 0.02;
                   return (
                     <tr key={i} className="border-b border-gray-200 last:border-0 align-top hover:bg-gray-100">
                       <td className="px-4 py-2.5 whitespace-nowrap text-gray-600">{fmtDate(m.txn.date)}</td>
@@ -254,28 +264,17 @@ export default function KontoauszugClient() {
                               </span>
                             );
                           })}
-                          {/* Beleg hinzufügen */}
-                          <select
-                            value=""
-                            onChange={(e) => {
-                              addBeleg(i, e.target.value);
-                              e.currentTarget.value = "";
-                            }}
-                            className="w-full max-w-md rounded-md border border-gray-300 bg-white px-2 py-1 text-sm text-gray-900 outline-none focus:border-brand-red/60"
-                          >
-                            <option value="">+ Beleg hinzufügen …</option>
-                            {result.openBelege
-                              .filter((b) => !list.includes(b.heroId))
-                              .map((b) => (
-                                <option key={b.heroId} value={b.heroId}>
-                                  {b.number} · {b.supplier} · {euro.format(b.gross)}
-                                </option>
-                              ))}
-                          </select>
+                          {/* Beleg suchen + hinzufügen (nach Nr./Lieferant) */}
+                          <BelegPicker
+                            belege={result.openBelege}
+                            exclude={list}
+                            onPick={(id) => addBeleg(i, id)}
+                          />
                           {list.length > 0 && (
                             <span className={`text-xs ${sumOff ? "text-amber-400" : "text-gray-500"}`}>
-                              Summe zugeordnet: {euro.format(sum)}
-                              {sumOff ? ` (≠ Buchung ${euro.format(m.txn.amount)})` : ""}
+                              Summe zugeordnet: {euro.format(sumGross)}
+                              {hasSkonto ? ` (mit Skonto ${euro.format(sumSkonto)})` : ""}
+                              {sumOff ? ` ≠ Buchung ${euro.format(m.txn.amount)}` : ""}
                             </span>
                           )}
                         </div>
@@ -310,6 +309,68 @@ export default function KontoauszugClient() {
             </button>
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+/** Durchsuchbare Beleg-Auswahl (nach Belegnummer oder Lieferant). */
+function BelegPicker({
+  belege,
+  exclude,
+  onPick,
+}: {
+  belege: OpenBeleg[];
+  exclude: string[];
+  onPick: (heroId: string) => void;
+}) {
+  const [q, setQ] = useState("");
+  const [open, setOpen] = useState(false);
+  const filtered = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    const pool = belege.filter((b) => !exclude.includes(b.heroId));
+    const list = s
+      ? pool.filter(
+          (b) => b.number.toLowerCase().includes(s) || b.supplier.toLowerCase().includes(s)
+        )
+      : pool;
+    return list.slice(0, 10);
+  }, [q, belege, exclude]);
+
+  return (
+    <div className="relative w-full max-w-md">
+      <input
+        type="text"
+        value={q}
+        onChange={(e) => {
+          setQ(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        placeholder="+ Beleg suchen (Nr. / Lieferant) …"
+        className="w-full rounded-md border border-gray-300 bg-white px-2 py-1 text-sm text-gray-900 outline-none focus:border-brand-red/60"
+      />
+      {open && filtered.length > 0 && (
+        <ul className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-md border border-gray-300 bg-white shadow-lg">
+          {filtered.map((b) => (
+            <li key={b.heroId}>
+              <button
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  onPick(b.heroId);
+                  setQ("");
+                  setOpen(false);
+                }}
+                className="block w-full px-2 py-1.5 text-left text-sm text-gray-800 hover:bg-gray-100"
+              >
+                {b.number} · {b.supplier} · {euro.format(b.gross)}
+                {b.skontoAmount != null ? ` · Skonto ${euro.format(b.skontoAmount)}` : ""}
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );

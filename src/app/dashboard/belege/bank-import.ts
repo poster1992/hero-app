@@ -28,6 +28,8 @@ export interface OpenBeleg {
   supplier: string;
   gross: number;
   iban: string | null;
+  /** Bruttobetrag abzgl. hinterlegtem Skonto (falls vorhanden), sonst null. */
+  skontoAmount: number | null;
 }
 
 export interface BankMatch {
@@ -236,13 +238,19 @@ export async function analyzeBankStatement(formData: FormData): Promise<BankAnal
         // Offen = effektiv nicht bezahlt (Override > [ab Cutoff lokal] > HERO).
         return effectiveReceiptStatus(r, ov?.status ?? null).tone !== "paid";
       })
-      .map((r) => ({
-        heroId: r.id,
-        number: r.number,
-        supplier: getCustomerName(r),
-        gross: round2(r.value),
-        iban: r.customer?.id != null ? (ibanMap.get(r.customer.id)?.iban ?? null) : null,
-      }));
+      .map((r) => {
+        const sk = r.customer?.id != null ? ibanMap.get(r.customer.id) : undefined;
+        const gross = round2(r.value);
+        const pct = sk?.skontoPercent ?? null;
+        return {
+          heroId: r.id,
+          number: r.number,
+          supplier: getCustomerName(r),
+          gross,
+          iban: sk?.iban ?? null,
+          skontoAmount: pct && pct > 0 ? round2(gross * (1 - pct / 100)) : null,
+        };
+      });
   } catch (e) {
     return { matches: [], openBelege: [], error: e instanceof Error ? e.message : "Belege konnten nicht geladen werden." };
   }
@@ -263,13 +271,16 @@ export async function analyzeBankStatement(formData: FormData): Promise<BankAnal
         const numMatch = !!b.number && b.number.length >= 4 && hay.includes(b.number.toLowerCase().replace(/\s/g, ""));
         const ibanMatch = !!b.iban && hay.includes(b.iban.toLowerCase());
         const zweckMatch = numMatch || ibanMatch;
-        const amountMatch = Math.abs(b.gross - t.amount) <= 0.02;
+        // Betrag: voller Bruttobetrag ODER (falls hinterlegt) Skonto-Betrag.
+        const grossHit = Math.abs(b.gross - t.amount) <= 0.02;
+        const skontoHit = !grossHit && b.skontoAmount != null && Math.abs(b.skontoAmount - t.amount) <= 0.02;
+        const amountMatch = grossHit || skontoHit;
         let score = 0;
         let signals = 0;
         const reasons: string[] = [];
         if (nameMatch) { score += 4; signals++; reasons.push("Name"); }
         if (zweckMatch) { score += 2; signals++; reasons.push(numMatch ? "Beleg-Nr." : "IBAN"); }
-        if (amountMatch) { score += 1; signals++; reasons.push("Betrag"); }
+        if (amountMatch) { score += 1; signals++; reasons.push(skontoHit ? "Betrag (Skonto)" : "Betrag"); }
         if (signals === 0) continue;
         if (!best || score > best.score) best = { b, score, signals, reason: reasons.join(" + ") };
       }
