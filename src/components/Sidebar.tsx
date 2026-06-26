@@ -40,6 +40,7 @@ const NAV_ITEMS: NavItem[] = [
       { href: "/dashboard/cockpit", label: "Unternehmensübersicht" },
       { href: "/dashboard/planung", label: "Arbeitsplanung" },
       { href: "/dashboard/belege", label: "Belege" },
+      { href: "/dashboard/lohn-abschlaege", label: "Lohn Abschläge erstellen" },
       { href: "/dashboard/rechnungen", label: "Rechnungen" },
       { href: "/dashboard/arbeitszeiten", label: "Arbeitszeiten" },
       { href: "/dashboard/abc-analyse", label: "ABC-Analyse" },
