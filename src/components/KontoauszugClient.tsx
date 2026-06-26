@@ -199,10 +199,15 @@ export default function KontoauszugClient({
       const res = await confirmBankMatches(lines);
       if (res.error) {
         setError(res.error);
+        // Trotz Fehler kann der serverseitige Stand abweichen → neu laden.
+        await reloadList(sel);
         return;
       }
-      setInfo(`${res.count} Beleg(e) als „bezahlt" gespeichert · gespeicherte Buchungen entfernt.`);
-      // Gespeicherte Buchungen verschwinden serverseitig; übrige Auswahl bleibt erhalten.
+      // Gespeicherte Buchungen sofort aus der Liste nehmen (nicht erst nach Reload).
+      const done = new Set(res.done);
+      setResult((r) => ({ ...r, matches: r.matches.filter((m) => !done.has(m.txnId)) }));
+      setInfo(`${res.count} Beleg(e) als „bezahlt" gespeichert · ${res.done.length} Buchung(en) entfernt.`);
+      // Server-Stand nachziehen (Belegvorschläge/Historie aktualisieren).
       await reloadList(sel);
     });
   };

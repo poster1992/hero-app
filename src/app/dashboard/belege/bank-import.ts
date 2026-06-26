@@ -434,9 +434,11 @@ export interface ConfirmLine {
 }
 
 /** Setzt die zugeordneten Belege auf „bezahlt" und nimmt die Buchungen aus der Liste. */
-export async function confirmBankMatches(lines: ConfirmLine[]): Promise<{ count: number; error?: string }> {
+export async function confirmBankMatches(
+  lines: ConfirmLine[]
+): Promise<{ count: number; done: number[]; error?: string }> {
   const session = await getSession();
-  if (!session) return { count: 0, error: "Kein Zugriff." };
+  if (!session) return { count: 0, done: [], error: "Kein Zugriff." };
   let userId: number | null = null;
   try {
     userId = (await getUserByUsername(session.username))?.id ?? null;
@@ -463,12 +465,14 @@ export async function confirmBankMatches(lines: ConfirmLine[]): Promise<{ count:
     }
     doneTxnIds.push(ln.txnId);
   }
+  // Zugeordnete Buchungen aus der Liste nehmen. Schlägt das fehl, melden wir es
+  // (sonst bliebe die Zeile trotz Speicherung stehen).
   try {
     await markTxnsDone(doneTxnIds);
   } catch {
-    /* optional */
+    return { count, done: [], error: "Belege gespeichert, aber die Buchungen konnten nicht aus der Liste entfernt werden." };
   }
-  return { count };
+  return { count, done: doneTxnIds };
 }
 
 /** Historie der eingelesenen Kontoauszüge (neueste zuerst). */
