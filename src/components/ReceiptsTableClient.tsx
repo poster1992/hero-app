@@ -66,6 +66,8 @@ export interface ReceiptRow {
   paidOverride?: "bezahlt" | "offen" | null;
   /** Wer/wann den lokalen Status gesetzt hat (für Tooltip). */
   paidOverrideInfo?: string | null;
+  /** Freitext-Bemerkung zur Zahlung (z.B. aus der Kontoauszug-Zuordnung). */
+  paidRemark?: string | null;
   file: FileRef | null;
   review?: ReviewInfo | null;
   /** Lieferanten-Kundennummer (für SEPA-IBAN-Mapping). */
@@ -669,6 +671,14 @@ export default function ReceiptsTableClient({
                     {row.statusLabel}
                     {row.paidOverride ? " •" : ""}
                   </span>
+                  {row.paidRemark && (
+                    <span
+                      title={row.paidRemark}
+                      className="max-w-[160px] truncate text-[11px] italic text-gray-500"
+                    >
+                      💬 {row.paidRemark}
+                    </span>
+                  )}
                   {enablePaidStatus && (
                     <select
                       value={row.paidOverride ?? "hero"}

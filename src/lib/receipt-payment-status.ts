@@ -10,6 +10,8 @@ export interface PaymentOverride {
   setByName: string | null;
   setAt: string | null;
   note: string | null;
+  /** Freitext-Bemerkung des Bearbeiters (z.B. bei der Kontoauszug-Zuordnung). */
+  remark: string | null;
 }
 
 interface OverrideRow extends RowDataPacket {
@@ -18,12 +20,13 @@ interface OverrideRow extends RowDataPacket {
   set_at: string | null;
   set_by_name: string | null;
   note: string | null;
+  remark: string | null;
 }
 
 /** Alle lokalen Zahlstatus-Overrides, keyed nach HERO-Beleg-ID. */
 export async function getPaymentOverrideMap(): Promise<Map<string, PaymentOverride>> {
   const [rows] = await getPool().query<OverrideRow[]>(
-    `SELECT ps.hero_receipt_id, ps.status, ps.set_at, ps.note,
+    `SELECT ps.hero_receipt_id, ps.status, ps.set_at, ps.note, ps.remark,
             COALESCE(NULLIF(u.display_name, ''), u.username) AS set_by_name
      FROM receipt_payment_status ps
      LEFT JOIN users u ON u.id = ps.set_by`
@@ -36,6 +39,7 @@ export async function getPaymentOverrideMap(): Promise<Map<string, PaymentOverri
       setByName: r.set_by_name,
       setAt: r.set_at ? String(r.set_at) : null,
       note: r.note,
+      remark: r.remark,
     });
   }
   return map;
@@ -46,13 +50,18 @@ export async function setPaymentOverride(
   heroReceiptId: string,
   status: PaidStatus,
   userId: number | null,
-  note: string | null = null
+  note: string | null = null,
+  remark: string | null = null
 ): Promise<void> {
+  // note/remark werden nur überschrieben, wenn ein neuer Wert übergeben wird
+  // (COALESCE(VALUES(x), x)) – so verliert ein manueller Status-Wechsel die
+  // Kontoauszug-Notiz bzw. Bemerkung nicht.
   await getPool().query(
-    `INSERT INTO receipt_payment_status (hero_receipt_id, status, set_by, note)
-     VALUES (?, ?, ?, ?)
-     ON DUPLICATE KEY UPDATE status = VALUES(status), set_by = VALUES(set_by), set_at = NOW(), note = VALUES(note)`,
-    [heroReceiptId, status, userId, note]
+    `INSERT INTO receipt_payment_status (hero_receipt_id, status, set_by, note, remark)
+     VALUES (?, ?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE status = VALUES(status), set_by = VALUES(set_by), set_at = NOW(),
+       note = COALESCE(VALUES(note), note), remark = COALESCE(VALUES(remark), remark)`,
+    [heroReceiptId, status, userId, note, remark]
   );
 }
 

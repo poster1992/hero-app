@@ -429,6 +429,8 @@ export interface ConfirmLine {
   txnId: number;
   heroIds: string[];
   note: string;
+  /** Freitext-Bemerkung des Bearbeiters zu dieser Zuordnung (optional). */
+  remark?: string;
 }
 
 /** Setzt die zugeordneten Belege auf „bezahlt" und nimmt die Buchungen aus der Liste. */
@@ -447,7 +449,13 @@ export async function confirmBankMatches(lines: ConfirmLine[]): Promise<{ count:
     if (!ln.heroIds || ln.heroIds.length === 0) continue;
     for (const heroId of ln.heroIds) {
       try {
-        await setPaymentOverride(heroId, "bezahlt", userId, ln.note?.slice(0, 255) || null);
+        await setPaymentOverride(
+          heroId,
+          "bezahlt",
+          userId,
+          ln.note?.slice(0, 255) || null,
+          ln.remark?.trim().slice(0, 500) || null
+        );
         count++;
       } catch {
         /* einzelnen Beleg überspringen */

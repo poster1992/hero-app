@@ -60,6 +60,8 @@ export default function KontoauszugClient({
   const [sel, setSel] = useState<Record<number, string[]>>(() => syncSel(initial.matches, {}));
   // Welche zugeordneten Buchungen sollen gespeichert werden (Häkchen je Zeile).
   const [save, setSave] = useState<Record<number, boolean>>({});
+  // Freitext-Bemerkung je Buchung (wird am Beleg gespeichert).
+  const [remark, setRemark] = useState<Record<number, string>>({});
   const [error, setError] = useState<string | null>(initial.error ?? null);
   const [info, setInfo] = useState<string | null>(null);
   const [confirming, startConfirm] = useTransition();
@@ -184,6 +186,7 @@ export default function KontoauszugClient({
         txnId: m.txnId,
         heroIds,
         note: `Kontoauszug ${fmtDate(m.txn.date)} · ${euro.format(m.txn.amount)}`,
+        remark: remark[m.txnId]?.trim() || undefined,
       });
     }
     if (lines.length === 0) {
@@ -372,6 +375,19 @@ export default function KontoauszugClient({
                                 {hasSkonto ? ` (mit Skonto ${euro.format(sumSkonto)})` : ""}
                                 {sumOff ? ` ≠ Buchung ${euro.format(m.txn.amount)}` : ""}
                               </span>
+                            )}
+                            {list.length > 0 && (
+                              <input
+                                type="text"
+                                value={remark[m.txnId] ?? ""}
+                                onChange={(e) =>
+                                  setRemark((p) => ({ ...p, [m.txnId]: e.target.value }))
+                                }
+                                maxLength={500}
+                                placeholder="Bemerkung (optional) …"
+                                title="Wird am Beleg gespeichert und in der Belegliste angezeigt"
+                                className="w-full max-w-md rounded-md border border-gray-300 bg-white px-2 py-1 text-xs text-gray-900 outline-none focus:border-brand-red/60"
+                              />
                             )}
                           </div>
                         </td>

@@ -101,6 +101,7 @@ export default async function ReceiptsTable({
       statusTone: status.tone,
       paidOverride: ov?.status ?? null,
       paidOverrideInfo,
+      paidRemark: ov?.remark ?? null,
       zahlungszielOcr: ocrMap?.get(r.id)?.zahlungsziel ?? null,
       skontoBetrag: ocrMap?.get(r.id)?.skontoBetrag ?? null,
       ersparnis: ocrMap?.get(r.id)?.ersparnis ?? null,
