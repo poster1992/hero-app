@@ -1,12 +1,20 @@
 "use server";
 
 import { getSession } from "@/lib/session";
+import { getUserByUsername } from "@/lib/users";
 import { getCompanyBankInfo } from "@/lib/hero-api";
 import {
   listLohnEmployees,
   upsertLohnEmployee,
   deleteLohnEmployee,
 } from "@/lib/lohn-employees";
+import {
+  recordLohnRun,
+  listLohnRuns,
+  deleteLohnRun,
+  type LohnRun,
+  type LohnRunPosition,
+} from "@/lib/lohn-runs";
 import { buildSepaCreditTransfer, type SepaPayment } from "@/lib/sepa";
 
 export interface SaveEmployeeState {
@@ -88,6 +96,7 @@ export async function buildWageSepaAction(
   const byId = new Map(employees.map((e) => [e.id, e]));
 
   const payments: SepaPayment[] = [];
+  const positions: LohnRunPosition[] = [];
   let total = 0;
   for (const it of valid) {
     const emp = byId.get(it.employeeId);
@@ -101,6 +110,7 @@ export async function buildWageSepaAction(
       reference,
       endToEndId: `LOHN-${emp.id}-${Date.now()}`.slice(0, 35),
     });
+    positions.push({ name: emp.name, iban: emp.iban, amount: it.amount });
   }
   if (payments.length === 0) {
     return { error: "Keine gültigen Mitarbeiter/IBANs für den Export." };
@@ -111,8 +121,9 @@ export async function buildWageSepaAction(
   let executionDate = options.executionDate?.trim() || today;
   if (executionDate < today) executionDate = today;
 
+  const debtorName = company.name || "FLOORTEC";
   const xml = buildSepaCreditTransfer({
-    debtorName: company.name || "FLOORTEC",
+    debtorName,
     debtorIban: company.iban,
     debtorBic: company.bic,
     executionDate,
@@ -120,10 +131,47 @@ export async function buildWageSepaAction(
     payments,
   });
 
+  const totalRounded = Math.round(total * 100) / 100;
+
+  // Lauf in der Historie aufzeichnen (für spätere PDF-Erstellung).
+  try {
+    const session = await getSession();
+    const userId = session ? (await getUserByUsername(session.username))?.id ?? null : null;
+    await recordLohnRun({
+      reference,
+      executionDate,
+      count: payments.length,
+      total: totalRounded,
+      debtorName,
+      positions,
+      createdBy: userId,
+    });
+  } catch {
+    // Historie ist optional – ein Fehler hier verhindert den Export nicht.
+  }
+
   return {
     xml,
     filename: `lohn-abschlaege-sepa-${executionDate}.xml`,
     count: payments.length,
-    total: Math.round(total * 100) / 100,
+    total: totalRounded,
   };
+}
+
+/** Historie der erstellten Lohnläufe (neueste zuerst). */
+export async function getLohnHistory(): Promise<LohnRun[]> {
+  if (!(await getSession())) return [];
+  try {
+    return await listLohnRuns();
+  } catch {
+    return [];
+  }
+}
+
+/** Löscht einen Lohnlauf aus der Historie. */
+export async function deleteLohnRunAction(formData: FormData): Promise<void> {
+  if (!(await getSession())) return;
+  const id = Number(formData.get("id"));
+  if (!Number.isFinite(id)) return;
+  await deleteLohnRun(id);
 }

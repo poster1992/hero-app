@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
 import { listLohnEmployees, type LohnEmployee } from "@/lib/lohn-employees";
+import { listLohnRuns, type LohnRun } from "@/lib/lohn-runs";
 import { getCompanyBankInfo } from "@/lib/hero-api";
 import LohnAbschlaegeClient from "@/components/LohnAbschlaegeClient";
 
@@ -9,9 +10,10 @@ export default async function LohnAbschlaegePage() {
   if (!session) redirect("/login");
 
   let employees: LohnEmployee[] = [];
+  let history: LohnRun[] = [];
   let error: string | null = null;
   try {
-    employees = await listLohnEmployees(true);
+    [employees, history] = await Promise.all([listLohnEmployees(true), listLohnRuns()]);
   } catch (e) {
     error = e instanceof Error ? e.message : "Mitarbeiter konnten nicht geladen werden.";
   }
@@ -46,6 +48,7 @@ export default async function LohnAbschlaegePage() {
           employees={employees}
           companyIbanOk={companyIbanOk}
           companyName={companyName}
+          history={history}
         />
       )}
     </div>

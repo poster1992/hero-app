@@ -6,16 +6,105 @@ import {
   saveEmployeeAction,
   deleteEmployeeAction,
   buildWageSepaAction,
+  deleteLohnRunAction,
   type SaveEmployeeState,
   type WageItem,
 } from "@/app/dashboard/lohn-abschlaege/actions";
 import type { LohnEmployee } from "@/lib/lohn-employees";
+import type { LohnRun } from "@/lib/lohn-runs";
 
 const euro = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
 
 /** IBAN gruppiert (4er-Blöcke) für die Anzeige. */
 function fmtIban(iban: string): string {
   return iban.replace(/(.{4})/g, "$1 ").trim();
+}
+
+function fmtDate(d: string | null): string {
+  if (!d) return "—";
+  const [y, m, day] = d.slice(0, 10).split("-");
+  return y && m && day ? `${day}.${m}.${y}` : d;
+}
+
+function fmtStamp(s: string | null): string {
+  if (!s) return "—";
+  const d = new Date(s.replace(" ", "T"));
+  if (Number.isNaN(d.getTime())) return s.slice(0, 10);
+  return d.toLocaleString("de-DE", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+/** Erzeugt aus einem Lohnlauf ein PDF-Dokument (Liste der Abschläge). */
+async function generateLohnPdf(run: LohnRun): Promise<void> {
+  const { jsPDF } = await import("jspdf");
+  const doc = new jsPDF("p", "pt", "a4");
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const left = 40;
+  const right = pageW - 40;
+  let y = 56;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(16);
+  doc.text("Lohn-Abschläge", left, y);
+  y += 22;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  const meta = [
+    `Auftraggeber: ${run.debtorName || "FLOORTEC"}`,
+    `Verwendungszweck: ${run.reference}`,
+    `Ausführungsdatum: ${fmtDate(run.executionDate)}`,
+    `Erstellt: ${fmtStamp(run.createdAt)}${run.createdByName ? ` · ${run.createdByName}` : ""}`,
+  ];
+  for (const line of meta) {
+    doc.text(line, left, y);
+    y += 15;
+  }
+  y += 8;
+
+  // Tabellenkopf
+  const xNr = left;
+  const xName = left + 28;
+  const xIban = left + 220;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.text("Nr.", xNr, y);
+  doc.text("Name", xName, y);
+  doc.text("IBAN", xIban, y);
+  doc.text("Betrag", right, y, { align: "right" });
+  y += 6;
+  doc.setLineWidth(0.5);
+  doc.line(left, y, right, y);
+  y += 14;
+
+  doc.setFont("helvetica", "normal");
+  run.positions.forEach((p, i) => {
+    if (y > pageH - 60) {
+      doc.addPage();
+      y = 56;
+    }
+    doc.text(String(i + 1), xNr, y);
+    doc.text(doc.splitTextToSize(p.name, xIban - xName - 6)[0] ?? p.name, xName, y);
+    doc.text(fmtIban(p.iban), xIban, y);
+    doc.text(euro.format(p.amount), right, y, { align: "right" });
+    y += 15;
+  });
+
+  y += 4;
+  doc.line(left, y, right, y);
+  y += 16;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  doc.text(`Summe (${run.count} Abschläge)`, xName, y);
+  doc.text(euro.format(run.total), right, y, { align: "right" });
+
+  doc.save(`lohn-abschlaege-${run.executionDate ?? "lauf"}-${run.id}.pdf`);
 }
 
 function parseAmount(s: string): number {
@@ -27,12 +116,35 @@ export default function LohnAbschlaegeClient({
   employees,
   companyIbanOk,
   companyName,
+  history,
 }: {
   employees: LohnEmployee[];
   companyIbanOk: boolean;
   companyName: string | null;
+  history: LohnRun[];
 }) {
   const router = useRouter();
+  const [pdfBusy, setPdfBusy] = useState<number | null>(null);
+  const [deletingRun, startDeleteRun] = useTransition();
+
+  const makePdf = async (run: LohnRun) => {
+    setPdfBusy(run.id);
+    try {
+      await generateLohnPdf(run);
+    } finally {
+      setPdfBusy(null);
+    }
+  };
+
+  const removeRun = (run: LohnRun) => {
+    if (!window.confirm(`Lohnlauf „${run.reference}" aus der Historie löschen?`)) return;
+    const fd = new FormData();
+    fd.set("id", String(run.id));
+    startDeleteRun(async () => {
+      await deleteLohnRunAction(fd);
+      router.refresh();
+    });
+  };
 
   // --- Abschläge erfassen ---
   const today = new Date().toISOString().slice(0, 10);
@@ -90,6 +202,8 @@ export default function LohnAbschlaegeClient({
         setSepaInfo(
           `SEPA-Datei erstellt · ${res.count} Überweisung(en) · ${euro.format(res.total ?? 0)}`
         );
+        setAmounts({});
+        router.refresh();
       }
     });
   };
@@ -221,6 +335,70 @@ export default function LohnAbschlaegeClient({
               <tbody>
                 {employees.map((e) => (
                   <EmployeeRow key={e.id} emp={e} onChanged={() => router.refresh()} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Historie der erstellten Lohnläufe */}
+      <div className="rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
+        <div className="border-b border-gray-200 px-5 py-4">
+          <h2 className="text-lg font-medium text-gray-900">Historie · erstellte Lohndateien</h2>
+          <p className="mt-1 text-sm text-gray-600">
+            Jeder SEPA-Export wird hier gespeichert – nachträglich als PDF erstellbar.
+          </p>
+        </div>
+        {history.length === 0 ? (
+          <p className="px-5 py-6 text-center text-sm text-gray-500">Noch keine Lohndateien erstellt.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px] text-left text-sm">
+              <thead>
+                <tr className="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-700">
+                  <th className="px-5 py-3 font-medium">Verwendungszweck</th>
+                  <th className="px-5 py-3 font-medium">Ausführung</th>
+                  <th className="px-5 py-3 font-medium">Erstellt</th>
+                  <th className="px-5 py-3 font-medium text-right">Abschläge</th>
+                  <th className="px-5 py-3 font-medium text-right">Summe</th>
+                  <th className="px-5 py-3 font-medium text-right">Aktion</th>
+                </tr>
+              </thead>
+              <tbody>
+                {history.map((run) => (
+                  <tr key={run.id} className="border-b border-gray-200 last:border-0 hover:bg-gray-100">
+                    <td className="px-5 py-2.5 font-medium text-gray-900">{run.reference}</td>
+                    <td className="px-5 py-2.5 whitespace-nowrap text-gray-600">{fmtDate(run.executionDate)}</td>
+                    <td className="px-5 py-2.5 whitespace-nowrap text-gray-600">
+                      {fmtStamp(run.createdAt)}
+                      {run.createdByName ? ` · ${run.createdByName}` : ""}
+                    </td>
+                    <td className="px-5 py-2.5 text-right text-gray-700">{run.count}</td>
+                    <td className="px-5 py-2.5 text-right font-medium text-gray-900">
+                      {euro.format(run.total)}
+                    </td>
+                    <td className="px-5 py-2.5 text-right">
+                      <div className="flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => makePdf(run)}
+                          disabled={pdfBusy === run.id}
+                          className="rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900 disabled:opacity-50"
+                        >
+                          {pdfBusy === run.id ? "…" : "PDF erstellen"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => removeRun(run)}
+                          disabled={deletingRun}
+                          className="rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-brand-red disabled:opacity-50"
+                        >
+                          Löschen
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
                 ))}
               </tbody>
             </table>
