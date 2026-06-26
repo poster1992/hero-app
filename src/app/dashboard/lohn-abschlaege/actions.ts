@@ -15,6 +15,11 @@ import {
   type LohnRun,
   type LohnRunPosition,
 } from "@/lib/lohn-runs";
+import {
+  upsertLohnTemplate,
+  deleteLohnTemplate,
+  type LohnTemplatePosition,
+} from "@/lib/lohn-templates";
 import { buildSepaCreditTransfer, type SepaPayment } from "@/lib/sepa";
 
 export interface SaveEmployeeState {
@@ -174,4 +179,47 @@ export async function deleteLohnRunAction(formData: FormData): Promise<void> {
   const id = Number(formData.get("id"));
   if (!Number.isFinite(id)) return;
   await deleteLohnRun(id);
+}
+
+export interface SaveTemplateResult {
+  error?: string;
+  success?: string;
+}
+
+/** Speichert/überschreibt eine Vorlage (Beträge je Mitarbeiter) per Name. */
+export async function saveTemplateAction(input: {
+  name: string;
+  reference: string;
+  positions: LohnTemplatePosition[];
+}): Promise<SaveTemplateResult> {
+  if (!(await getSession())) return { error: "Kein Zugriff." };
+  const name = input.name.trim();
+  if (!name) return { error: "Bitte einen Vorlagennamen angeben." };
+
+  const positions = (input.positions ?? []).filter(
+    (p) => Number.isFinite(p.employeeId) && p.employeeId > 0 && Number.isFinite(p.amount) && p.amount > 0
+  );
+  if (positions.length === 0) return { error: "Keine Beträge zum Speichern erfasst." };
+
+  try {
+    const session = await getSession();
+    const userId = session ? (await getUserByUsername(session.username))?.id ?? null : null;
+    await upsertLohnTemplate({
+      name,
+      reference: input.reference?.trim() || null,
+      positions,
+      createdBy: userId,
+    });
+  } catch {
+    return { error: "Vorlage konnte nicht gespeichert werden." };
+  }
+  return { success: `Vorlage „${name}" gespeichert.` };
+}
+
+/** Löscht eine Vorlage. */
+export async function deleteTemplateAction(formData: FormData): Promise<void> {
+  if (!(await getSession())) return;
+  const id = Number(formData.get("id"));
+  if (!Number.isFinite(id)) return;
+  await deleteLohnTemplate(id);
 }

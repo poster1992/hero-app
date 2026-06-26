@@ -7,11 +7,19 @@ import {
   deleteEmployeeAction,
   buildWageSepaAction,
   deleteLohnRunAction,
+  saveTemplateAction,
+  deleteTemplateAction,
   type SaveEmployeeState,
   type WageItem,
 } from "@/app/dashboard/lohn-abschlaege/actions";
 import type { LohnEmployee } from "@/lib/lohn-employees";
 import type { LohnRun } from "@/lib/lohn-runs";
+import type { LohnTemplate } from "@/lib/lohn-templates";
+
+/** Zahl als deutsches Dezimalformat fürs Eingabefeld (z.B. 150,00). */
+function amountToInput(n: number): string {
+  return n.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
 
 const euro = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
 
@@ -117,11 +125,13 @@ export default function LohnAbschlaegeClient({
   companyIbanOk,
   companyName,
   history,
+  templates,
 }: {
   employees: LohnEmployee[];
   companyIbanOk: boolean;
   companyName: string | null;
   history: LohnRun[];
+  templates: LohnTemplate[];
 }) {
   const router = useRouter();
   const [pdfBusy, setPdfBusy] = useState<number | null>(null);
@@ -165,6 +175,78 @@ export default function LohnAbschlaegeClient({
     .map((e) => ({ e, amount: parseAmount(amounts[e.id] ?? "") }))
     .filter((x) => x.amount > 0);
   const total = entered.reduce((s, x) => s + x.amount, 0);
+
+  // --- Vorlagen ---
+  const [templateName, setTemplateName] = useState("");
+  const [selectedTemplate, setSelectedTemplate] = useState<number | "">("");
+  const [savingTpl, startSaveTpl] = useTransition();
+  const [deletingTpl, startDeleteTpl] = useTransition();
+  const [tplMsg, setTplMsg] = useState<string | null>(null);
+  const [tplError, setTplError] = useState<string | null>(null);
+
+  const loadTemplate = (idStr: string) => {
+    setTplMsg(null);
+    setTplError(null);
+    const id = Number(idStr);
+    const tpl = templates.find((t) => t.id === id);
+    if (!tpl) {
+      setSelectedTemplate("");
+      return;
+    }
+    const empIds = new Set(employees.map((e) => e.id));
+    const next: Record<number, string> = {};
+    let skipped = 0;
+    for (const p of tpl.positions) {
+      if (empIds.has(p.employeeId)) next[p.employeeId] = amountToInput(p.amount);
+      else skipped++;
+    }
+    setAmounts(next);
+    if (tpl.reference) setReference(tpl.reference);
+    setTemplateName(tpl.name);
+    setSelectedTemplate(tpl.id);
+    setTplMsg(
+      `Vorlage „${tpl.name}" geladen${skipped > 0 ? ` · ${skipped} unbekannte Mitarbeiter übersprungen` : ""}.`
+    );
+  };
+
+  const saveTemplate = () => {
+    setTplMsg(null);
+    setTplError(null);
+    const name = templateName.trim();
+    if (!name) {
+      setTplError("Bitte einen Vorlagennamen angeben.");
+      return;
+    }
+    if (entered.length === 0) {
+      setTplError("Keine Beträge zum Speichern erfasst.");
+      return;
+    }
+    const positions = entered.map((x) => ({ employeeId: x.e.id, amount: x.amount }));
+    startSaveTpl(async () => {
+      const res = await saveTemplateAction({ name, reference: reference.trim(), positions });
+      if (res.error) {
+        setTplError(res.error);
+        return;
+      }
+      setTplMsg(res.success ?? "Vorlage gespeichert.");
+      router.refresh();
+    });
+  };
+
+  const removeTemplate = () => {
+    const tpl = templates.find((t) => t.id === selectedTemplate);
+    if (!tpl) return;
+    if (!window.confirm(`Vorlage „${tpl.name}" löschen?`)) return;
+    const fd = new FormData();
+    fd.set("id", String(tpl.id));
+    startDeleteTpl(async () => {
+      await deleteTemplateAction(fd);
+      setSelectedTemplate("");
+      setTemplateName("");
+      setTplMsg(`Vorlage „${tpl.name}" gelöscht.`);
+      router.refresh();
+    });
+  };
 
   const downloadXml = (xml: string, filename: string) => {
     const blob = new Blob([xml], { type: "application/xml;charset=utf-8" });
@@ -233,6 +315,57 @@ export default function LohnAbschlaegeClient({
           </p>
         ) : (
           <>
+            {/* Vorlagen: laden / speichern / löschen */}
+            <div className="flex flex-wrap items-end gap-3 border-b border-gray-200 bg-gray-50 px-5 py-3">
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="text-gray-600">Vorlage laden</span>
+                <select
+                  value={selectedTemplate}
+                  onChange={(e) => loadTemplate(e.target.value)}
+                  className="w-56 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-900 outline-none focus:border-brand-red/60"
+                >
+                  <option value="">— Vorlage wählen —</option>
+                  {templates.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="text-gray-600">Vorlagenname</span>
+                <input
+                  value={templateName}
+                  onChange={(e) => setTemplateName(e.target.value)}
+                  placeholder="z.B. Monatsabschlag Standard"
+                  className="w-56 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-900 outline-none focus:border-brand-red/60"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={saveTemplate}
+                disabled={savingTpl || entered.length === 0}
+                title="Aktuelle Beträge als Vorlage speichern (überschreibt eine gleichnamige Vorlage)"
+                className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900 disabled:opacity-50"
+              >
+                {savingTpl ? "…" : "Vorlage speichern"}
+              </button>
+              {selectedTemplate !== "" && (
+                <button
+                  type="button"
+                  onClick={removeTemplate}
+                  disabled={deletingTpl}
+                  className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-brand-red disabled:opacity-50"
+                >
+                  {deletingTpl ? "…" : "Vorlage löschen"}
+                </button>
+              )}
+              <div className="w-full sm:w-auto">
+                {tplError && <span className="text-sm text-rose-500">{tplError}</span>}
+                {tplMsg && <span className="text-sm text-emerald-600">{tplMsg}</span>}
+              </div>
+            </div>
+
             <div className="overflow-x-auto">
               <table className="w-full min-w-[640px] text-left text-sm">
                 <thead>
