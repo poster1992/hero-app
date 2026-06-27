@@ -57,6 +57,46 @@ function Calc({
   );
 }
 
+interface MergedMatRow {
+  name: string;
+  unit: string | null;
+  sollQty: number;
+  sollEk: number;
+  istQty: number;
+  istValue: number;
+}
+
+const normMatName = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
+
+/** Führt kalkuliertes (Soll) und gebuchtes (Ist) Material je Artikel zu einer Zeile zusammen. */
+function mergeMaterials(
+  calc: ProjectMaterialCalculation | null,
+  booked: ProjectBookedMaterials | null
+): MergedMatRow[] {
+  const map = new Map<string, MergedMatRow>();
+  for (const it of calc?.items ?? []) {
+    const k = normMatName(it.name);
+    const cur =
+      map.get(k) ?? { name: it.name, unit: it.unit, sollQty: 0, sollEk: 0, istQty: 0, istValue: 0 };
+    cur.sollQty += it.quantity;
+    cur.sollEk += it.lineTotal;
+    if (!cur.unit) cur.unit = it.unit;
+    map.set(k, cur);
+  }
+  for (const it of booked?.items ?? []) {
+    const k = normMatName(it.materialName);
+    const cur =
+      map.get(k) ?? { name: it.materialName, unit: it.unit, sollQty: 0, sollEk: 0, istQty: 0, istValue: 0 };
+    cur.istQty += it.quantity;
+    cur.istValue += it.value;
+    if (!cur.unit) cur.unit = it.unit;
+    map.set(k, cur);
+  }
+  return [...map.values()].sort(
+    (a, b) => Math.max(b.sollEk, b.istValue) - Math.max(a.sollEk, a.istValue)
+  );
+}
+
 export default function ProjectDetailModal({
   project,
   onClose,
@@ -575,129 +615,85 @@ export default function ProjectDetailModal({
             )}
           </div>
 
-          {/* Material: Soll (Kalkulation) neben Ist (gebuchte Ware) */}
-          <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <div>
-            <div className="mb-1 flex items-baseline justify-between gap-2">
-              <h3 className="text-sm font-medium text-gray-700">Kalkuliertes Material (Soll)</h3>
-              {calcMat && calcMat.items.length > 0 && (
-                <span className="text-xs text-gray-500">
-                  {calcMat.items.length} Position(en) · EK {euro.format(calcMat.materialTotal)}
-                </span>
-              )}
-            </div>
-            {loadingCalcMat ? (
-              <p className="rounded-lg border border-gray-200 px-4 py-3 text-sm text-gray-500">
-                Kalkulation wird geladen …
-              </p>
-            ) : !calcMat || calcMat.items.length === 0 ? (
-              <p className="rounded-lg border border-gray-200 px-4 py-3 text-sm text-gray-500">
-                Keine kalkulierten Materialpositionen (aus der Auftragsbestätigung) gefunden.
-              </p>
-            ) : (
-              <div className="overflow-hidden rounded-lg border border-gray-200">
-                <table className="w-full text-left text-sm">
-                  <thead>
-                    <tr className="border-b border-gray-200 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
-                      <th className="px-3 py-2 font-medium">Material</th>
-                      <th className="px-3 py-2 text-right font-medium">Menge</th>
-                      <th className="px-3 py-2 text-right font-medium">EK/Einheit</th>
-                      <th className="px-3 py-2 text-right font-medium">EK gesamt</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {calcMat.items.map((it, i) => (
-                      <tr key={i} className="border-b border-gray-100 last:border-0">
-                        <td className="px-3 py-2 text-gray-800">
-                          {it.name}
-                          {it.manufacturer && (
-                            <span className="ml-2 text-xs text-gray-400">{it.manufacturer}</span>
-                          )}
-                        </td>
-                        <td className="px-3 py-2 text-right tabular-nums text-gray-700">
-                          {hours.format(it.quantity)}
-                          {it.unit ? ` ${it.unit}` : ""}
-                        </td>
-                        <td className="px-3 py-2 text-right tabular-nums text-gray-600">
-                          {euro.format(it.ekPrice)}
-                        </td>
-                        <td className="px-3 py-2 text-right tabular-nums font-medium text-gray-800">
-                          {euro.format(it.lineTotal)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="border-t border-gray-200 bg-gray-50">
-                      <td className="px-3 py-2 text-sm font-medium text-gray-700" colSpan={3}>
-                        Summe Material-EK (Soll)
-                      </td>
-                      <td className="px-3 py-2 text-right text-sm font-semibold tabular-nums text-gray-900">
-                        {euro.format(calcMat.materialTotal)}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            )}
-          </div>
-
-          {/* Gebuchte Ware (Ist, aus Lagerbewegungen) */}
-          <div>
-            <div className="mb-1 flex items-baseline justify-between gap-2">
-              <h3 className="text-sm font-medium text-gray-700">Gebuchte Ware (Ist)</h3>
-              {bookedMat && bookedMat.items.length > 0 && (
-                <span className="text-xs text-gray-500">
-                  {bookedMat.items.length} Position(en) · EK {euro.format(bookedMat.total)}
-                </span>
-              )}
-            </div>
-            {loadingBookedMat ? (
-              <p className="rounded-lg border border-gray-200 px-4 py-3 text-sm text-gray-500">
-                Lagerbuchungen werden geladen …
-              </p>
-            ) : !bookedMat || bookedMat.items.length === 0 ? (
-              <p className="rounded-lg border border-gray-200 px-4 py-3 text-sm text-gray-500">
-                Noch keine Ware auf dieses Projekt gebucht.
-              </p>
-            ) : (
-              <div className="overflow-hidden rounded-lg border border-gray-200">
-                <table className="w-full text-left text-sm">
-                  <thead>
-                    <tr className="border-b border-gray-200 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
-                      <th className="px-3 py-2 font-medium">Material</th>
-                      <th className="px-3 py-2 text-right font-medium">Menge</th>
-                      <th className="px-3 py-2 text-right font-medium">EK gesamt</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {bookedMat.items.map((it, i) => (
-                      <tr key={i} className="border-b border-gray-100 last:border-0">
-                        <td className="px-3 py-2 text-gray-800">{it.materialName}</td>
-                        <td className="px-3 py-2 text-right tabular-nums text-gray-700">
-                          {hours.format(it.quantity)}
-                          {it.unit ? ` ${it.unit}` : ""}
-                        </td>
-                        <td className="px-3 py-2 text-right tabular-nums font-medium text-gray-800">
-                          {euro.format(it.value)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="border-t border-gray-200 bg-gray-50">
-                      <td className="px-3 py-2 text-sm font-medium text-gray-700" colSpan={2}>
-                        Summe gebuchte Ware (EK)
-                      </td>
-                      <td className="px-3 py-2 text-right text-sm font-semibold tabular-nums text-gray-900">
-                        {euro.format(bookedMat.total)}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            )}
-          </div>
+          {/* Material: Soll (Kalkulation) und Ist (gebuchte Ware) je Artikel nebeneinander */}
+          <div className="mt-6">
+            {(() => {
+              const rows = mergeMaterials(calcMat, bookedMat);
+              const loading = loadingCalcMat || loadingBookedMat;
+              const sollTotal = calcMat?.materialTotal ?? 0;
+              const istTotal = bookedMat?.total ?? 0;
+              return (
+                <>
+                  <div className="mb-1 flex items-baseline justify-between gap-2">
+                    <h3 className="text-sm font-medium text-gray-700">Material · Soll / Ist je Artikel</h3>
+                    {rows.length > 0 && (
+                      <span className="text-xs text-gray-500">
+                        {rows.length} Artikel · Soll {euro.format(sollTotal)} · Ist {euro.format(istTotal)}
+                      </span>
+                    )}
+                  </div>
+                  {loading ? (
+                    <p className="rounded-lg border border-gray-200 px-4 py-3 text-sm text-gray-500">
+                      Material wird geladen …
+                    </p>
+                  ) : rows.length === 0 ? (
+                    <p className="rounded-lg border border-gray-200 px-4 py-3 text-sm text-gray-500">
+                      Kein kalkuliertes oder gebuchtes Material gefunden.
+                    </p>
+                  ) : (
+                    <div className="overflow-x-auto rounded-lg border border-gray-200">
+                      <table className="w-full min-w-[560px] text-left text-sm">
+                        <thead>
+                          <tr className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+                            <th rowSpan={2} className="px-3 py-2 align-bottom font-medium">Material</th>
+                            <th colSpan={2} className="border-l border-gray-200 px-3 py-1.5 text-center font-medium">
+                              Soll (Kalkulation)
+                            </th>
+                            <th colSpan={2} className="border-l border-gray-200 px-3 py-1.5 text-center font-medium">
+                              Ist (gebucht)
+                            </th>
+                          </tr>
+                          <tr className="border-b border-gray-200 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+                            <th className="border-l border-gray-200 px-3 py-1.5 text-right font-medium">Menge</th>
+                            <th className="px-3 py-1.5 text-right font-medium">EK</th>
+                            <th className="border-l border-gray-200 px-3 py-1.5 text-right font-medium">Menge</th>
+                            <th className="px-3 py-1.5 text-right font-medium">EK</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rows.map((r, i) => (
+                            <tr key={i} className="border-b border-gray-100 last:border-0">
+                              <td className="px-3 py-2 text-gray-800">{r.name}</td>
+                              <td className="border-l border-gray-100 px-3 py-2 text-right tabular-nums text-gray-600">
+                                {r.sollQty ? `${hours.format(r.sollQty)}${r.unit ? ` ${r.unit}` : ""}` : "—"}
+                              </td>
+                              <td className="px-3 py-2 text-right tabular-nums text-gray-700">
+                                {r.sollEk ? euro.format(r.sollEk) : "—"}
+                              </td>
+                              <td className="border-l border-gray-100 px-3 py-2 text-right tabular-nums text-gray-600">
+                                {r.istQty ? `${hours.format(r.istQty)}${r.unit ? ` ${r.unit}` : ""}` : "—"}
+                              </td>
+                              <td className="px-3 py-2 text-right tabular-nums text-gray-700">
+                                {r.istValue ? euro.format(r.istValue) : "—"}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot>
+                          <tr className="border-t border-gray-200 bg-gray-50 font-semibold text-gray-900">
+                            <td className="px-3 py-2 text-sm">Summe EK</td>
+                            <td className="border-l border-gray-200 px-3 py-2" />
+                            <td className="px-3 py-2 text-right text-sm tabular-nums">{euro.format(sollTotal)}</td>
+                            <td className="border-l border-gray-200 px-3 py-2" />
+                            <td className="px-3 py-2 text-right text-sm tabular-nums">{euro.format(istTotal)}</td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </div>
 
         </div>
