@@ -1,9 +1,11 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { getDashboardData } from "./dashboard-data";
 import { getEmployeeProfit } from "./employee-profit";
-import { getOfferConfirmationVolume } from "./hero-api";
+import { getOfferConfirmationVolume, getReceiptsInRange } from "./hero-api";
 import { getStockOutboundReport } from "./materials";
 import { getProjectProfits } from "./project-profit";
+import { getCustomerName, effectiveReceiptStatus } from "./invoices";
+import { getPaymentOverrideMap } from "./receipt-payment-status";
 import { addMemory, listMemories, deleteMemory } from "./ai-memory";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -93,6 +95,33 @@ export const TOOLS: Anthropic.Tool[] = [
           description: "Optionaler Filter auf Projektname/Kunde (Teilstring).",
         },
       },
+    },
+  },
+  {
+    name: "belege_lieferant",
+    description:
+      "Listet alle Belege (Eingangsrechnungen) eines bestimmten Lieferanten mit Belegnummer, Datum, Brutto-/Nettobetrag, offenem Betrag und Zahlstatus. Für Fragen wie 'zeig mir alle Belege von Lieferant X', 'was haben wir bei Y gekauft', 'wie viel offen bei Z'. Standard: letzte 4 Jahre; optional auf ein Jahr oder nur offene Belege einschränken.",
+    input_schema: {
+      type: "object",
+      properties: {
+        lieferant: {
+          type: "string",
+          description: "Name des Lieferanten (Teilstring genügt, z. B. 'Etges').",
+        },
+        jahr: {
+          type: "integer",
+          description: "Optional: nur Belege dieses Jahres. Ohne Angabe die letzten 4 Jahre.",
+        },
+        nur_offen: {
+          type: "boolean",
+          description: "Wenn true, nur noch offene/unbezahlte Belege.",
+        },
+        limit: {
+          type: "integer",
+          description: "Maximale Anzahl gelisteter Belege (Standard 200).",
+        },
+      },
+      required: ["lieferant"],
     },
   },
   {
@@ -228,6 +257,72 @@ export async function runTool(name: string, input: Record<string, unknown>): Pro
           ist_stunden: p.hours,
           ist_lohnwert: p.labor,
           ist_material: p.cost,
+        })),
+      };
+    }
+    case "belege_lieferant": {
+      const suche = typeof input?.lieferant === "string" ? input.lieferant.trim().toLowerCase() : "";
+      if (!suche) return { error: "Bitte einen Lieferantennamen angeben." };
+      const nurOffen = input?.nur_offen === true;
+      const limit = Number.isFinite(Number(input?.limit)) ? Math.max(1, Number(input.limit)) : 200;
+
+      // Zeitraum: bestimmtes Jahr oder die letzten 4 Jahre.
+      const cy = currentYear();
+      const hasYear = Number.isFinite(Number(input?.jahr));
+      const y = hasYear ? Number(input.jahr) : null;
+      const from = `${hasYear ? y : cy - 3}-01-01T00:00:00Z`;
+      const to = `${hasYear ? y : cy}-12-31T23:59:59Z`;
+
+      const [receipts, overrides] = await Promise.all([
+        getReceiptsInRange(from, to),
+        getPaymentOverrideMap().catch(() => new Map()),
+      ]);
+
+      const matched = receipts
+        .filter((r) => r.type === "output" && getCustomerName(r).toLowerCase().includes(suche))
+        .map((r) => {
+          const ov = overrides.get(r.id) ?? null;
+          const st = effectiveReceiptStatus(r, ov?.status ?? null);
+          const offen = st.tone !== "paid";
+          const offenBetrag = !offen ? 0 : r.openAmount > 0.005 ? r.openAmount : r.value;
+          return { r, statusLabel: st.label, offen, offenBetrag };
+        })
+        .filter((m) => (nurOffen ? m.offen : true))
+        .sort((a, b) => (b.r.receiptDate ?? "").localeCompare(a.r.receiptDate ?? ""));
+
+      // Eindeutige Lieferantennamen unter den Treffern (Hilfe bei Mehrdeutigkeit).
+      const lieferanten = [...new Set(matched.map((m) => getCustomerName(m.r)))];
+
+      // Summen je Jahr.
+      const proJahrMap = new Map<string, { anzahl: number; brutto: number }>();
+      for (const m of matched) {
+        const jahr = (m.r.receiptDate ?? "").slice(0, 4) || "unbekannt";
+        const e = proJahrMap.get(jahr) ?? { anzahl: 0, brutto: 0 };
+        e.anzahl++;
+        e.brutto += m.r.value;
+        proJahrMap.set(jahr, e);
+      }
+
+      return {
+        lieferant_suche: suche,
+        gefundene_lieferanten: lieferanten,
+        zeitraum: hasYear ? String(y) : `${cy - 3}–${cy}`,
+        nur_offen: nurOffen,
+        anzahl: matched.length,
+        summe_brutto: round2(matched.reduce((s, m) => s + m.r.value, 0)),
+        summe_netto: round2(matched.reduce((s, m) => s + m.r.netValue, 0)),
+        summe_offen: round2(matched.reduce((s, m) => s + m.offenBetrag, 0)),
+        pro_jahr: [...proJahrMap.entries()]
+          .sort((a, b) => b[0].localeCompare(a[0]))
+          .map(([jahr, e]) => ({ jahr, anzahl: e.anzahl, summe_brutto: round2(e.brutto) })),
+        belege: matched.slice(0, limit).map((m) => ({
+          nr: m.r.number,
+          datum: m.r.receiptDate ? m.r.receiptDate.slice(0, 10) : null,
+          lieferant: getCustomerName(m.r),
+          brutto: m.r.value,
+          netto: m.r.netValue,
+          offen_betrag: round2(m.offenBetrag),
+          status: m.statusLabel,
         })),
       };
     }
