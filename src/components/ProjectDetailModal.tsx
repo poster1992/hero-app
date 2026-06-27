@@ -17,9 +17,11 @@ import type { ProjectRow } from "@/components/ProjectsTable";
 import {
   getProjectReceipts,
   getProjectHoursByEmployee,
+  getProjectCalculatedMaterials,
   type ProjectReceiptItem,
   type ProjectEmployeeHours,
 } from "@/app/dashboard/projekte/receipts-actions";
+import type { ProjectMaterialCalculation } from "@/lib/hero-api";
 
 const euro = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
 const euro0 = new Intl.NumberFormat("de-DE", {
@@ -67,6 +69,8 @@ export default function ProjectDetailModal({
   const [loadingReceipts, setLoadingReceipts] = useState(false);
   const [empHours, setEmpHours] = useState<ProjectEmployeeHours[] | null>(null);
   const [loadingHours, setLoadingHours] = useState(false);
+  const [calcMat, setCalcMat] = useState<ProjectMaterialCalculation | null>(null);
+  const [loadingCalcMat, setLoadingCalcMat] = useState(false);
   const [emailing, setEmailing] = useState(false);
 
   useEffect(() => {
@@ -78,8 +82,10 @@ export default function ProjectDetailModal({
     let cancelled = false;
     setLoadingReceipts(true);
     setLoadingHours(true);
+    setLoadingCalcMat(true);
     setReceipts(null);
     setEmpHours(null);
+    setCalcMat(null);
     getProjectReceipts(project.id)
       .then((r) => !cancelled && setReceipts(r))
       .catch(() => !cancelled && setReceipts([]))
@@ -88,6 +94,10 @@ export default function ProjectDetailModal({
       .then((h) => !cancelled && setEmpHours(h))
       .catch(() => !cancelled && setEmpHours([]))
       .finally(() => !cancelled && setLoadingHours(false));
+    getProjectCalculatedMaterials(project.id)
+      .then((m) => !cancelled && setCalcMat(m))
+      .catch(() => !cancelled && setCalcMat({ hours: 0, materialTotal: 0, laborCost: 0, items: [] }))
+      .finally(() => !cancelled && setLoadingCalcMat(false));
     return () => {
       cancelled = true;
     };
@@ -547,6 +557,72 @@ export default function ProjectDetailModal({
                   );
                 })}
               </ul>
+            )}
+          </div>
+
+          {/* Kalkuliertes Material (Soll, aus der Auftragsbestätigung) */}
+          <div className="mt-6">
+            <div className="mb-1 flex items-baseline justify-between gap-2">
+              <h3 className="text-sm font-medium text-gray-700">Kalkuliertes Material</h3>
+              {calcMat && calcMat.items.length > 0 && (
+                <span className="text-xs text-gray-500">
+                  {calcMat.items.length} Position(en) · EK {euro.format(calcMat.materialTotal)}
+                </span>
+              )}
+            </div>
+            {loadingCalcMat ? (
+              <p className="rounded-lg border border-gray-200 px-4 py-3 text-sm text-gray-500">
+                Kalkulation wird geladen …
+              </p>
+            ) : !calcMat || calcMat.items.length === 0 ? (
+              <p className="rounded-lg border border-gray-200 px-4 py-3 text-sm text-gray-500">
+                Keine kalkulierten Materialpositionen (aus der Auftragsbestätigung) gefunden.
+              </p>
+            ) : (
+              <div className="overflow-hidden rounded-lg border border-gray-200">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-200 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+                      <th className="px-3 py-2 font-medium">Material</th>
+                      <th className="px-3 py-2 text-right font-medium">Menge</th>
+                      <th className="px-3 py-2 text-right font-medium">EK/Einheit</th>
+                      <th className="px-3 py-2 text-right font-medium">EK gesamt</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {calcMat.items.map((it, i) => (
+                      <tr key={i} className="border-b border-gray-100 last:border-0">
+                        <td className="px-3 py-2 text-gray-800">
+                          {it.name}
+                          {it.manufacturer && (
+                            <span className="ml-2 text-xs text-gray-400">{it.manufacturer}</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums text-gray-700">
+                          {hours.format(it.quantity)}
+                          {it.unit ? ` ${it.unit}` : ""}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums text-gray-600">
+                          {euro.format(it.ekPrice)}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums font-medium text-gray-800">
+                          {euro.format(it.lineTotal)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t border-gray-200 bg-gray-50">
+                      <td className="px-3 py-2 text-sm font-medium text-gray-700" colSpan={3}>
+                        Summe Material-EK (Soll)
+                      </td>
+                      <td className="px-3 py-2 text-right text-sm font-semibold tabular-nums text-gray-900">
+                        {euro.format(calcMat.materialTotal)}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
             )}
           </div>
 

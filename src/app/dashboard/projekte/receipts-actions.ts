@@ -1,6 +1,11 @@
 "use server";
 
-import { getReceiptsInRange, heroGraphQL } from "@/lib/hero-api";
+import {
+  getReceiptsInRange,
+  heroGraphQL,
+  getCalculatedMaterialsForProject,
+  type ProjectMaterialCalculation,
+} from "@/lib/hero-api";
 import { getInvoiceStatus, getDocumentUrl } from "@/lib/invoices";
 
 export interface ProjectEmployeeDay {
@@ -84,6 +89,13 @@ export interface ProjectReceiptItem {
   /** Auth-gated PDF URL (/api/document?src=…) or null when no file. */
   docUrl: string | null;
   filename: string | null;
+}
+
+/** Kalkulierte Materialpositionen eines Projekts (aus der Auftragsbestätigung). */
+export async function getProjectCalculatedMaterials(
+  projectId: number
+): Promise<ProjectMaterialCalculation> {
+  return getCalculatedMaterialsForProject(projectId);
 }
 
 /** All receipts (Belege) linked to a project, newest first. */

@@ -1581,6 +1581,121 @@ export async function getCalculatedHoursForProject(projectMatchId: number): Prom
   return Math.round((minutes / 60) * 100) / 100;
 }
 
+/** Eine kalkulierte Materialposition (aus dem Auftragsbestätigungs-Entwurf). */
+export interface CalculatedMaterialItem {
+  name: string;
+  quantity: number;
+  /** Einheit (unit_type), z. B. "Stk", "m²". */
+  unit: string | null;
+  /** Einkaufspreis je Einheit (base_price / EK). */
+  ekPrice: number;
+  /** quantity × ekPrice. */
+  lineTotal: number;
+  manufacturer: string | null;
+  articleNr: string | null;
+}
+
+export interface ProjectMaterialCalculation {
+  hours: number;
+  /** Summe Material-EK (Soll). */
+  materialTotal: number;
+  laborCost: number;
+  items: CalculatedMaterialItem[];
+}
+
+/** Sammelt Materialpositionen (SupplyProduct) + geplante Minuten/Lohnkosten aus einem Entwurfsbaum. */
+function collectDraft(
+  node: unknown,
+  acc: { minutes: number; laborCost: number; items: CalculatedMaterialItem[] }
+): void {
+  if (Array.isArray(node)) {
+    for (const n of node) collectDraft(n, acc);
+    return;
+  }
+  if (node && typeof node === "object") {
+    const obj = node as Record<string, unknown>;
+    if (obj.type === "product" && typeof obj.time_minutes === "number") {
+      acc.minutes += obj.time_minutes;
+    }
+    if (obj.atType === "SupplyProduct") {
+      const quantity = toNumber(obj.quantity);
+      const ekPrice = toNumber(obj.base_price);
+      acc.items.push({
+        name: String(obj.name ?? obj.description ?? "Unbenannt"),
+        quantity,
+        unit: obj.unit_type != null ? String(obj.unit_type) : null,
+        ekPrice,
+        lineTotal: Math.round(quantity * ekPrice * 100) / 100,
+        manufacturer: obj.manufacturer != null ? String(obj.manufacturer) : null,
+        articleNr: obj.nr != null ? String(obj.nr) : obj.itemNumber != null ? String(obj.itemNumber) : null,
+      });
+    }
+    if (obj.atType === "SupplyService") {
+      acc.laborCost += toNumber(obj.wage_base);
+    }
+    for (const v of Object.values(obj)) collectDraft(v, acc);
+  }
+}
+
+/**
+ * Kalkulierte Materialpositionen (welches Material, Menge, EK) eines Projekts
+ * aus den Auftragsbestätigungs-Entwürfen. Gleiche Artikel werden zusammengefasst.
+ */
+export async function getCalculatedMaterialsForProject(
+  projectMatchId: number
+): Promise<ProjectMaterialCalculation> {
+  const data = await heroGraphQL<{
+    customer_documents: {
+      status_code: number | null;
+      published_customer_document_draft: { data: unknown } | null;
+    }[];
+  }>(
+    `query CalcMaterialsForProject($pids: [Int], $ids: [Int]) {
+      customer_documents(project_match_ids: $pids, document_type_ids: $ids, orderBy: "id", first: 100) {
+        status_code
+        published_customer_document_draft { data }
+      }
+    }`,
+    { pids: [projectMatchId], ids: [CONFIRMATION_DOCUMENT_TYPE_ID] }
+  );
+
+  const acc = { minutes: 0, laborCost: 0, items: [] as CalculatedMaterialItem[] };
+  for (const d of data.customer_documents ?? []) {
+    if (d.status_code === 1000) continue; // gelöscht
+    const raw = d.published_customer_document_draft?.data;
+    if (raw == null) continue;
+    let json: unknown;
+    try {
+      json = typeof raw === "string" ? JSON.parse(raw) : raw;
+    } catch {
+      continue;
+    }
+    collectDraft(json, acc);
+  }
+
+  // Gleiche Artikel (Name + EK) zusammenfassen.
+  const merged = new Map<string, CalculatedMaterialItem>();
+  for (const it of acc.items) {
+    const key = `${it.name}|${it.ekPrice}`;
+    const cur = merged.get(key);
+    if (cur) {
+      cur.quantity = Math.round((cur.quantity + it.quantity) * 1000) / 1000;
+      cur.lineTotal = Math.round((cur.lineTotal + it.lineTotal) * 100) / 100;
+    } else {
+      merged.set(key, { ...it });
+    }
+  }
+  const items = [...merged.values()].sort((a, b) => b.lineTotal - a.lineTotal);
+  const materialTotal = Math.round(items.reduce((s, i) => s + i.lineTotal, 0) * 100) / 100;
+
+  return {
+    hours: Math.round((acc.minutes / 60) * 100) / 100,
+    materialTotal,
+    laborCost: Math.round(acc.laborCost * 100) / 100,
+    items,
+  };
+}
+
 /** Net sum of order confirmations (Auftragsbestätigungen) per project_match id. */
 export interface ConfirmationInfo {
   net: number;
