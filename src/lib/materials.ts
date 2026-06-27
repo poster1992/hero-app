@@ -317,6 +317,54 @@ export async function getStockOutboundReport(): Promise<StockOutReport> {
   };
 }
 
+export interface ProjectBookedMaterialItem {
+  materialName: string;
+  unit: string;
+  /** Netto auf das Projekt gebuchte Menge (Abbuchungen − Rückbuchungen). */
+  quantity: number;
+  /** EK-Wert = Menge × EK-Preis (zum Buchungszeitpunkt eingefroren). */
+  value: number;
+}
+
+export interface ProjectBookedMaterials {
+  items: ProjectBookedMaterialItem[];
+  total: number;
+}
+
+/**
+ * Tatsächlich auf ein Projekt gebuchte Ware (Lagerbewegungen), je Artikel
+ * zusammengefasst und mit EK bewertet. Projekt über relative_id (wie gebucht).
+ */
+export async function getProjectBookedMaterials(
+  projectRelativeId: number
+): Promise<ProjectBookedMaterials> {
+  const [rows] = await getPool().query<RowDataPacket[]>(
+    `SELECT m.name AS material_name, m.unit, -mv.delta AS qty, mv.ek_price
+       FROM stock_movements mv
+       JOIN materials m ON m.id = mv.material_id
+      WHERE mv.project_relative_id = ?`,
+    [projectRelativeId]
+  );
+
+  const map = new Map<string, ProjectBookedMaterialItem>();
+  for (const r of rows as { material_name: string; unit: string; qty: string | number; ek_price: string | number | null }[]) {
+    const qty = num(r.qty);
+    const value = qty * num(r.ek_price ?? 0);
+    const key = `${r.material_name}|${r.unit ?? ""}`;
+    const cur = map.get(key) ?? { materialName: r.material_name, unit: r.unit ?? "", quantity: 0, value: 0 };
+    cur.quantity += qty;
+    cur.value += value;
+    map.set(key, cur);
+  }
+
+  const items = [...map.values()]
+    .map((i) => ({ ...i, quantity: round2(i.quantity), value: round2(i.value) }))
+    .filter((i) => Math.abs(i.quantity) > 0.0001 || Math.abs(i.value) > 0.0001)
+    .sort((a, b) => b.value - a.value);
+  const total = round2(items.reduce((s, i) => s + i.value, 0));
+  return { items, total };
+}
+
 /** Recent stock movements (newest first). */
 export async function listRecentMovements(limit = 50): Promise<StockMovement[]> {
   const [rows] = await getPool().query<MovementRow[]>(

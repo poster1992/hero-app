@@ -18,10 +18,12 @@ import {
   getProjectReceipts,
   getProjectHoursByEmployee,
   getProjectCalculatedMaterials,
+  getProjectBookedMaterials,
   type ProjectReceiptItem,
   type ProjectEmployeeHours,
 } from "@/app/dashboard/projekte/receipts-actions";
 import type { ProjectMaterialCalculation } from "@/lib/hero-api";
+import type { ProjectBookedMaterials } from "@/lib/materials";
 
 const euro = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
 const euro0 = new Intl.NumberFormat("de-DE", {
@@ -71,6 +73,8 @@ export default function ProjectDetailModal({
   const [loadingHours, setLoadingHours] = useState(false);
   const [calcMat, setCalcMat] = useState<ProjectMaterialCalculation | null>(null);
   const [loadingCalcMat, setLoadingCalcMat] = useState(false);
+  const [bookedMat, setBookedMat] = useState<ProjectBookedMaterials | null>(null);
+  const [loadingBookedMat, setLoadingBookedMat] = useState(false);
   const [emailing, setEmailing] = useState(false);
 
   useEffect(() => {
@@ -98,6 +102,17 @@ export default function ProjectDetailModal({
       .then((m) => !cancelled && setCalcMat(m))
       .catch(() => !cancelled && setCalcMat({ hours: 0, materialTotal: 0, laborCost: 0, items: [] }))
       .finally(() => !cancelled && setLoadingCalcMat(false));
+    setLoadingBookedMat(true);
+    setBookedMat(null);
+    if (project.relativeId != null) {
+      getProjectBookedMaterials(project.relativeId)
+        .then((m) => !cancelled && setBookedMat(m))
+        .catch(() => !cancelled && setBookedMat({ items: [], total: 0 }))
+        .finally(() => !cancelled && setLoadingBookedMat(false));
+    } else {
+      setBookedMat({ items: [], total: 0 });
+      setLoadingBookedMat(false);
+    }
     return () => {
       cancelled = true;
     };
@@ -560,10 +575,11 @@ export default function ProjectDetailModal({
             )}
           </div>
 
-          {/* Kalkuliertes Material (Soll, aus der Auftragsbestätigung) */}
-          <div className="mt-6">
+          {/* Material: Soll (Kalkulation) neben Ist (gebuchte Ware) */}
+          <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <div>
             <div className="mb-1 flex items-baseline justify-between gap-2">
-              <h3 className="text-sm font-medium text-gray-700">Kalkuliertes Material</h3>
+              <h3 className="text-sm font-medium text-gray-700">Kalkuliertes Material (Soll)</h3>
               {calcMat && calcMat.items.length > 0 && (
                 <span className="text-xs text-gray-500">
                   {calcMat.items.length} Position(en) · EK {euro.format(calcMat.materialTotal)}
@@ -624,6 +640,64 @@ export default function ProjectDetailModal({
                 </table>
               </div>
             )}
+          </div>
+
+          {/* Gebuchte Ware (Ist, aus Lagerbewegungen) */}
+          <div>
+            <div className="mb-1 flex items-baseline justify-between gap-2">
+              <h3 className="text-sm font-medium text-gray-700">Gebuchte Ware (Ist)</h3>
+              {bookedMat && bookedMat.items.length > 0 && (
+                <span className="text-xs text-gray-500">
+                  {bookedMat.items.length} Position(en) · EK {euro.format(bookedMat.total)}
+                </span>
+              )}
+            </div>
+            {loadingBookedMat ? (
+              <p className="rounded-lg border border-gray-200 px-4 py-3 text-sm text-gray-500">
+                Lagerbuchungen werden geladen …
+              </p>
+            ) : !bookedMat || bookedMat.items.length === 0 ? (
+              <p className="rounded-lg border border-gray-200 px-4 py-3 text-sm text-gray-500">
+                Noch keine Ware auf dieses Projekt gebucht.
+              </p>
+            ) : (
+              <div className="overflow-hidden rounded-lg border border-gray-200">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-200 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+                      <th className="px-3 py-2 font-medium">Material</th>
+                      <th className="px-3 py-2 text-right font-medium">Menge</th>
+                      <th className="px-3 py-2 text-right font-medium">EK gesamt</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {bookedMat.items.map((it, i) => (
+                      <tr key={i} className="border-b border-gray-100 last:border-0">
+                        <td className="px-3 py-2 text-gray-800">{it.materialName}</td>
+                        <td className="px-3 py-2 text-right tabular-nums text-gray-700">
+                          {hours.format(it.quantity)}
+                          {it.unit ? ` ${it.unit}` : ""}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums font-medium text-gray-800">
+                          {euro.format(it.value)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t border-gray-200 bg-gray-50">
+                      <td className="px-3 py-2 text-sm font-medium text-gray-700" colSpan={2}>
+                        Summe gebuchte Ware (EK)
+                      </td>
+                      <td className="px-3 py-2 text-right text-sm font-semibold tabular-nums text-gray-900">
+                        {euro.format(bookedMat.total)}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+          </div>
           </div>
 
         </div>

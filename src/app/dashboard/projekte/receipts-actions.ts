@@ -6,6 +6,10 @@ import {
   getCalculatedMaterialsForProject,
   type ProjectMaterialCalculation,
 } from "@/lib/hero-api";
+import {
+  getProjectBookedMaterials as getProjectBookedMaterialsLib,
+  type ProjectBookedMaterials,
+} from "@/lib/materials";
 import { getInvoiceStatus, getDocumentUrl } from "@/lib/invoices";
 
 export interface ProjectEmployeeDay {
@@ -96,6 +100,13 @@ export async function getProjectCalculatedMaterials(
   projectId: number
 ): Promise<ProjectMaterialCalculation> {
   return getCalculatedMaterialsForProject(projectId);
+}
+
+/** Tatsächlich auf das Projekt gebuchte Ware (Lagerbewegungen, EK-bewertet). */
+export async function getProjectBookedMaterials(
+  projectRelativeId: number
+): Promise<ProjectBookedMaterials> {
+  return getProjectBookedMaterialsLib(projectRelativeId);
 }
 
 /** All receipts (Belege) linked to a project, newest first. */
