@@ -22,6 +22,10 @@ import {
   type ProjectReceiptItem,
   type ProjectEmployeeHours,
 } from "@/app/dashboard/projekte/receipts-actions";
+import {
+  getProjectBelegArticles,
+  type ProjectBelegMaterials,
+} from "@/app/dashboard/projekte/material-ocr-actions";
 import type { ProjectMaterialCalculation } from "@/lib/hero-api";
 import type { ProjectBookedMaterials } from "@/lib/materials";
 
@@ -66,12 +70,20 @@ interface MergedMatRow {
   istValue: number;
 }
 
+/** Generische Ist-Position (aus Lagerbuchung ODER Beleg-OCR). */
+interface IstItem {
+  name: string;
+  unit: string | null;
+  quantity: number;
+  value: number;
+}
+
 const normMatName = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
 
-/** Führt kalkuliertes (Soll) und gebuchtes (Ist) Material je Artikel zu einer Zeile zusammen. */
+/** Führt kalkuliertes (Soll) und tatsächliches (Ist) Material je Artikel zu einer Zeile zusammen. */
 function mergeMaterials(
   calc: ProjectMaterialCalculation | null,
-  booked: ProjectBookedMaterials | null
+  istItems: IstItem[]
 ): MergedMatRow[] {
   const map = new Map<string, MergedMatRow>();
   for (const it of calc?.items ?? []) {
@@ -83,10 +95,10 @@ function mergeMaterials(
     if (!cur.unit) cur.unit = it.unit;
     map.set(k, cur);
   }
-  for (const it of booked?.items ?? []) {
-    const k = normMatName(it.materialName);
+  for (const it of istItems) {
+    const k = normMatName(it.name);
     const cur =
-      map.get(k) ?? { name: it.materialName, unit: it.unit, sollQty: 0, sollEk: 0, istQty: 0, istValue: 0 };
+      map.get(k) ?? { name: it.name, unit: it.unit, sollQty: 0, sollEk: 0, istQty: 0, istValue: 0 };
     cur.istQty += it.quantity;
     cur.istValue += it.value;
     if (!cur.unit) cur.unit = it.unit;
@@ -115,6 +127,8 @@ export default function ProjectDetailModal({
   const [loadingCalcMat, setLoadingCalcMat] = useState(false);
   const [bookedMat, setBookedMat] = useState<ProjectBookedMaterials | null>(null);
   const [loadingBookedMat, setLoadingBookedMat] = useState(false);
+  const [belegMat, setBelegMat] = useState<ProjectBelegMaterials | null>(null);
+  const [loadingBelegMat, setLoadingBelegMat] = useState(false);
   const [emailing, setEmailing] = useState(false);
 
   useEffect(() => {
@@ -153,6 +167,13 @@ export default function ProjectDetailModal({
       setBookedMat({ items: [], total: 0 });
       setLoadingBookedMat(false);
     }
+    // Artikel aus den zugeordneten Belegen per OCR (gecacht) → Ist.
+    setLoadingBelegMat(true);
+    setBelegMat(null);
+    getProjectBelegArticles(project.id)
+      .then((m) => !cancelled && setBelegMat(m))
+      .catch(() => !cancelled && setBelegMat({ items: [], total: 0, belegeCount: 0, ocrCostEur: 0 }))
+      .finally(() => !cancelled && setLoadingBelegMat(false));
     return () => {
       cancelled = true;
     };
@@ -618,19 +639,33 @@ export default function ProjectDetailModal({
           {/* Material: Soll (Kalkulation) und Ist (gebuchte Ware) je Artikel nebeneinander */}
           <div className="mt-6">
             {(() => {
-              const rows = mergeMaterials(calcMat, bookedMat);
+              // Ist = Lagerbuchungen + per OCR aus den zugeordneten Belegen gelesene Artikel.
+              const istItems: IstItem[] = [
+                ...(bookedMat?.items ?? []).map((it) => ({
+                  name: it.materialName,
+                  unit: it.unit,
+                  quantity: it.quantity,
+                  value: it.value,
+                })),
+                ...(belegMat?.items ?? []),
+              ];
+              const rows = mergeMaterials(calcMat, istItems);
+              // Tabelle nicht auf das (langsamere) Beleg-OCR warten lassen.
               const loading = loadingCalcMat || loadingBookedMat;
               const sollTotal = calcMat?.materialTotal ?? 0;
-              const istTotal = bookedMat?.total ?? 0;
+              const istTotal = (bookedMat?.total ?? 0) + (belegMat?.total ?? 0);
               return (
                 <>
                   <div className="mb-1 flex items-baseline justify-between gap-2">
                     <h3 className="text-sm font-medium text-gray-700">Material · Soll / Ist je Artikel</h3>
-                    {rows.length > 0 && (
-                      <span className="text-xs text-gray-500">
-                        {rows.length} Artikel · Soll {euro.format(sollTotal)} · Ist {euro.format(istTotal)}
-                      </span>
-                    )}
+                    <div className="flex items-baseline gap-2 text-xs text-gray-500">
+                      {loadingBelegMat && <span className="text-gray-400">Belege werden ausgelesen …</span>}
+                      {rows.length > 0 && (
+                        <span>
+                          {rows.length} Artikel · Soll {euro.format(sollTotal)} · Ist {euro.format(istTotal)}
+                        </span>
+                      )}
+                    </div>
                   </div>
                   {loading ? (
                     <p className="rounded-lg border border-gray-200 px-4 py-3 text-sm text-gray-500">
@@ -638,7 +673,9 @@ export default function ProjectDetailModal({
                     </p>
                   ) : rows.length === 0 ? (
                     <p className="rounded-lg border border-gray-200 px-4 py-3 text-sm text-gray-500">
-                      Kein kalkuliertes oder gebuchtes Material gefunden.
+                      {loadingBelegMat
+                        ? "Belege werden ausgelesen …"
+                        : "Kein kalkuliertes oder gebuchtes Material gefunden."}
                     </p>
                   ) : (
                     <div className="overflow-x-auto rounded-lg border border-gray-200">
@@ -650,7 +687,7 @@ export default function ProjectDetailModal({
                               Soll (Kalkulation)
                             </th>
                             <th colSpan={2} className="border-l border-gray-200 px-3 py-1.5 text-center font-medium">
-                              Ist (gebucht)
+                              Ist (Lager + Belege)
                             </th>
                           </tr>
                           <tr className="border-b border-gray-200 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
