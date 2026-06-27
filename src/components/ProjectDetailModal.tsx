@@ -68,6 +68,8 @@ interface MergedMatRow {
   sollEk: number;
   istQty: number;
   istValue: number;
+  /** Abweichende Ist-Artikelnamen, die per Ähnlichkeit zugeordnet wurden. */
+  istAltNames: string[];
 }
 
 /** Generische Ist-Position (aus Lagerbuchung ODER Beleg-OCR). */
@@ -78,35 +80,108 @@ interface IstItem {
   value: number;
 }
 
-const normMatName = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
+// --- Artikel-Ähnlichkeit (Wahrscheinlichkeitsprüfung für die Soll/Ist-Zuordnung) ---
+const translitMat = (s: string) =>
+  s.toLowerCase().replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss");
+/** Normalisierter Schlüssel: nur Buchstaben/Ziffern, Umlaute transliteriert. */
+const normKey = (s: string) => translitMat(s).replace(/[^a-z0-9]/g, "");
 
-/** Führt kalkuliertes (Soll) und tatsächliches (Ist) Material je Artikel zu einer Zeile zusammen. */
-function mergeMaterials(
-  calc: ProjectMaterialCalculation | null,
-  istItems: IstItem[]
-): MergedMatRow[] {
-  const map = new Map<string, MergedMatRow>();
+/** Dice-Koeffizient über Zeichen-Bigramme (typo-/kompositum-tolerant). */
+function bigramDice(a: string, b: string): number {
+  if (a.length < 2 || b.length < 2) return a === b ? 1 : 0;
+  const count = new Map<string, number>();
+  for (let i = 0; i < a.length - 1; i++) {
+    const g = a.slice(i, i + 2);
+    count.set(g, (count.get(g) ?? 0) + 1);
+  }
+  let inter = 0;
+  for (let i = 0; i < b.length - 1; i++) {
+    const g = b.slice(i, i + 2);
+    const c = count.get(g);
+    if (c && c > 0) {
+      inter++;
+      count.set(g, c - 1);
+    }
+  }
+  return (2 * inter) / (a.length - 1 + (b.length - 1));
+}
+
+/** Ähnlichkeit zweier Artikelnamen in [0..1] (1 = identisch). */
+function articleSimilarity(a: string, b: string): number {
+  const na = normKey(a);
+  const nb = normKey(b);
+  if (!na || !nb) return 0;
+  if (na === nb) return 1;
+  // Enthaltensein (z.B. "abdeckvlies" in "malerabdeckvlies") = sehr wahrscheinlich derselbe Artikel.
+  if (na.length >= 4 && nb.length >= 4 && (na.includes(nb) || nb.includes(na))) return 0.92;
+  return bigramDice(na, nb);
+}
+
+/** Ab dieser Wahrscheinlichkeit gilt ein Ist-Artikel als „derselbe" wie ein Soll-Artikel. */
+const MATCH_THRESHOLD = 0.6;
+
+/**
+ * Führt kalkuliertes (Soll) und tatsächliches (Ist) Material je Artikel zusammen.
+ * Ist-Artikel werden per Ähnlichkeits-/Wahrscheinlichkeitsprüfung dem passenden
+ * Soll-Artikel zugeordnet (statt nur bei exakt gleichem Namen).
+ */
+function mergeMaterials(calc: ProjectMaterialCalculation | null, istItems: IstItem[]): MergedMatRow[] {
+  const rows: MergedMatRow[] = [];
+
+  // 1) Soll-Artikel als Basiszeilen (gleiche Bezeichnung zusammengefasst).
   for (const it of calc?.items ?? []) {
-    const k = normMatName(it.name);
-    const cur =
-      map.get(k) ?? { name: it.name, unit: it.unit, sollQty: 0, sollEk: 0, istQty: 0, istValue: 0 };
-    cur.sollQty += it.quantity;
-    cur.sollEk += it.lineTotal;
-    if (!cur.unit) cur.unit = it.unit;
-    map.set(k, cur);
+    const found = rows.find((r) => normKey(r.name) === normKey(it.name));
+    if (found) {
+      found.sollQty += it.quantity;
+      found.sollEk += it.lineTotal;
+      if (!found.unit) found.unit = it.unit;
+    } else {
+      rows.push({
+        name: it.name,
+        unit: it.unit,
+        sollQty: it.quantity,
+        sollEk: it.lineTotal,
+        istQty: 0,
+        istValue: 0,
+        istAltNames: [],
+      });
+    }
   }
+
+  // 2) Ist-Artikel der wahrscheinlichsten Zeile zuordnen (Soll-Zeilen bevorzugt).
   for (const it of istItems) {
-    const k = normMatName(it.name);
-    const cur =
-      map.get(k) ?? { name: it.name, unit: it.unit, sollQty: 0, sollEk: 0, istQty: 0, istValue: 0 };
-    cur.istQty += it.quantity;
-    cur.istValue += it.value;
-    if (!cur.unit) cur.unit = it.unit;
-    map.set(k, cur);
+    let best: MergedMatRow | null = null;
+    let bestScore = MATCH_THRESHOLD;
+    for (const r of rows) {
+      const score = articleSimilarity(r.name, it.name);
+      if (score < MATCH_THRESHOLD) continue;
+      const adj = score + (r.sollQty > 0 || r.sollEk > 0 ? 0.001 : 0); // Soll-Zeilen leicht bevorzugen
+      if (adj > bestScore) {
+        bestScore = adj;
+        best = r;
+      }
+    }
+    if (best) {
+      best.istQty += it.quantity;
+      best.istValue += it.value;
+      if (!best.unit) best.unit = it.unit;
+      if (normKey(best.name) !== normKey(it.name) && !best.istAltNames.includes(it.name)) {
+        best.istAltNames.push(it.name);
+      }
+    } else {
+      rows.push({
+        name: it.name,
+        unit: it.unit,
+        sollQty: 0,
+        sollEk: 0,
+        istQty: it.quantity,
+        istValue: it.value,
+        istAltNames: [],
+      });
+    }
   }
-  return [...map.values()].sort(
-    (a, b) => Math.max(b.sollEk, b.istValue) - Math.max(a.sollEk, a.istValue)
-  );
+
+  return rows.sort((a, b) => Math.max(b.sollEk, b.istValue) - Math.max(a.sollEk, a.istValue));
 }
 
 export default function ProjectDetailModal({
@@ -700,7 +775,14 @@ export default function ProjectDetailModal({
                         <tbody>
                           {rows.map((r, i) => (
                             <tr key={i} className="border-b border-gray-100 last:border-0">
-                              <td className="px-3 py-2 text-gray-800">{r.name}</td>
+                              <td className="px-3 py-2 text-gray-800">
+                                {r.name}
+                                {r.istAltNames.length > 0 && (
+                                  <span className="mt-0.5 block text-xs text-gray-400">
+                                    ≈ {r.istAltNames.join(", ")}
+                                  </span>
+                                )}
+                              </td>
                               <td className="border-l border-gray-100 px-3 py-2 text-right tabular-nums text-gray-600">
                                 {r.sollQty ? `${hours.format(r.sollQty)}${r.unit ? ` ${r.unit}` : ""}` : "—"}
                               </td>
