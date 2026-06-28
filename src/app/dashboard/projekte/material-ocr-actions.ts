@@ -8,12 +8,19 @@ import { getReceiptsInRange, type Receipt } from "@/lib/hero-api";
 import {
   getBelegArticlesMap,
   upsertBelegArticles,
+  deleteBelegArticles,
   type BelegArticle,
 } from "@/lib/beleg-articles";
 import {
   getMaterialMappings,
   setMaterialMapping,
   deleteMaterialMapping,
+  deleteAllMaterialMappings,
+  getMaterialExcludes,
+  addMaterialExclude,
+  removeMaterialExclude,
+  deleteAllMaterialExcludes,
+  materialKey,
   type MaterialMapping,
 } from "@/lib/material-mappings";
 
@@ -39,6 +46,8 @@ export interface ProjectBelegMaterials {
   total: number;
   belegeCount: number;
   ocrCostEur: number;
+  /** Aus dem Ist entfernte Beleg-Artikel (zum Wiederherstellen). */
+  excluded: string[];
   error?: string;
 }
 
@@ -171,7 +180,7 @@ async function ocrBelegArticles(
  */
 export async function getProjectBelegArticles(projectMatchId: number): Promise<ProjectBelegMaterials> {
   if (!(await getSession())) {
-    return { items: [], total: 0, belegeCount: 0, ocrCostEur: 0, error: "Kein Zugriff." };
+    return { items: [], total: 0, belegeCount: 0, ocrCostEur: 0, excluded: [], error: "Kein Zugriff." };
   }
 
   let receipts: Receipt[];
@@ -181,7 +190,7 @@ export async function getProjectBelegArticles(projectMatchId: number): Promise<P
     const to = `${now.getUTCFullYear() + 1}-12-31T23:59:59Z`;
     receipts = await getReceiptsInRange(from, to);
   } catch {
-    return { items: [], total: 0, belegeCount: 0, ocrCostEur: 0, error: "Belege konnten nicht geladen werden." };
+    return { items: [], total: 0, belegeCount: 0, ocrCostEur: 0, excluded: [], error: "Belege konnten nicht geladen werden." };
   }
 
   // Dem Projekt zugeordnete Eingangsrechnungen mit Dokument.
@@ -193,8 +202,10 @@ export async function getProjectBelegArticles(projectMatchId: number): Promise<P
   );
 
   if (belege.length === 0) {
-    return { items: [], total: 0, belegeCount: 0, ocrCostEur: 0 };
+    return { items: [], total: 0, belegeCount: 0, ocrCostEur: 0, excluded: [] };
   }
+
+  const excludeSet = await getMaterialExcludes(projectMatchId).catch(() => new Set<string>());
 
   const cached = await getBelegArticlesMap(belege.map((b) => b.id));
 
@@ -234,13 +245,18 @@ export async function getProjectBelegArticles(projectMatchId: number): Promise<P
     }
   }
 
-  // Artikel über alle Belege je Bezeichnung zusammenfassen.
+  // Artikel über alle Belege je Bezeichnung zusammenfassen (entfernte ausblenden).
   const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
   const map = new Map<string, ProjectBelegMaterialItem>();
+  const excludedNames = new Map<string, string>(); // ist_key → Anzeigename
   for (const b of belege) {
     const entry = cached.get(b.id);
     if (!entry) continue;
     for (const it of entry.items) {
+      if (excludeSet.has(materialKey(it.name))) {
+        excludedNames.set(materialKey(it.name), it.name);
+        continue;
+      }
       const key = norm(it.name);
       const cur = map.get(key) ?? { name: it.name, unit: it.unit, quantity: 0, value: 0 };
       cur.quantity += it.quantity;
@@ -256,7 +272,13 @@ export async function getProjectBelegArticles(projectMatchId: number): Promise<P
     .sort((a, b) => b.value - a.value);
   const total = round2(items.reduce((s, i) => s + i.value, 0));
 
-  return { items, total, belegeCount: belege.length, ocrCostEur: round2(ocrCostEur) };
+  return {
+    items,
+    total,
+    belegeCount: belege.length,
+    ocrCostEur: round2(ocrCostEur),
+    excluded: [...excludedNames.values()],
+  };
 }
 
 /** Manuelle Soll/Ist-Zuordnungen eines Projekts laden. */
@@ -299,6 +321,79 @@ export async function removeProjectMaterialMapping(
   if (!(await getSession())) return { ok: false };
   try {
     await deleteMaterialMapping(projectMatchId, istName);
+    return { ok: true };
+  } catch {
+    return { ok: false };
+  }
+}
+
+/** Blendet einen über Belege zugeordneten Artikel aus dem Ist aus. */
+export async function excludeProjectBelegArticle(
+  projectMatchId: number,
+  istName: string
+): Promise<{ ok: boolean }> {
+  const session = await getSession();
+  if (!session) return { ok: false };
+  let userId: number | null = null;
+  try {
+    userId = (await getUserByUsername(session.username))?.id ?? null;
+  } catch {
+    /* ignore */
+  }
+  try {
+    await addMaterialExclude(projectMatchId, istName, userId);
+    return { ok: true };
+  } catch {
+    return { ok: false };
+  }
+}
+
+/** Macht das Ausblenden eines Beleg-Artikels rückgängig. */
+export async function restoreProjectBelegArticle(
+  projectMatchId: number,
+  istName: string
+): Promise<{ ok: boolean }> {
+  if (!(await getSession())) return { ok: false };
+  try {
+    await removeMaterialExclude(projectMatchId, istName);
+    return { ok: true };
+  } catch {
+    return { ok: false };
+  }
+}
+
+/**
+ * Setzt die komplette Material-Zuordnung eines Projekts zurück: löscht manuelle
+ * Zuordnungen, Ausblendungen und den OCR-Cache der Belege → beim nächsten Laden
+ * werden die Belege frisch ausgelesen und neu zugeordnet.
+ */
+export async function resetProjectMaterialAssignment(
+  projectMatchId: number
+): Promise<{ ok: boolean }> {
+  if (!(await getSession())) return { ok: false };
+  try {
+    await Promise.all([
+      deleteAllMaterialMappings(projectMatchId),
+      deleteAllMaterialExcludes(projectMatchId),
+    ]);
+    // OCR-Cache der zugeordneten Belege leeren, damit sie neu ausgelesen werden.
+    try {
+      const now = new Date();
+      const from = `${now.getUTCFullYear() - 6}-01-01T00:00:00Z`;
+      const to = `${now.getUTCFullYear() + 1}-12-31T23:59:59Z`;
+      const receipts = await getReceiptsInRange(from, to);
+      const belegeIds = receipts
+        .filter(
+          (r) =>
+            r.type === "output" &&
+            !!r.fileUpload?.src &&
+            r.receiptPositions.some((p) => p.projectMatch?.id === projectMatchId)
+        )
+        .map((r) => r.id);
+      await deleteBelegArticles(belegeIds);
+    } catch {
+      /* Cache-Leeren optional */
+    }
     return { ok: true };
   } catch {
     return { ok: false };

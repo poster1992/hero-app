@@ -27,6 +27,9 @@ import {
   getProjectMaterialMappings,
   saveProjectMaterialMapping,
   removeProjectMaterialMapping,
+  excludeProjectBelegArticle,
+  restoreProjectBelegArticle,
+  resetProjectMaterialAssignment,
   type ProjectBelegMaterials,
 } from "@/app/dashboard/projekte/material-ocr-actions";
 import type { ProjectMaterialCalculation } from "@/lib/hero-api";
@@ -75,6 +78,8 @@ interface MergedMatRow {
   istAltNames: string[];
   /** Manuell (Drag & Drop) zugeordnete Ist-Artikelnamen. */
   manualAltNames: string[];
+  /** Aus Belegen stammende Artikelnamen, die zu dieser Zeile beitragen (entfernbar). */
+  belegNames: string[];
 }
 
 /** Generische Ist-Position (aus Lagerbuchung ODER Beleg-OCR). */
@@ -83,6 +88,7 @@ interface IstItem {
   unit: string | null;
   quantity: number;
   value: number;
+  source: "lager" | "beleg";
 }
 
 // --- Artikel-Ähnlichkeit (Wahrscheinlichkeitsprüfung für die Soll/Ist-Zuordnung) ---
@@ -145,7 +151,11 @@ function mergeMaterials(
     istValue: 0,
     istAltNames: [],
     manualAltNames: [],
+    belegNames: [],
   });
+  const noteBeleg = (row: MergedMatRow, it: IstItem) => {
+    if (it.source === "beleg" && !row.belegNames.includes(it.name)) row.belegNames.push(it.name);
+  };
 
   // 1) Soll-Artikel als Basiszeilen (gleiche Bezeichnung zusammengefasst).
   for (const it of calc?.items ?? []) {
@@ -171,6 +181,7 @@ function mergeMaterials(
         if (normKey(target.name) !== istKey && !target.manualAltNames.includes(it.name)) {
           target.manualAltNames.push(it.name);
         }
+        noteBeleg(target, it);
         continue;
       }
     }
@@ -194,10 +205,12 @@ function mergeMaterials(
       if (normKey(best.name) !== istKey && !best.istAltNames.includes(it.name)) {
         best.istAltNames.push(it.name);
       }
+      noteBeleg(best, it);
     } else {
       const r = newRow(it.name, it.unit);
       r.istQty = it.quantity;
       r.istValue = it.value;
+      noteBeleg(r, it);
       rows.push(r);
     }
   }
@@ -229,6 +242,7 @@ export default function ProjectDetailModal({
   const [manualMap, setManualMap] = useState<Map<string, string>>(new Map());
   const [dragName, setDragName] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const [resetting, setResetting] = useState(false);
   const [emailing, setEmailing] = useState(false);
 
   useEffect(() => {
@@ -272,7 +286,7 @@ export default function ProjectDetailModal({
     setBelegMat(null);
     getProjectBelegArticles(project.id)
       .then((m) => !cancelled && setBelegMat(m))
-      .catch(() => !cancelled && setBelegMat({ items: [], total: 0, belegeCount: 0, ocrCostEur: 0 }))
+      .catch(() => !cancelled && setBelegMat({ items: [], total: 0, belegeCount: 0, ocrCostEur: 0, excluded: [] }))
       .finally(() => !cancelled && setLoadingBelegMat(false));
     // Manuelle Zuordnungen laden.
     setManualMap(new Map());
@@ -328,6 +342,50 @@ export default function ProjectDetailModal({
       return next;
     });
     void removeProjectMaterialMapping(p.id, istName);
+  };
+
+  // Beleg-Ist neu vom Server laden (nach Entfernen/Wiederherstellen/Reset).
+  const reloadBelegMat = async () => {
+    setLoadingBelegMat(true);
+    try {
+      setBelegMat(await getProjectBelegArticles(p.id));
+    } catch {
+      /* ignore */
+    } finally {
+      setLoadingBelegMat(false);
+    }
+  };
+
+  // Einen über Belege zugeordneten Artikel aus dem Ist entfernen.
+  const excludeBeleg = async (istName: string) => {
+    await excludeProjectBelegArticle(p.id, istName);
+    await reloadBelegMat();
+  };
+  // Entfernten Beleg-Artikel wiederherstellen.
+  const restoreBeleg = async (istName: string) => {
+    await restoreProjectBelegArticle(p.id, istName);
+    await reloadBelegMat();
+  };
+
+  // Komplette Zuordnung löschen und neu erstellen (frisches OCR + leere Zuordnungen).
+  const resetAssignment = async () => {
+    if (!window.confirm("Komplette Material-Zuordnung dieses Projekts löschen und neu erstellen? Die Belege werden erneut ausgelesen.")) {
+      return;
+    }
+    setResetting(true);
+    try {
+      await resetProjectMaterialAssignment(p.id);
+      setManualMap(new Map());
+      await reloadBelegMat();
+      try {
+        const rows = await getProjectMaterialMappings(p.id);
+        setManualMap(new Map(rows.map((r) => [r.istKey, r.sollKey])));
+      } catch {
+        /* ignore */
+      }
+    } finally {
+      setResetting(false);
+    }
   };
 
   // Drucken: Dokumenttitel temporär umstellen, damit "HERO Dashboard" nicht in
@@ -774,8 +832,15 @@ export default function ProjectDetailModal({
                   unit: it.unit,
                   quantity: it.quantity,
                   value: it.value,
+                  source: "lager" as const,
                 })),
-                ...(belegMat?.items ?? []),
+                ...(belegMat?.items ?? []).map((it) => ({
+                  name: it.name,
+                  unit: it.unit,
+                  quantity: it.quantity,
+                  value: it.value,
+                  source: "beleg" as const,
+                })),
               ];
               const rows = mergeMaterials(calcMat, istItems, manualMap);
               const sollRows = rows.filter((r) => r.sollEk > 0 || r.sollQty > 0);
@@ -790,13 +855,22 @@ export default function ProjectDetailModal({
                 <>
                   <div className="mb-1 flex items-baseline justify-between gap-2">
                     <h3 className="text-sm font-medium text-gray-700">Material · Soll / Ist je Artikel</h3>
-                    <div className="flex items-baseline gap-2 text-xs text-gray-500">
+                    <div className="flex items-baseline gap-3 text-xs text-gray-500">
                       {loadingBelegMat && <span className="text-gray-400">Belege werden ausgelesen …</span>}
                       {rows.length > 0 && (
                         <span>
                           {rows.length} Artikel · Soll {euro.format(sollTotal)} · Ist {euro.format(istTotal)}
                         </span>
                       )}
+                      <button
+                        type="button"
+                        onClick={resetAssignment}
+                        disabled={resetting}
+                        title="Komplette Zuordnung löschen und Belege neu auslesen"
+                        className="rounded border border-gray-300 px-2 py-0.5 font-medium text-gray-600 transition-colors hover:border-brand-red/50 hover:text-brand-red disabled:opacity-50"
+                      >
+                        {resetting ? "Setze zurück …" : "Zuordnung zurücksetzen"}
+                      </button>
                     </div>
                   </div>
                   {hasUnmatched && sollRows.length > 0 && (
@@ -877,12 +951,32 @@ export default function ProjectDetailModal({
                                   <span className="flex items-center gap-1.5">
                                     {isIstOnly && <span className="text-gray-300" aria-hidden>⠿</span>}
                                     <span>{r.name}</span>
+                                    {isIstOnly && r.belegNames.includes(r.name) && (
+                                      <button
+                                        type="button"
+                                        onClick={() => excludeBeleg(r.name)}
+                                        title="Beleg-Artikel entfernen"
+                                        className="text-gray-300 transition-colors hover:text-brand-red"
+                                      >
+                                        🗑
+                                      </button>
+                                    )}
                                   </span>
-                                  {r.istAltNames.length > 0 && (
-                                    <span className="mt-0.5 block text-xs text-gray-400">
-                                      ≈ {r.istAltNames.join(", ")}
+                                  {r.istAltNames.map((alt) => (
+                                    <span key={alt} className="mt-0.5 flex items-center gap-1 text-xs text-gray-400">
+                                      ≈ {alt}
+                                      {r.belegNames.includes(alt) && (
+                                        <button
+                                          type="button"
+                                          onClick={() => excludeBeleg(alt)}
+                                          title="Beleg-Artikel entfernen"
+                                          className="text-gray-300 transition-colors hover:text-brand-red"
+                                        >
+                                          🗑
+                                        </button>
+                                      )}
                                     </span>
-                                  )}
+                                  ))}
                                   {r.manualAltNames.map((alt) => (
                                     <span key={alt} className="mt-0.5 flex items-center gap-1 text-xs text-emerald-600">
                                       ↳ {alt}
@@ -894,6 +988,16 @@ export default function ProjectDetailModal({
                                       >
                                         ✕
                                       </button>
+                                      {r.belegNames.includes(alt) && (
+                                        <button
+                                          type="button"
+                                          onClick={() => excludeBeleg(alt)}
+                                          title="Beleg-Artikel entfernen"
+                                          className="text-gray-300 transition-colors hover:text-brand-red"
+                                        >
+                                          🗑
+                                        </button>
+                                      )}
                                     </span>
                                   ))}
                                 </td>
@@ -923,6 +1027,22 @@ export default function ProjectDetailModal({
                           </tr>
                         </tfoot>
                       </table>
+                    </div>
+                  )}
+                  {belegMat && belegMat.excluded.length > 0 && (
+                    <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500">
+                      <span className="text-gray-400">Entfernte Beleg-Artikel:</span>
+                      {belegMat.excluded.map((name) => (
+                        <button
+                          key={name}
+                          type="button"
+                          onClick={() => restoreBeleg(name)}
+                          title="Wiederherstellen"
+                          className="rounded border border-gray-300 px-1.5 py-0.5 text-gray-500 line-through transition-colors hover:border-emerald-500/50 hover:text-emerald-600 hover:no-underline"
+                        >
+                          {name} ↺
+                        </button>
+                      ))}
                     </div>
                   )}
                 </>

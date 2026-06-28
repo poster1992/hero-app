@@ -66,3 +66,48 @@ export async function deleteMaterialMapping(projectMatchId: number, istName: str
     materialKey(istName),
   ]);
 }
+
+/** Entfernt ALLE manuellen Zuordnungen eines Projekts. */
+export async function deleteAllMaterialMappings(projectMatchId: number): Promise<void> {
+  await getPool().query("DELETE FROM material_mappings WHERE project_match_id = ?", [projectMatchId]);
+}
+
+// --- Entfernte (ausgeblendete) Beleg-Artikel ---
+
+/** ist_keys der für dieses Projekt aus dem Ist entfernten Beleg-Artikel. */
+export async function getMaterialExcludes(projectMatchId: number): Promise<Set<string>> {
+  const [rows] = await getPool().query<RowDataPacket[]>(
+    "SELECT ist_key FROM material_excludes WHERE project_match_id = ?",
+    [projectMatchId]
+  );
+  return new Set((rows as { ist_key: string }[]).map((r) => r.ist_key));
+}
+
+/** Blendet einen Beleg-Artikel aus dem Ist aus. */
+export async function addMaterialExclude(
+  projectMatchId: number,
+  istName: string,
+  userId: number | null
+): Promise<void> {
+  const key = materialKey(istName);
+  if (!key) return;
+  await getPool().query(
+    `INSERT INTO material_excludes (project_match_id, ist_key, ist_name, created_by)
+     VALUES (?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE ist_name = VALUES(ist_name)`,
+    [projectMatchId, key, istName.slice(0, 255), userId]
+  );
+}
+
+/** Macht das Ausblenden eines Beleg-Artikels rückgängig. */
+export async function removeMaterialExclude(projectMatchId: number, istName: string): Promise<void> {
+  await getPool().query("DELETE FROM material_excludes WHERE project_match_id = ? AND ist_key = ?", [
+    projectMatchId,
+    materialKey(istName),
+  ]);
+}
+
+/** Entfernt ALLE Ausblendungen eines Projekts. */
+export async function deleteAllMaterialExcludes(projectMatchId: number): Promise<void> {
+  await getPool().query("DELETE FROM material_excludes WHERE project_match_id = ?", [projectMatchId]);
+}

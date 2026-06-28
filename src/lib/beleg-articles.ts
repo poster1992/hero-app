@@ -65,6 +65,16 @@ export async function getBelegArticlesMap(heroIds: string[]): Promise<Map<string
   return map;
 }
 
+/** Löscht den OCR-Cache mehrerer Belege (erzwingt Neu-Auslesen). */
+export async function deleteBelegArticles(heroIds: string[]): Promise<void> {
+  if (heroIds.length === 0) return;
+  const placeholders = heroIds.map(() => "?").join(",");
+  await getPool().query(
+    `DELETE FROM beleg_articles WHERE hero_receipt_id IN (${placeholders})`,
+    heroIds
+  );
+}
+
 /** Speichert/aktualisiert die OCR-Artikel eines Belegs. */
 export async function upsertBelegArticles(input: {
   heroReceiptId: string;
