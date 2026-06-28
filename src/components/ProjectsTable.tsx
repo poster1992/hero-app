@@ -138,9 +138,12 @@ export default function ProjectsTable({ projects }: { projects: ProjectRow[] }) 
   const istLaborOf = (p: ProjectRow) => p.hours * rateOf(p);
   const sollLaborTotal = useMemo(() => filtered.reduce((s, p) => s + p.sollLabor, 0), [filtered]);
   const istLaborTotal = useMemo(() => filtered.reduce((s, p) => s + istLaborOf(p), 0), [filtered]);
-  // Ertrag (Deckungsbeitrag): Soll = AB − Kalk.Material − Soll-Lohn; Ist = REC − Ist-Material − Ist-Lohn.
+  // Rest Material = Kalk. − Ist Material − Ist Lagerware.
+  const restMaterialOf = (p: ProjectRow) => p.calcMaterial - p.costNet - p.stockNet;
+  // Ertrag (Deckungsbeitrag): Soll = AB − Kalk.Material − Soll-Lohn;
+  // Ist = REC − Ist-Material − Ist-Lagerware − Ist-Lohn.
   const sollErtragOf = (p: ProjectRow) => p.confirmationNet - p.calcMaterial - p.sollLabor;
-  const istErtragOf = (p: ProjectRow) => p.invoiceNet - p.costNet - istLaborOf(p);
+  const istErtragOf = (p: ProjectRow) => p.invoiceNet - p.costNet - p.stockNet - istLaborOf(p);
 
   // Sortierwert je Spalte (Zahlen numerisch, Texte alphabetisch).
   const sortValue = (p: ProjectRow, key: string): number | string => {
@@ -156,7 +159,7 @@ export default function ProjectsTable({ projects }: { projects: ProjectRow[] }) 
       case "calcMaterial": return p.calcMaterial;
       case "istMaterial": return p.costNet;
       case "stockNet": return p.stockNet;
-      case "restMaterial": return p.calcMaterial - p.costNet;
+      case "restMaterial": return restMaterialOf(p);
       case "calcHours": return p.calcHours;
       case "hours": return p.hours;
       case "restHours": return p.calcHours - p.hours;
@@ -373,16 +376,16 @@ export default function ProjectsTable({ projects }: { projects: ProjectRow[] }) 
                   </td>
                   <td
                     className={`px-3 py-2 align-top text-right whitespace-nowrap font-medium ${
-                      p.calcMaterial === 0 && p.costNet === 0
+                      p.calcMaterial === 0 && p.costNet === 0 && p.stockNet === 0
                         ? "text-gray-500"
-                        : p.calcMaterial - p.costNet < 0
+                        : restMaterialOf(p) < 0
                           ? "text-brand-red"
                           : "text-emerald-600"
                     }`}
                   >
-                    {p.calcMaterial === 0 && p.costNet === 0
+                    {p.calcMaterial === 0 && p.costNet === 0 && p.stockNet === 0
                       ? "—"
-                      : currencyFormatter.format(p.calcMaterial - p.costNet)}
+                      : currencyFormatter.format(restMaterialOf(p))}
                   </td>
                   <td className="border-l-2 border-gray-300 px-3 py-2 align-top text-right whitespace-nowrap text-gray-800">
                     {p.calcHours > 0 ? `${hoursFormatter.format(p.calcHours)} h` : "—"}
@@ -427,14 +430,14 @@ export default function ProjectsTable({ projects }: { projects: ProjectRow[] }) 
                   </td>
                   <td
                     className={`px-3 py-2 align-top text-right whitespace-nowrap font-medium ${
-                      p.invoiceNet === 0 && p.costNet === 0 && istLaborOf(p) === 0
+                      p.invoiceNet === 0 && p.costNet === 0 && p.stockNet === 0 && istLaborOf(p) === 0
                         ? "text-gray-500"
                         : istErtragOf(p) < 0
                           ? "text-brand-red"
                           : "text-emerald-600"
                     }`}
                   >
-                    {p.invoiceNet === 0 && p.costNet === 0 && istLaborOf(p) === 0
+                    {p.invoiceNet === 0 && p.costNet === 0 && p.stockNet === 0 && istLaborOf(p) === 0
                       ? "—"
                       : currencyFormatter.format(istErtragOf(p))}
                   </td>
@@ -467,10 +470,10 @@ export default function ProjectsTable({ projects }: { projects: ProjectRow[] }) 
                 </td>
                 <td
                   className={`px-3 py-2 text-right whitespace-nowrap ${
-                    calcMaterialTotal - costTotal < 0 ? "text-brand-red" : "text-emerald-600"
+                    calcMaterialTotal - costTotal - stockTotal < 0 ? "text-brand-red" : "text-emerald-600"
                   }`}
                 >
-                  {currencyFormatter.format(calcMaterialTotal - costTotal)}
+                  {currencyFormatter.format(calcMaterialTotal - costTotal - stockTotal)}
                 </td>
                 <td className="border-l-2 border-gray-300 px-3 py-2 text-right whitespace-nowrap">
                   {hoursFormatter.format(calcHoursTotal)} h
@@ -498,7 +501,7 @@ export default function ProjectsTable({ projects }: { projects: ProjectRow[] }) 
                 </td>
                 {(() => {
                   const sollErtragTotal = confirmationTotal - calcMaterialTotal - sollLaborTotal;
-                  const istErtragTotal = invoiceTotal - costTotal - istLaborTotal;
+                  const istErtragTotal = invoiceTotal - costTotal - stockTotal - istLaborTotal;
                   return (
                     <>
                       <td

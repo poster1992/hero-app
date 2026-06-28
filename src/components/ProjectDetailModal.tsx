@@ -317,12 +317,14 @@ export default function ProjectDetailModal({
 
   // Abgeleitete Werte (gleiche Formeln wie in der Tabelle).
   const open = Math.max(0, p.confirmationNet - p.invoiceNet);
-  const restMaterial = p.calcMaterial - p.costNet;
+  // Ist-Material gesamt = Belege (costNet) + aufs Projekt gebuchte Lagerware (stockNet).
+  const istMaterialTotal = p.costNet + p.stockNet;
+  const restMaterial = p.calcMaterial - istMaterialTotal;
   const restHours = p.calcHours - p.hours;
   const rate = p.calcHours > 0 ? p.sollLabor / p.calcHours : 0;
   const istLabor = p.hours * rate;
   const sollErtrag = p.confirmationNet - p.calcMaterial - p.sollLabor;
-  const istErtrag = p.invoiceNet - p.costNet - istLabor;
+  const istErtrag = p.invoiceNet - istMaterialTotal - istLabor;
 
   // Manuelle Zuordnung speichern (Drag Ist-Artikel → Drop auf Soll-Artikel).
   const assignMapping = (istName: string, sollName: string) => {
@@ -506,7 +508,7 @@ export default function ProjectDetailModal({
   const moneyColors = ["#10b981", "#60a5fa", "#fbbf24"];
 
   const sollIstData = [
-    { name: "Material", Soll: p.calcMaterial, Ist: p.costNet },
+    { name: "Material", Soll: p.calcMaterial, Ist: istMaterialTotal },
     { name: "Lohnkosten", Soll: p.sollLabor, Ist: istLabor },
     { name: "Ertrag", Soll: sollErtrag, Ist: istErtrag },
   ];
@@ -581,6 +583,7 @@ export default function ProjectDetailModal({
               ["Ø Lohnsatz", rate > 0 ? `${euro.format(rate)}/h` : "—"],
               ["Kalk. Material", euro.format(p.calcMaterial)],
               ["Ist Material", euro.format(p.costNet)],
+              ["Ist Lagerware", euro.format(p.stockNet)],
               ["Kalk. Stunden", `${hours.format(p.calcHours)} h`],
               ["Ist Stunden", `${hours.format(p.hours)} h`],
             ].map(([label, val]) => (
@@ -663,7 +666,7 @@ export default function ProjectDetailModal({
               />
               <Calc
                 label="Rest Material"
-                formula={`Kalk. ${euro.format(p.calcMaterial)} − Ist ${euro.format(p.costNet)}`}
+                formula={`Kalk. ${euro.format(p.calcMaterial)} − Ist ${euro.format(p.costNet)} − Lager ${euro.format(p.stockNet)}`}
                 result={euro.format(restMaterial)}
                 tone={restMaterial < 0 ? "neg" : "pos"}
               />
@@ -695,7 +698,7 @@ export default function ProjectDetailModal({
                 label="Ist Ertrag"
                 formula={`Rechnungen ${euro.format(p.invoiceNet)} − Ist Material ${euro.format(
                   p.costNet
-                )} − Ist-Lohn ${euro.format(istLabor)}`}
+                )} − Lager ${euro.format(p.stockNet)} − Ist-Lohn ${euro.format(istLabor)}`}
                 result={euro.format(istErtrag)}
                 tone={istErtrag < 0 ? "neg" : "pos"}
               />
