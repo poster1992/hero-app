@@ -21,7 +21,10 @@ const HERO_HOST = "https://login.hero-software.de";
 const MODEL = "claude-haiku-4-5";
 const PRICE = { in: 1, out: 5 }; // $ / 1 Mio Tokens (Haiku)
 const USD_EUR = 0.92;
+// Version der OCR-Extraktionslogik – Änderung invalidiert den Beleg-Cache.
+const OCR_VERSION = "v2-rabatt";
 const round2 = (n: number) => Math.round(n * 100) / 100;
+const docHashOf = (src: string) => createHash("sha256").update(`${src}|${OCR_VERSION}`).digest("hex");
 
 /** Aggregierte Ist-Position aus Belegen (je Artikel). */
 export interface ProjectBelegMaterialItem {
@@ -76,11 +79,17 @@ async function ocrBelegArticles(
             type: "text",
             text:
               "Dies ist eine Eingangsrechnung (Lieferantenrechnung). Extrahiere die einzelnen " +
-              "Artikel-/Materialpositionen. Antworte AUSSCHLIESSLICH mit JSON: " +
-              '{"items":[{"name":string,"quantity":number,"unit":string|null,"unit_price":number,"line_total":number}]}. ' +
+              "Artikel-/Materialpositionen UND berücksichtige RABATTE. Antworte AUSSCHLIESSLICH mit JSON: " +
+              '{"items":[{"name":string,"quantity":number,"unit":string|null,"unit_price":number,"line_total":number}],' +
+              '"global_discount":{"percent":number|null,"amount":number|null}}. ' +
               "name = Artikelbezeichnung. quantity = Menge. unit = Einheit (z.B. Stk, m2, kg, l) oder null. " +
-              "unit_price = Einzelpreis NETTO je Einheit. line_total = Positionssumme NETTO. " +
-              "Nur echte Artikel-/Materialpositionen – KEINE Zwischensummen, Versand-/Frachtkosten, Rabattzeilen, " +
+              "line_total = Positionssumme NETTO NACH Abzug eines positionsbezogenen Rabatts/Nachlasses (falls die " +
+              "Position selbst einen Rabatt in % oder € hat, ziehe ihn ab). unit_price = line_total / quantity " +
+              "(effektiver Einkaufspreis je Einheit NACH Rabatt). " +
+              "global_discount = ein auf die GESAMTSUMME/alle Positionen wirkender Rabatt/Nachlass (z.B. 'Rabatt 3%' " +
+              "oder 'Nachlass 50,00 €'); gib percent ODER amount an, sonst beide null. " +
+              "WICHTIG: Skonto ist KEIN Rabatt (Skonto = Zahlungsrabatt) und darf NICHT abgezogen werden. " +
+              "Nur echte Artikel-/Materialpositionen – KEINE Zwischensummen, Versand-/Frachtkosten, reine Rabattzeilen, " +
               "MwSt- oder Gesamtsummen. Wenn keine Positionen erkennbar sind: leeres Array. " +
               "Zahlen mit Punkt als Dezimaltrennzeichen, keine Tausenderpunkte. Keine Erklärung, nur JSON.",
           },
@@ -104,16 +113,23 @@ async function ocrBelegArticles(
       : "{}";
   let items: BelegArticle[] = [];
   try {
-    const parsed = JSON.parse(raw) as { items?: unknown[] };
+    const parsed = JSON.parse(raw) as {
+      items?: unknown[];
+      global_discount?: { percent?: number | null; amount?: number | null } | null;
+    };
     items = (parsed.items ?? [])
       .map((p) => {
         const o = p as Record<string, unknown>;
         const quantity = Number(o.quantity ?? 0);
-        const unitPrice = Number(o.unit_price ?? 0);
-        const lineTotal =
-          Number.isFinite(Number(o.line_total)) && Number(o.line_total) !== 0
-            ? Number(o.line_total)
-            : round2(quantity * unitPrice);
+        let lineTotal = Number(o.line_total);
+        let unitPrice = Number(o.unit_price);
+        // line_total ist netto NACH Positionsrabatt; fehlt es, aus unit_price × Menge.
+        if (!Number.isFinite(lineTotal) || lineTotal === 0) {
+          lineTotal = round2((Number.isFinite(unitPrice) ? unitPrice : 0) * (Number.isFinite(quantity) ? quantity : 0));
+        }
+        if (!Number.isFinite(unitPrice) || unitPrice === 0) {
+          unitPrice = quantity ? round2(lineTotal / quantity) : 0;
+        }
         return {
           name: String(o.name ?? "").slice(0, 200),
           quantity: Number.isFinite(quantity) ? quantity : 0,
@@ -123,6 +139,25 @@ async function ocrBelegArticles(
         };
       })
       .filter((it) => it.name.trim().length > 0);
+
+    // Gesamtrabatt (auf alle Positionen) proportional abziehen.
+    const gd = parsed.global_discount;
+    const sum = items.reduce((s, it) => s + it.lineTotal, 0);
+    let factor = 1;
+    if (gd) {
+      if (typeof gd.percent === "number" && gd.percent > 0 && gd.percent < 100) {
+        factor = 1 - gd.percent / 100;
+      } else if (typeof gd.amount === "number" && gd.amount > 0 && sum > gd.amount) {
+        factor = (sum - gd.amount) / sum;
+      }
+    }
+    if (factor !== 1) {
+      items = items.map((it) => ({
+        ...it,
+        lineTotal: round2(it.lineTotal * factor),
+        unitPrice: round2(it.unitPrice * factor),
+      }));
+    }
   } catch {
     items = [];
   }
@@ -165,7 +200,7 @@ export async function getProjectBelegArticles(projectMatchId: number): Promise<P
 
   // Welche Belege müssen (neu) ausgelesen werden? (kein Cache oder Dokument geändert)
   const toOcr = belege.filter((b) => {
-    const hash = createHash("sha256").update(b.fileUpload!.src!).digest("hex");
+    const hash = docHashOf(b.fileUpload!.src!);
     const c = cached.get(b.id);
     return !c || c.docHash !== hash;
   });
@@ -175,7 +210,7 @@ export async function getProjectBelegArticles(projectMatchId: number): Promise<P
     const client = new Anthropic({ maxRetries: 2, timeout: 120_000 });
     const results = await Promise.all(
       toOcr.map(async (b) => {
-        const hash = createHash("sha256").update(b.fileUpload!.src!).digest("hex");
+        const hash = docHashOf(b.fileUpload!.src!);
         try {
           const { items, cost } = await ocrBelegArticles(client, b);
           const total = round2(items.reduce((s, it) => s + it.lineTotal, 0));
