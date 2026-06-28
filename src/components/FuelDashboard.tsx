@@ -7,6 +7,7 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  Legend,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -23,6 +24,10 @@ const eur4 = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR"
 const liters = new Intl.NumberFormat("de-DE", { maximumFractionDigits: 1 });
 
 const BAR = "#e8392a";
+const COLORS = [
+  "#e8392a", "#2563eb", "#16a34a", "#f59e0b", "#7c3aed", "#0891b2", "#db2777", "#65a30d",
+  "#ea580c", "#0d9488", "#9333ea", "#dc2626", "#4f46e5", "#ca8a04", "#059669", "#be123c",
+];
 
 export default function FuelDashboard({
   analysis,
@@ -65,8 +70,11 @@ export default function FuelDashboard({
     }
   };
 
+  const [metric, setMetric] = useState<"net" | "liters">("net");
   const topVehicles = analysis.vehicles.slice(0, 15);
   const vehChartHeight = Math.max(180, topVehicles.length * 30 + 30);
+  const stackData = metric === "net" ? analysis.monthlyByVehicleNet : analysis.monthlyByVehicleLiters;
+  const fmtStack = (v: number) => (metric === "net" ? euro.format(v) : `${liters.format(v)} L`);
 
   return (
     <div className="flex flex-col gap-6">
@@ -127,6 +135,48 @@ export default function FuelDashboard({
                   contentStyle={{ fontSize: 12, borderRadius: 8 }}
                 />
                 <Bar dataKey="net" name="Netto" fill={BAR} radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Je Monat, gestapelt nach Fahrzeug */}
+          <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-lg font-medium text-gray-900">Je Monat nach Fahrzeug</h2>
+              <div className="flex overflow-hidden rounded-md border border-gray-300 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setMetric("net")}
+                  className={`px-3 py-1 font-medium ${metric === "net" ? "bg-brand-red text-white" : "text-gray-600 hover:bg-gray-100"}`}
+                >
+                  Kosten (netto)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMetric("liters")}
+                  className={`px-3 py-1 font-medium ${metric === "liters" ? "bg-brand-red text-white" : "text-gray-600 hover:bg-gray-100"}`}
+                >
+                  Liter
+                </button>
+              </div>
+            </div>
+            <ResponsiveContainer width="100%" height={340}>
+              <BarChart data={stackData} margin={{ top: 4, right: 8, left: 8, bottom: 4 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                <XAxis dataKey="label" tick={{ fontSize: 12, fill: "#6b7280" }} />
+                <YAxis
+                  tick={{ fontSize: 12, fill: "#6b7280" }}
+                  tickFormatter={(v) => (metric === "net" ? `${v} €` : `${v} L`)}
+                  width={60}
+                />
+                <Tooltip
+                  formatter={(v) => fmtStack(Number(v))}
+                  contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                {analysis.vehicleNames.map((name, i) => (
+                  <Bar key={name} dataKey={name} stackId="a" fill={COLORS[i % COLORS.length]} />
+                ))}
               </BarChart>
             </ResponsiveContainer>
           </div>

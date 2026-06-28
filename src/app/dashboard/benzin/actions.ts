@@ -211,6 +211,9 @@ export interface FuelMonthAgg {
   net: number;
   gross: number;
 }
+/** Eine Monatszeile mit je Fahrzeug einem Wert (für gestapeltes Diagramm). */
+export type FuelMonthByVehicle = { month: string; label: string } & Record<string, number | string>;
+
 export interface FuelAnalysis {
   invoiceCount: number;
   totalLiters: number;
@@ -218,6 +221,12 @@ export interface FuelAnalysis {
   totalGross: number;
   vehicles: FuelVehicleAgg[];
   months: FuelMonthAgg[];
+  /** Fahrzeugnamen (sortiert nach Kosten) – Reihenfolge der Stapel/Legende. */
+  vehicleNames: string[];
+  /** Je Monat eine Zeile mit Netto-Kosten pro Fahrzeug. */
+  monthlyByVehicleNet: FuelMonthByVehicle[];
+  /** Je Monat eine Zeile mit Litern pro Fahrzeug. */
+  monthlyByVehicleLiters: FuelMonthByVehicle[];
 }
 
 const MONTH_SHORT = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
@@ -225,11 +234,24 @@ const MONTH_SHORT = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "S
 /** Aggregierte Auswertung der Tankrechnungen (nach Fahrzeug und Monat). */
 export async function getFuelAnalysis(): Promise<FuelAnalysis> {
   if (!(await getSession())) {
-    return { invoiceCount: 0, totalLiters: 0, totalNet: 0, totalGross: 0, vehicles: [], months: [] };
+    return {
+      invoiceCount: 0,
+      totalLiters: 0,
+      totalNet: 0,
+      totalGross: 0,
+      vehicles: [],
+      months: [],
+      vehicleNames: [],
+      monthlyByVehicleNet: [],
+      monthlyByVehicleLiters: [],
+    };
   }
   const invoices = await listFuelInvoices();
   const vehMap = new Map<string, FuelVehicleAgg>();
   const monMap = new Map<string, FuelMonthAgg>();
+  // month → vehicleKey → { net, liters }
+  const matrix = new Map<string, Map<string, { net: number; liters: number }>>();
+  const labelOf = (month: string) => `${MONTH_SHORT[Number(month.slice(5, 7)) - 1]} ${month.slice(2, 4)}`;
   let totalLiters = 0;
   let totalNet = 0;
   let totalGross = 0;
@@ -247,17 +269,18 @@ export async function getFuelAnalysis(): Promise<FuelAnalysis> {
       totalNet += v.net;
       totalGross += v.gross;
       if (month) {
-        const m = monMap.get(month) ?? {
-          month,
-          label: `${MONTH_SHORT[Number(month.slice(5, 7)) - 1]} ${month.slice(2, 4)}`,
-          liters: 0,
-          net: 0,
-          gross: 0,
-        };
+        const m = monMap.get(month) ?? { month, label: labelOf(month), liters: 0, net: 0, gross: 0 };
         m.liters += v.liters;
         m.net += v.net;
         m.gross += v.gross;
         monMap.set(month, m);
+
+        const mv = matrix.get(month) ?? new Map<string, { net: number; liters: number }>();
+        const e = mv.get(cur.vehicle) ?? { net: 0, liters: 0 };
+        e.net += v.net;
+        e.liters += v.liters;
+        mv.set(cur.vehicle, e);
+        matrix.set(month, mv);
       }
     }
   }
@@ -271,9 +294,27 @@ export async function getFuelAnalysis(): Promise<FuelAnalysis> {
       pricePerL: v.liters > 0 ? round4(v.net / v.liters) : 0,
     }))
     .sort((a, b) => b.net - a.net);
+  const vehicleNames = vehicles.map((v) => v.vehicle);
   const months = [...monMap.values()]
     .map((m) => ({ month: m.month, label: m.label, liters: round2(m.liters), net: round2(m.net), gross: round2(m.gross) }))
     .sort((a, b) => a.month.localeCompare(b.month));
+
+  // Gestapelte Monatsdaten (eine Zeile je Monat, je Fahrzeug ein Wert).
+  const sortedMonths = [...matrix.keys()].sort((a, b) => a.localeCompare(b));
+  const monthlyByVehicleNet: FuelMonthByVehicle[] = [];
+  const monthlyByVehicleLiters: FuelMonthByVehicle[] = [];
+  for (const month of sortedMonths) {
+    const mv = matrix.get(month)!;
+    const rowNet: FuelMonthByVehicle = { month, label: labelOf(month) };
+    const rowLit: FuelMonthByVehicle = { month, label: labelOf(month) };
+    for (const name of vehicleNames) {
+      const e = mv.get(name);
+      rowNet[name] = e ? round2(e.net) : 0;
+      rowLit[name] = e ? round2(e.liters) : 0;
+    }
+    monthlyByVehicleNet.push(rowNet);
+    monthlyByVehicleLiters.push(rowLit);
+  }
 
   return {
     invoiceCount: invoices.length,
@@ -282,5 +323,8 @@ export async function getFuelAnalysis(): Promise<FuelAnalysis> {
     totalGross: round2(totalGross),
     vehicles,
     months,
+    vehicleNames,
+    monthlyByVehicleNet,
+    monthlyByVehicleLiters,
   };
 }

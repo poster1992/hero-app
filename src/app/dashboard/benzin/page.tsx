@@ -13,6 +13,9 @@ export default async function BenzinPage() {
     totalGross: 0,
     vehicles: [],
     months: [],
+    vehicleNames: [],
+    monthlyByVehicleNet: [],
+    monthlyByVehicleLiters: [],
   };
   let status: FuelStatus = { total: 0, done: 0 };
   let error: string | null = null;
