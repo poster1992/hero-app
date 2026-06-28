@@ -14,6 +14,8 @@ export interface ProjectRow {
   confirmationDate: string | null;
   invoiceNet: number;
   costNet: number;
+  /** EK-Wert der aufs Projekt gebuchten Lagerware (stock_movements). */
+  stockNet: number;
   hours: number;
   calcHours: number;
   calcMaterial: number;
@@ -124,6 +126,7 @@ export default function ProjectsTable({ projects }: { projects: ProjectRow[] }) 
   const openOf = (p: ProjectRow) => Math.max(0, p.confirmationNet - p.invoiceNet);
   const openTotal = useMemo(() => filtered.reduce((s, p) => s + openOf(p), 0), [filtered]);
   const costTotal = useMemo(() => filtered.reduce((s, p) => s + p.costNet, 0), [filtered]);
+  const stockTotal = useMemo(() => filtered.reduce((s, p) => s + p.stockNet, 0), [filtered]);
   const hoursTotal = useMemo(() => filtered.reduce((s, p) => s + p.hours, 0), [filtered]);
   const calcHoursTotal = useMemo(() => filtered.reduce((s, p) => s + p.calcHours, 0), [filtered]);
   const calcMaterialTotal = useMemo(
@@ -152,6 +155,7 @@ export default function ProjectsTable({ projects }: { projects: ProjectRow[] }) 
       case "offen": return openOf(p);
       case "calcMaterial": return p.calcMaterial;
       case "istMaterial": return p.costNet;
+      case "stockNet": return p.stockNet;
       case "restMaterial": return p.calcMaterial - p.costNet;
       case "calcHours": return p.calcHours;
       case "hours": return p.hours;
@@ -302,6 +306,7 @@ export default function ProjectsTable({ projects }: { projects: ProjectRow[] }) 
                 <Th k="offen" label="Offen (netto)" cls="text-right" />
                 <Th k="calcMaterial" label="Kalk. Material" cls="border-l-2 border-gray-300 text-right" />
                 <Th k="istMaterial" label="Ist Material" cls="text-right" />
+                <Th k="stockNet" label="Ist Lagerware" cls="text-right" />
                 <Th k="restMaterial" label="Rest Material" cls="text-right" />
                 <Th k="calcHours" label="Kalk. Stunden" cls="border-l-2 border-gray-300 text-right" />
                 <Th k="hours" label="Stunden" cls="text-right" />
@@ -362,6 +367,9 @@ export default function ProjectsTable({ projects }: { projects: ProjectRow[] }) 
                   </td>
                   <td className="px-3 py-2 align-top text-right whitespace-nowrap text-gray-800">
                     {p.costNet !== 0 ? currencyFormatter.format(p.costNet) : "—"}
+                  </td>
+                  <td className="px-3 py-2 align-top text-right whitespace-nowrap text-gray-800">
+                    {p.stockNet !== 0 ? currencyFormatter.format(p.stockNet) : "—"}
                   </td>
                   <td
                     className={`px-3 py-2 align-top text-right whitespace-nowrap font-medium ${
@@ -453,6 +461,9 @@ export default function ProjectsTable({ projects }: { projects: ProjectRow[] }) 
                 </td>
                 <td className="px-3 py-2 text-right whitespace-nowrap">
                   {currencyFormatter.format(costTotal)}
+                </td>
+                <td className="px-3 py-2 text-right whitespace-nowrap">
+                  {currencyFormatter.format(stockTotal)}
                 </td>
                 <td
                   className={`px-3 py-2 text-right whitespace-nowrap ${

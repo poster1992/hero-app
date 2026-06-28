@@ -365,6 +365,25 @@ export async function getProjectBookedMaterials(
   return { items, total };
 }
 
+/**
+ * EK-Wert der auf JEDES Projekt gebuchten Lagerware (Netto: Abbuchungen − Rückbuchungen),
+ * keyed nach project_relative_id. Für die Projektliste-Spalte „Ist Lagerware".
+ */
+export async function getBookedStockTotalsByProject(): Promise<Map<number, number>> {
+  const [rows] = await getPool().query<RowDataPacket[]>(
+    `SELECT mv.project_relative_id AS pid, SUM(-mv.delta * mv.ek_price) AS val
+       FROM stock_movements mv
+      WHERE mv.project_relative_id IS NOT NULL
+      GROUP BY mv.project_relative_id`
+  );
+  const map = new Map<number, number>();
+  for (const r of rows as { pid: number | null; val: string | number | null }[]) {
+    if (r.pid == null) continue;
+    map.set(Number(r.pid), round2(num(r.val)));
+  }
+  return map;
+}
+
 /** Recent stock movements (newest first). */
 export async function listRecentMovements(limit = 50): Promise<StockMovement[]> {
   const [rows] = await getPool().query<MovementRow[]>(

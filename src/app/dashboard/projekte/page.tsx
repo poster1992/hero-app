@@ -7,25 +7,29 @@ import {
   getCalculatedByProject,
 } from "@/lib/hero-api";
 import { getCostNetByProject } from "@/lib/invoices";
+import { getBookedStockTotalsByProject } from "@/lib/materials";
 
 export default async function ProjektePage() {
   let rows: ProjectRow[] | null = null;
   let error: string | null = null;
   try {
-    const [projects, confirmationNet, invoiceNet, costNet, hours, calc] = await Promise.all([
-      getProjects(),
-      getConfirmationNetByProject(),
-      getInvoiceNetByProject(),
-      getCostNetByProject(),
-      getHoursByProject(),
-      getCalculatedByProject(),
-    ]);
+    const [projects, confirmationNet, invoiceNet, costNet, hours, calc, stockByProject] =
+      await Promise.all([
+        getProjects(),
+        getConfirmationNetByProject(),
+        getInvoiceNetByProject(),
+        getCostNetByProject(),
+        getHoursByProject(),
+        getCalculatedByProject(),
+        getBookedStockTotalsByProject().catch(() => new Map<number, number>()),
+      ]);
     rows = projects.map((p) => ({
       ...p,
       confirmationNet: confirmationNet.get(p.id)?.net ?? 0,
       confirmationDate: confirmationNet.get(p.id)?.date ?? null,
       invoiceNet: invoiceNet.get(p.id) ?? 0,
       costNet: costNet.get(p.id) ?? 0,
+      stockNet: p.relativeId != null ? stockByProject.get(p.relativeId) ?? 0 : 0,
       hours: hours.get(p.id) ?? 0,
       calcHours: calc.get(p.id)?.hours ?? 0,
       calcMaterial: calc.get(p.id)?.material ?? 0,
