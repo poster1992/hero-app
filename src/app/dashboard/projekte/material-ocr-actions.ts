@@ -3,12 +3,19 @@
 import { createHash } from "node:crypto";
 import Anthropic from "@anthropic-ai/sdk";
 import { getSession } from "@/lib/session";
+import { getUserByUsername } from "@/lib/users";
 import { getReceiptsInRange, type Receipt } from "@/lib/hero-api";
 import {
   getBelegArticlesMap,
   upsertBelegArticles,
   type BelegArticle,
 } from "@/lib/beleg-articles";
+import {
+  getMaterialMappings,
+  setMaterialMapping,
+  deleteMaterialMapping,
+  type MaterialMapping,
+} from "@/lib/material-mappings";
 
 const HERO_HOST = "https://login.hero-software.de";
 const MODEL = "claude-haiku-4-5";
@@ -215,4 +222,50 @@ export async function getProjectBelegArticles(projectMatchId: number): Promise<P
   const total = round2(items.reduce((s, i) => s + i.value, 0));
 
   return { items, total, belegeCount: belege.length, ocrCostEur: round2(ocrCostEur) };
+}
+
+/** Manuelle Soll/Ist-Zuordnungen eines Projekts laden. */
+export async function getProjectMaterialMappings(projectMatchId: number): Promise<MaterialMapping[]> {
+  if (!(await getSession())) return [];
+  try {
+    return await getMaterialMappings(projectMatchId);
+  } catch {
+    return [];
+  }
+}
+
+/** Speichert eine manuelle Zuordnung (Drag & Drop: Ist-Artikel → Soll-Artikel). */
+export async function saveProjectMaterialMapping(
+  projectMatchId: number,
+  istName: string,
+  sollName: string
+): Promise<{ ok: boolean }> {
+  const session = await getSession();
+  if (!session) return { ok: false };
+  let userId: number | null = null;
+  try {
+    userId = (await getUserByUsername(session.username))?.id ?? null;
+  } catch {
+    /* ignore */
+  }
+  try {
+    await setMaterialMapping({ projectMatchId, istName, sollName, userId });
+    return { ok: true };
+  } catch {
+    return { ok: false };
+  }
+}
+
+/** Entfernt eine manuelle Zuordnung wieder. */
+export async function removeProjectMaterialMapping(
+  projectMatchId: number,
+  istName: string
+): Promise<{ ok: boolean }> {
+  if (!(await getSession())) return { ok: false };
+  try {
+    await deleteMaterialMapping(projectMatchId, istName);
+    return { ok: true };
+  } catch {
+    return { ok: false };
+  }
 }

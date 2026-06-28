@@ -24,6 +24,9 @@ import {
 } from "@/app/dashboard/projekte/receipts-actions";
 import {
   getProjectBelegArticles,
+  getProjectMaterialMappings,
+  saveProjectMaterialMapping,
+  removeProjectMaterialMapping,
   type ProjectBelegMaterials,
 } from "@/app/dashboard/projekte/material-ocr-actions";
 import type { ProjectMaterialCalculation } from "@/lib/hero-api";
@@ -70,6 +73,8 @@ interface MergedMatRow {
   istValue: number;
   /** Abweichende Ist-Artikelnamen, die per Ähnlichkeit zugeordnet wurden. */
   istAltNames: string[];
+  /** Manuell (Drag & Drop) zugeordnete Ist-Artikelnamen. */
+  manualAltNames: string[];
 }
 
 /** Generische Ist-Position (aus Lagerbuchung ODER Beleg-OCR). */
@@ -125,37 +130,58 @@ const MATCH_THRESHOLD = 0.6;
  * Ist-Artikel werden per Ähnlichkeits-/Wahrscheinlichkeitsprüfung dem passenden
  * Soll-Artikel zugeordnet (statt nur bei exakt gleichem Namen).
  */
-function mergeMaterials(calc: ProjectMaterialCalculation | null, istItems: IstItem[]): MergedMatRow[] {
+function mergeMaterials(
+  calc: ProjectMaterialCalculation | null,
+  istItems: IstItem[],
+  manualMap: Map<string, string>
+): MergedMatRow[] {
   const rows: MergedMatRow[] = [];
+  const newRow = (name: string, unit: string | null): MergedMatRow => ({
+    name,
+    unit,
+    sollQty: 0,
+    sollEk: 0,
+    istQty: 0,
+    istValue: 0,
+    istAltNames: [],
+    manualAltNames: [],
+  });
 
   // 1) Soll-Artikel als Basiszeilen (gleiche Bezeichnung zusammengefasst).
   for (const it of calc?.items ?? []) {
     const found = rows.find((r) => normKey(r.name) === normKey(it.name));
-    if (found) {
-      found.sollQty += it.quantity;
-      found.sollEk += it.lineTotal;
-      if (!found.unit) found.unit = it.unit;
-    } else {
-      rows.push({
-        name: it.name,
-        unit: it.unit,
-        sollQty: it.quantity,
-        sollEk: it.lineTotal,
-        istQty: 0,
-        istValue: 0,
-        istAltNames: [],
-      });
-    }
+    const r = found ?? rows[rows.push(newRow(it.name, it.unit)) - 1];
+    r.sollQty += it.quantity;
+    r.sollEk += it.lineTotal;
+    if (!r.unit) r.unit = it.unit;
   }
 
-  // 2) Ist-Artikel der wahrscheinlichsten Zeile zuordnen (Soll-Zeilen bevorzugt).
+  // 2) Ist-Artikel zuordnen: zuerst manuelle Zuordnung, sonst Ähnlichkeit.
   for (const it of istItems) {
+    const istKey = normKey(it.name);
+
+    // a) Manuelle (gespeicherte) Zuordnung hat Vorrang.
+    const mappedSollKey = manualMap.get(istKey);
+    if (mappedSollKey) {
+      const target = rows.find((r) => normKey(r.name) === mappedSollKey);
+      if (target) {
+        target.istQty += it.quantity;
+        target.istValue += it.value;
+        if (!target.unit) target.unit = it.unit;
+        if (normKey(target.name) !== istKey && !target.manualAltNames.includes(it.name)) {
+          target.manualAltNames.push(it.name);
+        }
+        continue;
+      }
+    }
+
+    // b) Automatische Ähnlichkeits-Zuordnung (Soll-Zeilen bevorzugt).
     let best: MergedMatRow | null = null;
     let bestScore = MATCH_THRESHOLD;
     for (const r of rows) {
       const score = articleSimilarity(r.name, it.name);
       if (score < MATCH_THRESHOLD) continue;
-      const adj = score + (r.sollQty > 0 || r.sollEk > 0 ? 0.001 : 0); // Soll-Zeilen leicht bevorzugen
+      const adj = score + (r.sollQty > 0 || r.sollEk > 0 ? 0.001 : 0);
       if (adj > bestScore) {
         bestScore = adj;
         best = r;
@@ -165,19 +191,14 @@ function mergeMaterials(calc: ProjectMaterialCalculation | null, istItems: IstIt
       best.istQty += it.quantity;
       best.istValue += it.value;
       if (!best.unit) best.unit = it.unit;
-      if (normKey(best.name) !== normKey(it.name) && !best.istAltNames.includes(it.name)) {
+      if (normKey(best.name) !== istKey && !best.istAltNames.includes(it.name)) {
         best.istAltNames.push(it.name);
       }
     } else {
-      rows.push({
-        name: it.name,
-        unit: it.unit,
-        sollQty: 0,
-        sollEk: 0,
-        istQty: it.quantity,
-        istValue: it.value,
-        istAltNames: [],
-      });
+      const r = newRow(it.name, it.unit);
+      r.istQty = it.quantity;
+      r.istValue = it.value;
+      rows.push(r);
     }
   }
 
@@ -204,6 +225,10 @@ export default function ProjectDetailModal({
   const [loadingBookedMat, setLoadingBookedMat] = useState(false);
   const [belegMat, setBelegMat] = useState<ProjectBelegMaterials | null>(null);
   const [loadingBelegMat, setLoadingBelegMat] = useState(false);
+  // Manuelle Soll/Ist-Zuordnungen (ist_key → soll_key), per Drag & Drop, persistiert.
+  const [manualMap, setManualMap] = useState<Map<string, string>>(new Map());
+  const [dragName, setDragName] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [emailing, setEmailing] = useState(false);
 
   useEffect(() => {
@@ -249,6 +274,14 @@ export default function ProjectDetailModal({
       .then((m) => !cancelled && setBelegMat(m))
       .catch(() => !cancelled && setBelegMat({ items: [], total: 0, belegeCount: 0, ocrCostEur: 0 }))
       .finally(() => !cancelled && setLoadingBelegMat(false));
+    // Manuelle Zuordnungen laden.
+    setManualMap(new Map());
+    getProjectMaterialMappings(project.id)
+      .then((rows) => {
+        if (cancelled) return;
+        setManualMap(new Map(rows.map((r) => [r.istKey, r.sollKey])));
+      })
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
@@ -276,6 +309,26 @@ export default function ProjectDetailModal({
   const istLabor = p.hours * rate;
   const sollErtrag = p.confirmationNet - p.calcMaterial - p.sollLabor;
   const istErtrag = p.invoiceNet - p.costNet - istLabor;
+
+  // Manuelle Zuordnung speichern (Drag Ist-Artikel → Drop auf Soll-Artikel).
+  const assignMapping = (istName: string, sollName: string) => {
+    if (!istName || normKey(istName) === normKey(sollName)) return;
+    setManualMap((prev) => {
+      const next = new Map(prev);
+      next.set(normKey(istName), normKey(sollName));
+      return next;
+    });
+    void saveProjectMaterialMapping(p.id, istName, sollName);
+  };
+  // Manuelle Zuordnung wieder lösen.
+  const unassignMapping = (istName: string) => {
+    setManualMap((prev) => {
+      const next = new Map(prev);
+      next.delete(normKey(istName));
+      return next;
+    });
+    void removeProjectMaterialMapping(p.id, istName);
+  };
 
   // Drucken: Dokumenttitel temporär umstellen, damit "HERO Dashboard" nicht in
   // der Browser-Druckkopfzeile erscheint.
@@ -724,7 +777,11 @@ export default function ProjectDetailModal({
                 })),
                 ...(belegMat?.items ?? []),
               ];
-              const rows = mergeMaterials(calcMat, istItems);
+              const rows = mergeMaterials(calcMat, istItems, manualMap);
+              const sollRows = rows.filter((r) => r.sollEk > 0 || r.sollQty > 0);
+              const hasUnmatched = rows.some(
+                (r) => r.sollEk === 0 && r.sollQty === 0 && (r.istValue !== 0 || r.istQty !== 0)
+              );
               // Tabelle nicht auf das (langsamere) Beleg-OCR warten lassen.
               const loading = loadingCalcMat || loadingBookedMat;
               const sollTotal = calcMat?.materialTotal ?? 0;
@@ -742,6 +799,12 @@ export default function ProjectDetailModal({
                       )}
                     </div>
                   </div>
+                  {hasUnmatched && sollRows.length > 0 && (
+                    <p className="mb-1 text-xs text-gray-400">
+                      Tipp: Nicht zugeordnete Ist-Artikel (unten, gestrichelt) per Drag &amp; Drop auf
+                      den passenden Soll-Artikel ziehen – die Zuordnung wird gespeichert.
+                    </p>
+                  )}
                   {loading ? (
                     <p className="rounded-lg border border-gray-200 px-4 py-3 text-sm text-gray-500">
                       Material wird geladen …
@@ -773,30 +836,82 @@ export default function ProjectDetailModal({
                           </tr>
                         </thead>
                         <tbody>
-                          {rows.map((r, i) => (
-                            <tr key={i} className="border-b border-gray-100 last:border-0">
-                              <td className="px-3 py-2 text-gray-800">
-                                {r.name}
-                                {r.istAltNames.length > 0 && (
-                                  <span className="mt-0.5 block text-xs text-gray-400">
-                                    ≈ {r.istAltNames.join(", ")}
+                          {rows.map((r, i) => {
+                            const isSoll = r.sollEk > 0 || r.sollQty > 0;
+                            const isIstOnly = !isSoll && (r.istValue !== 0 || r.istQty !== 0);
+                            const isDropTarget = dropTarget === r.name && dragName != null && isSoll;
+                            return (
+                              <tr
+                                key={i}
+                                draggable={isIstOnly}
+                                onDragStart={
+                                  isIstOnly
+                                    ? (e) => {
+                                        setDragName(r.name);
+                                        e.dataTransfer.effectAllowed = "move";
+                                      }
+                                    : undefined
+                                }
+                                onDragEnd={isIstOnly ? () => { setDragName(null); setDropTarget(null); } : undefined}
+                                onDragOver={
+                                  isSoll && dragName
+                                    ? (e) => { e.preventDefault(); setDropTarget(r.name); }
+                                    : undefined
+                                }
+                                onDragLeave={isSoll ? () => setDropTarget((t) => (t === r.name ? null : t)) : undefined}
+                                onDrop={
+                                  isSoll && dragName
+                                    ? (e) => {
+                                        e.preventDefault();
+                                        assignMapping(dragName, r.name);
+                                        setDragName(null);
+                                        setDropTarget(null);
+                                      }
+                                    : undefined
+                                }
+                                className={`border-b border-gray-100 last:border-0 ${
+                                  isIstOnly ? "cursor-grab border-dashed bg-amber-50/40" : ""
+                                } ${isDropTarget ? "ring-2 ring-inset ring-brand-red/60" : ""}`}
+                              >
+                                <td className="px-3 py-2 text-gray-800">
+                                  <span className="flex items-center gap-1.5">
+                                    {isIstOnly && <span className="text-gray-300" aria-hidden>⠿</span>}
+                                    <span>{r.name}</span>
                                   </span>
-                                )}
-                              </td>
-                              <td className="border-l border-gray-100 px-3 py-2 text-right tabular-nums text-gray-600">
-                                {r.sollQty ? `${hours.format(r.sollQty)}${r.unit ? ` ${r.unit}` : ""}` : "—"}
-                              </td>
-                              <td className="px-3 py-2 text-right tabular-nums text-gray-700">
-                                {r.sollEk ? euro.format(r.sollEk) : "—"}
-                              </td>
-                              <td className="border-l border-gray-100 px-3 py-2 text-right tabular-nums text-gray-600">
-                                {r.istQty ? `${hours.format(r.istQty)}${r.unit ? ` ${r.unit}` : ""}` : "—"}
-                              </td>
-                              <td className="px-3 py-2 text-right tabular-nums text-gray-700">
-                                {r.istValue ? euro.format(r.istValue) : "—"}
-                              </td>
-                            </tr>
-                          ))}
+                                  {r.istAltNames.length > 0 && (
+                                    <span className="mt-0.5 block text-xs text-gray-400">
+                                      ≈ {r.istAltNames.join(", ")}
+                                    </span>
+                                  )}
+                                  {r.manualAltNames.map((alt) => (
+                                    <span key={alt} className="mt-0.5 flex items-center gap-1 text-xs text-emerald-600">
+                                      ↳ {alt}
+                                      <button
+                                        type="button"
+                                        onClick={() => unassignMapping(alt)}
+                                        title="Zuordnung lösen"
+                                        className="text-gray-300 transition-colors hover:text-brand-red"
+                                      >
+                                        ✕
+                                      </button>
+                                    </span>
+                                  ))}
+                                </td>
+                                <td className="border-l border-gray-100 px-3 py-2 text-right tabular-nums text-gray-600">
+                                  {r.sollQty ? `${hours.format(r.sollQty)}${r.unit ? ` ${r.unit}` : ""}` : "—"}
+                                </td>
+                                <td className="px-3 py-2 text-right tabular-nums text-gray-700">
+                                  {r.sollEk ? euro.format(r.sollEk) : "—"}
+                                </td>
+                                <td className="border-l border-gray-100 px-3 py-2 text-right tabular-nums text-gray-600">
+                                  {r.istQty ? `${hours.format(r.istQty)}${r.unit ? ` ${r.unit}` : ""}` : "—"}
+                                </td>
+                                <td className="px-3 py-2 text-right tabular-nums text-gray-700">
+                                  {r.istValue ? euro.format(r.istValue) : "—"}
+                                </td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
                         <tfoot>
                           <tr className="border-t border-gray-200 bg-gray-50 font-semibold text-gray-900">
