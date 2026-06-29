@@ -293,6 +293,11 @@ export async function setTaskStatus(
   await addHistory(id, byUserId, "status", `Status: ${taskStatusLabel(status)}`);
 }
 
+/** Adds a free-text note (comment) to a task and logs it in the history. */
+export async function addTaskNote(id: number, byUserId: number, note: string): Promise<void> {
+  await addHistory(id, byUserId, "note", note);
+}
+
 /** Forwards a task to another person (adds them as assignee) and logs it. */
 export async function forwardTask(
   id: number,

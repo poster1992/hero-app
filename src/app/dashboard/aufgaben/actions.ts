@@ -8,8 +8,11 @@ import {
   createTask,
   setTaskStatus,
   forwardTask,
+  addTaskNote,
   getTaskById,
+  taskStatusLabel,
   TASK_STATUSES,
+  type Task,
   type TaskStatus,
 } from "@/lib/tasks";
 
@@ -62,6 +65,41 @@ async function notifyAssignees(
           link +
           `\n\n— FLOORTEC Dashboard`;
         return sendMail(r.email as string, `${opts.subject}: ${opts.title}`, text);
+      })
+  );
+}
+
+/**
+ * Sendet dem ERSTELLER einer Aufgabe eine Rückmeldung (Notiz/Ereignis) per Mail.
+ * Eigene Aktionen des Erstellers lösen keine Mail aus.
+ */
+async function notifyCreator(
+  task: Task,
+  actorId: number,
+  opts: { subject: string; eventLine: string; note?: string | null; fromName: string }
+): Promise<void> {
+  if (task.createdById === actorId) return;
+  const recipients = await getUsersForNotification([task.createdById]);
+  const appUrl = process.env.APP_URL?.replace(/\/$/, "");
+  const link = appUrl ? `\n\nZur Aufgabe: ${appUrl}/dashboard/aufgaben` : "";
+  const projectLabel = task.projectName
+    ? `${task.projectRelativeId != null ? `#${task.projectRelativeId} ` : ""}${task.projectName}`
+    : null;
+  await Promise.all(
+    recipients
+      .filter((r) => r.email)
+      .map((r) => {
+        const text =
+          `Hallo ${r.name},\n\n` +
+          `Rückmeldung zu deiner Aufgabe „${task.title}":\n\n` +
+          `${opts.eventLine}\n` +
+          (opts.note ? `Notiz: ${opts.note}\n` : "") +
+          `Von: ${opts.fromName}\n` +
+          (projectLabel ? `Projekt: ${projectLabel}\n` : "") +
+          `Fällig: ${formatDueDate(task.dueDate)}\n` +
+          link +
+          `\n\n— FLOORTEC Dashboard`;
+        return sendMail(r.email as string, `${opts.subject}: ${task.title}`, text);
       })
   );
 }
@@ -142,6 +180,42 @@ export async function setStatusAction(formData: FormData): Promise<void> {
   if (!mayChange) return;
 
   await setTaskStatus(id, status, meId);
+
+  // Rückmeldung an den Ersteller (sofern nicht er selbst geändert hat).
+  await notifyCreator(task, meId, {
+    subject: "Aufgabe aktualisiert",
+    eventLine: `Status geändert auf „${taskStatusLabel(status)}".`,
+    fromName: me.displayName || me.username,
+  });
+
+  revalidatePath(PATH);
+}
+
+export async function addNoteAction(formData: FormData): Promise<void> {
+  const me = await currentUser();
+  if (!me) return;
+  const meId = me.id;
+
+  const id = Number(formData.get("id"));
+  const note = String(formData.get("note") ?? "").trim();
+  if (!Number.isFinite(id) || !note) return;
+
+  // Nur Ersteller oder eine zugewiesene Person dürfen eine Notiz hinzufügen.
+  const task = await getTaskById(id);
+  if (!task) return;
+  const mayNote = task.createdById === meId || task.assignees.some((a) => a.id === meId);
+  if (!mayNote) return;
+
+  await addTaskNote(id, meId, note.slice(0, 2000));
+
+  // Rückmeldung an den Ersteller (sofern nicht er selbst die Notiz schrieb).
+  await notifyCreator(task, meId, {
+    subject: "Neue Notiz zur Aufgabe",
+    eventLine: "Es wurde eine Notiz hinzugefügt.",
+    note,
+    fromName: me.displayName || me.username,
+  });
+
   revalidatePath(PATH);
 }
 
@@ -162,6 +236,9 @@ export async function forwardAction(formData: FormData): Promise<void> {
 
   await forwardTask(id, meId, toUserId);
 
+  const [toUser] = await getUsersForNotification([toUserId]);
+  const toName = toUser?.name ?? `#${toUserId}`;
+
   // Benachrichtigung an die Person, an die weitergeleitet wurde.
   await notifyAssignees([toUserId], {
     subject: "Aufgabe weitergeleitet",
@@ -171,6 +248,13 @@ export async function forwardAction(formData: FormData): Promise<void> {
     projectLabel: task.projectName
       ? `${task.projectRelativeId != null ? `#${task.projectRelativeId} ` : ""}${task.projectName}`
       : null,
+    fromName: me.displayName || me.username,
+  });
+
+  // Rückmeldung an den Ersteller (sofern nicht er selbst weitergeleitet hat).
+  await notifyCreator(task, meId, {
+    subject: "Aufgabe weitergeleitet",
+    eventLine: `Weitergeleitet an ${toName}.`,
     fromName: me.displayName || me.username,
   });
 

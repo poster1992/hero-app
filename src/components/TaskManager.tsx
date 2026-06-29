@@ -5,6 +5,7 @@ import {
   createTaskAction,
   setStatusAction,
   forwardAction,
+  addNoteAction,
   type CreateTaskState,
 } from "@/app/dashboard/aufgaben/actions";
 import { decideReviewAction } from "@/app/dashboard/belege/review-actions";
@@ -250,16 +251,37 @@ function TaskCard({
         </form>
       </div>
 
+      {/* Notiz / Rückmeldung hinzufügen (geht als Meldung an den Ersteller) */}
+      <form action={addNoteAction} className="mt-3 flex items-end gap-2">
+        <input type="hidden" name="id" value={task.id} />
+        <textarea
+          name="note"
+          rows={1}
+          required
+          placeholder="Notiz / Rückmeldung … (geht an den Ersteller)"
+          className="min-h-[2.25rem] flex-1 resize-y rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-brand-red/60"
+        />
+        <button
+          type="submit"
+          className="shrink-0 rounded-md border border-gray-300 px-2.5 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900"
+        >
+          💬 Notiz
+        </button>
+      </form>
+
       {task.history.length > 0 && (
         <details className="mt-3">
           <summary className="cursor-pointer text-xs font-medium text-gray-500 hover:text-gray-700">
-            Historie ({task.history.length})
+            Verlauf &amp; Notizen ({task.history.length})
           </summary>
           <ul className="mt-2 space-y-1 border-l-2 border-gray-200 pl-3">
             {task.history.map((h) => (
-              <li key={h.id} className="text-xs text-gray-600">
+              <li
+                key={h.id}
+                className={`text-xs ${h.action === "note" ? "text-gray-800" : "text-gray-600"}`}
+              >
                 <span className="text-gray-400">{formatDateTime(h.at)}</span>
-                {h.byName ? ` · ${h.byName}` : ""} — {h.detail}
+                {h.byName ? ` · ${h.byName}` : ""} — {h.action === "note" ? <>💬 {h.detail}</> : h.detail}
               </li>
             ))}
           </ul>
