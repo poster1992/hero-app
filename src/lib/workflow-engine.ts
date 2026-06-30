@@ -29,6 +29,7 @@ interface WfEvent {
   ref: string;
   supplier: string; // für filterSupplier (Lieferant/Kunde)
   amount: number; // für filterMinAmount
+  hasDoc?: boolean; // Beleg hat ein Dokument (für „manuelle Belege ausschließen")
   ageDays?: number; // für Altersfilter
   eventDate?: string | null; // YYYY-MM-DD (Beleg- bzw. Angebotsdatum), für „gilt ab"
   fill: (tpl: string) => string; // Titel-Vorlage füllen
@@ -85,6 +86,7 @@ async function collectEvents(triggerKey: string): Promise<WfEvent[]> {
         ref: r.id,
         supplier,
         amount: r.value || 0,
+        hasDoc: !!r.fileUpload?.src,
         eventDate: r.receiptDate ? r.receiptDate.slice(0, 10) : null,
         fill: (tpl: string) => fillBeleg(tpl, r, supplier),
         review: {
@@ -141,6 +143,7 @@ function effectiveValidFrom(triggerKey: string, wf: Workflow): string | null {
 function matchesFilters(triggerKey: string, ev: WfEvent, cfg: WorkflowConfig): boolean {
   if (cfg.filterSupplier && !ev.supplier.toLowerCase().includes(cfg.filterSupplier.toLowerCase())) return false;
   if (cfg.filterMinAmount != null && ev.amount < cfg.filterMinAmount) return false;
+  if (cfg.excludeManual && triggerKey === "new_beleg" && ev.hasDoc === false) return false;
   if (triggerKey === "angebot_alt_ohne_ab") {
     const threshold = cfg.minAgeDays != null ? cfg.minAgeDays : 14;
     if ((ev.ageDays ?? 0) < threshold) return false;

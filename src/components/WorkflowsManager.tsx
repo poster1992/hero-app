@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState, useTransition } from "react";
+import { useActionState, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   createWorkflowAction,
@@ -46,15 +46,51 @@ function fmtStamp(s: string | null): string {
   return d.toLocaleString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
+/** Auswahlliste der Lieferanten (Mehrfachauswahl per Checkbox, durchsuchbar). */
+function SupplierMultiSelect({ suppliers, selected }: { suppliers: string[]; selected: string[] }) {
+  const [chosen, setChosen] = useState<string[]>(selected);
+  const [q, setQ] = useState("");
+  // Bereits gewählte Lieferanten immer zeigen, auch wenn sie nicht (mehr) in der Liste sind.
+  const all = useMemo(() => Array.from(new Set([...selected, ...suppliers])), [suppliers, selected]);
+  const filtered = all.filter((s) => s.toLowerCase().includes(q.toLowerCase()));
+  const toggle = (s: string) => setChosen((c) => (c.includes(s) ? c.filter((x) => x !== s) : [...c, s]));
+  return (
+    <div>
+      {chosen.map((s) => (
+        <input key={s} type="hidden" name="excludedSuppliers" value={s} />
+      ))}
+      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Lieferant suchen …" className={inputClass} />
+      <div className="mt-1 max-h-44 overflow-y-auto rounded-md border border-gray-300">
+        {filtered.length === 0 ? (
+          <p className="px-3 py-2 text-xs text-gray-400">Keine Lieferanten gefunden.</p>
+        ) : (
+          filtered.map((s) => (
+            <label
+              key={s}
+              className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+            >
+              <input type="checkbox" checked={chosen.includes(s)} onChange={() => toggle(s)} />
+              <span className="truncate">{s}</span>
+            </label>
+          ))
+        )}
+      </div>
+      <p className="mt-1 text-xs text-gray-400">{chosen.length > 0 ? `${chosen.length} ausgewählt` : "Keine ausgewählt"}</p>
+    </div>
+  );
+}
+
 /** Felder einer Regel (Auslöser → Aktion „Aufgabe erstellen"). */
 function RuleFields({
   users,
+  suppliers,
   name,
   cfg,
   triggerKey = "new_beleg",
   editableTrigger = false,
 }: {
   users: UserOption[];
+  suppliers: string[];
   name?: string;
   cfg?: Partial<WorkflowConfig>;
   triggerKey?: string;
@@ -192,6 +228,16 @@ function RuleFields({
         </div>
       </div>
 
+      {/* Manuelle Belege ausschließen (nur Beleg-Auslöser) */}
+      {trigger === "new_beleg" && (
+        <div className="sm:col-span-2">
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <input type="checkbox" name="excludeManual" value="1" defaultChecked={cfg?.excludeManual ?? false} />
+            Manuelle Belege ausschließen <span className="text-gray-400">(Belege ohne hinterlegtes Dokument)</span>
+          </label>
+        </div>
+      )}
+
       {/* Split nach Lieferant: ausgewaehlte Lieferanten gehen an einen anderen Bearbeiter */}
       <div className="sm:col-span-2 rounded-md border border-gray-200 p-3">
         <p className="mb-2 text-sm font-medium text-gray-700">
@@ -200,12 +246,7 @@ function RuleFields({
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <label className="mb-1 block text-sm text-gray-600">Ausgeschlossene Lieferanten</label>
-            <input
-              name="excludedSuppliers"
-              defaultValue={(cfg?.excludedSuppliers ?? []).join(", ")}
-              placeholder="z.B. Circle, Amazon (kommagetrennt)"
-              className={inputClass}
-            />
+            <SupplierMultiSelect suppliers={suppliers} selected={cfg?.excludedSuppliers ?? []} />
           </div>
           <div>
             <label className="mb-1 block text-sm text-gray-600">… gehen stattdessen an</label>
@@ -229,7 +270,7 @@ function RuleFields({
   );
 }
 
-function WorkflowRow({ wf, users }: { wf: Workflow; users: UserOption[] }) {
+function WorkflowRow({ wf, users, suppliers }: { wf: Workflow; users: UserOption[]; suppliers: string[] }) {
   const [editing, setEditing] = useState(false);
   const assignee = users.find((u) => u.id === wf.config.assigneeId)?.name ?? `#${wf.config.assigneeId}`;
   const excludedName = wf.config.excludedAssigneeId
@@ -241,7 +282,7 @@ function WorkflowRow({ wf, users }: { wf: Workflow; users: UserOption[] }) {
       <li className="bg-gray-50 px-5 py-4">
         <form action={updateWorkflowAction} className="flex flex-col gap-3">
           <input type="hidden" name="id" value={wf.id} />
-          <RuleFields users={users} name={wf.name} cfg={wf.config} triggerKey={wf.triggerKey} />
+          <RuleFields users={users} suppliers={suppliers} name={wf.name} cfg={wf.config} triggerKey={wf.triggerKey} />
           <div className="flex items-center gap-2">
             <button type="submit" className="rounded-md bg-brand-red px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90">
               Speichern
@@ -272,6 +313,7 @@ function WorkflowRow({ wf, users }: { wf: Workflow; users: UserOption[] }) {
             : ""}
           {wf.config.filterMinAmount != null ? ` · ab ${wf.config.filterMinAmount} €` : ""}
           {wf.config.validFrom ? ` · gültig ab ${wf.config.validFrom.split("-").reverse().join(".")}` : ""}
+          {wf.config.excludeManual ? " · ohne manuelle Belege" : ""}
           {wf.config.excludedSuppliers.length > 0 && excludedName
             ? ` · Split: „${wf.config.excludedSuppliers.join(", ")}" → ${excludedName}`
             : ""}
@@ -344,10 +386,11 @@ function FlowArrow() {
   );
 }
 
-/** Ablauf-Diagramm einer Regel: Auslöser → (Bedingung) → Aktion. */
+/** Ablauf-Diagramm einer Regel: Auslöser → (Bedingung) → Aktion (mit Lieferanten-Split). */
 function WorkflowFlow({ wf, users }: { wf: Workflow; users: UserOption[] }) {
   const assignee = users.find((u) => u.id === wf.config.assigneeId)?.name ?? `#${wf.config.assigneeId}`;
   const isAngebot = wf.triggerKey === "angebot_alt_ohne_ab";
+  const isReview = wf.config.actionType === "review";
   const triggerLines = isAngebot
     ? ["Angebot offen", `älter ${wf.config.minAgeDays ?? 21} Tage`, "kein AB"]
     : ["Neuer Beleg", "Eingangsrechnung"];
@@ -355,6 +398,17 @@ function WorkflowFlow({ wf, users }: { wf: Workflow; users: UserOption[] }) {
   if (wf.config.filterSupplier)
     conditions.push(`${isAngebot ? "Kunde" : "Lieferant"} „${wf.config.filterSupplier}"`);
   if (wf.config.filterMinAmount != null) conditions.push(`ab ${wf.config.filterMinAmount} €`);
+  if (wf.config.excludeManual) conditions.push("ohne manuelle Belege");
+
+  const excludedName = wf.config.excludedAssigneeId
+    ? users.find((u) => u.id === wf.config.excludedAssigneeId)?.name ?? `#${wf.config.excludedAssigneeId}`
+    : null;
+  const hasSplit = wf.config.excludedSuppliers.length > 0 && !!excludedName;
+  const actionVerb = isReview ? "Prüfung" : "Aufgabe";
+  const mainAction = isReview
+    ? ["Rechnungsprüfung", "Beleg → Prüfung", `Prüfer ${assignee}`]
+    : [`Aufgabe an ${assignee}`, `fällig in ${wf.config.dueOffsetDays} Tagen`];
+
   return (
     <div className={`rounded-lg border px-4 py-3 ${wf.active ? "border-gray-200 bg-white" : "border-gray-200 bg-gray-50 opacity-70"}`}>
       <div className="mb-2 flex items-center gap-2">
@@ -371,15 +425,27 @@ function WorkflowFlow({ wf, users }: { wf: Workflow; users: UserOption[] }) {
             <FlowArrow />
           </>
         )}
-        <FlowNode
-          kind="action"
-          title="Aktion"
-          lines={
-            wf.config.actionType === "review"
-              ? ["Rechnungsprüfung", `Beleg → Prüfung`, `Prüfer ${assignee}`]
-              : [`Aufgabe an ${assignee}`, `fällig in ${wf.config.dueOffsetDays} Tagen`]
-          }
-        />
+        {hasSplit ? (
+          <>
+            <FlowNode
+              kind="condition"
+              title="Lieferanten-Split"
+              lines={["Lieferant ausgewählt?", `${wf.config.excludedSuppliers.length} Lieferant(en)`]}
+            />
+            <div className="flex shrink-0 flex-col justify-center gap-2 self-stretch">
+              <div className="flex items-center gap-1">
+                <span className="text-xs font-medium text-emerald-400">ja →</span>
+                <FlowNode kind="action" title={`${actionVerb} (Split)`} lines={[`${isReview ? "Prüfer" : "an"} ${excludedName}`, wf.config.excludedSuppliers.join(", ")]} />
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="text-xs font-medium text-gray-400">sonst →</span>
+                <FlowNode kind="action" title="Aktion" lines={mainAction} />
+              </div>
+            </div>
+          </>
+        ) : (
+          <FlowNode kind="action" title="Aktion" lines={mainAction} />
+        )}
       </div>
     </div>
   );
@@ -389,10 +455,12 @@ export default function WorkflowsManager({
   workflows,
   users,
   log,
+  suppliers,
 }: {
   workflows: Workflow[];
   users: UserOption[];
   log: WorkflowLogItem[];
+  suppliers: string[];
 }) {
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<"liste" | "diagramm">("liste");
@@ -453,7 +521,7 @@ export default function WorkflowsManager({
 
         {open && (
           <form action={formAction} className="flex flex-col gap-3 border-b border-gray-200 px-5 py-4">
-            <RuleFields users={users} editableTrigger />
+            <RuleFields users={users} suppliers={suppliers} editableTrigger />
 
             <div className="flex items-center gap-3">
               <button type="submit" disabled={pending} className="rounded-md bg-brand-red px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
@@ -470,7 +538,7 @@ export default function WorkflowsManager({
         ) : view === "liste" ? (
           <ul className="divide-y divide-gray-200">
             {workflows.map((wf) => (
-              <WorkflowRow key={wf.id} wf={wf} users={users} />
+              <WorkflowRow key={wf.id} wf={wf} users={users} suppliers={suppliers} />
             ))}
           </ul>
         ) : (

@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
 import { listUsers } from "@/lib/users";
 import { listWorkflows, listWorkflowLog, type Workflow, type WorkflowLogItem } from "@/lib/workflows";
+import { getDistinctSuppliers } from "@/lib/invoices";
 import WorkflowsManager from "@/components/WorkflowsManager";
 
 export default async function WorkflowsPage() {
@@ -19,6 +20,7 @@ export default async function WorkflowsPage() {
   let workflows: Workflow[] = [];
   let log: WorkflowLogItem[] = [];
   let users: { id: number; name: string }[] = [];
+  let suppliers: string[] = [];
   try {
     const [wf, lg, us] = await Promise.all([listWorkflows(), listWorkflowLog(30), listUsers()]);
     workflows = wf;
@@ -26,6 +28,11 @@ export default async function WorkflowsPage() {
     users = us.filter((u) => u.isActive).map((u) => ({ id: u.id, name: u.displayName || u.username }));
   } catch {
     // leer lassen
+  }
+  try {
+    suppliers = await getDistinctSuppliers();
+  } catch {
+    // Lieferantenliste optional
   }
 
   return (
@@ -37,7 +44,7 @@ export default async function WorkflowsPage() {
           Aufgabe erstellen. Prüfung erfolgt bei App-Nutzung (alle paar Minuten).
         </p>
       </header>
-      <WorkflowsManager workflows={workflows} users={users} log={log} />
+      <WorkflowsManager workflows={workflows} users={users} log={log} suppliers={suppliers} />
     </div>
   );
 }

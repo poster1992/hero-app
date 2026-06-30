@@ -29,10 +29,12 @@ export interface WorkflowConfig {
   buttons: string[];
   /** Regel gilt erst ab diesem Datum (YYYY-MM-DD); nur Ereignisse ab hier lösen aus. */
   validFrom: string | null;
-  /** Split: Lieferanten (Teilstring), die an einen anderen Prüfer gehen. */
+  /** Split: Lieferanten (exakte Namen), die an einen anderen Prüfer gehen. */
   excludedSuppliers: string[];
   /** Prüfer/Bearbeiter für die ausgeschlossenen Lieferanten. */
   excludedAssigneeId: number | null;
+  /** Nur new_beleg: manuelle Belege (ohne Dokument) ausschließen. */
+  excludeManual: boolean;
 }
 
 export interface Workflow {
@@ -88,6 +90,7 @@ function parseConfig(value: unknown): WorkflowConfig {
       o.excludedAssigneeId != null && Number.isFinite(Number(o.excludedAssigneeId)) && Number(o.excludedAssigneeId) > 0
         ? Number(o.excludedAssigneeId)
         : null,
+    excludeManual: o.excludeManual === true,
   };
 }
 

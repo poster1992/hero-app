@@ -375,6 +375,21 @@ export function getCustomerName(receipt: Receipt): string {
   return name || "—";
 }
 
+/** Distinkte Lieferantennamen aus Eingangsbelegen der letzten ~2 Jahre (für Auswahllisten). */
+export async function getDistinctSuppliers(): Promise<string[]> {
+  const now = new Date();
+  const from = `${now.getUTCFullYear() - 2}-01-01T00:00:00Z`;
+  const to = `${now.getUTCFullYear() + 1}-12-31T23:59:59Z`;
+  const receipts = await getReceiptsInRange(from, to);
+  const set = new Set<string>();
+  for (const r of receipts) {
+    if (r.type !== "output") continue;
+    const name = getCustomerName(r);
+    if (name && name !== "—") set.add(name);
+  }
+  return Array.from(set).sort((a, b) => a.localeCompare(b, "de"));
+}
+
 export type InvoiceStatusTone = "paid" | "open" | "overdue";
 
 export interface InvoiceStatus {
