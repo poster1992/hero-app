@@ -18,6 +18,25 @@ interface UserOption {
 const inputClass =
   "w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-brand-red/60";
 
+const TRIGGER_OPTIONS = [
+  { key: "new_beleg", label: "Neuer Beleg (Eingangsrechnung)" },
+  { key: "angebot_alt_ohne_ab", label: "Angebot zu alt ohne AB (Pipeline 'Angebot offen')" },
+] as const;
+
+function triggerLabel(key: string): string {
+  return TRIGGER_OPTIONS.find((t) => t.key === key)?.label ?? key;
+}
+function placeholdersFor(key: string): string {
+  return key === "angebot_alt_ohne_ab"
+    ? "{projekt} {nr} {kunde} {betrag} {tage} {angebotsdatum}"
+    : "{nr} {lieferant} {betrag} {datum}";
+}
+function defaultTitleFor(key: string): string {
+  return key === "angebot_alt_ohne_ab"
+    ? "Angebot nachfassen: {projekt} ({tage} Tage alt)"
+    : "Beleg prüfen: {nr} – {lieferant}";
+}
+
 function fmtStamp(s: string | null): string {
   if (!s) return "";
   const d = new Date(s.replace(" ", "T"));
@@ -25,18 +44,60 @@ function fmtStamp(s: string | null): string {
   return d.toLocaleString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
-/** Felder für Auslöser „Neuer Beleg" → Aktion „Aufgabe erstellen". */
-function RuleFields({ users, name, cfg }: { users: UserOption[]; name?: string; cfg?: Partial<WorkflowConfig> }) {
+/** Felder einer Regel (Auslöser → Aktion „Aufgabe erstellen"). */
+function RuleFields({
+  users,
+  name,
+  cfg,
+  triggerKey = "new_beleg",
+  editableTrigger = false,
+}: {
+  users: UserOption[];
+  name?: string;
+  cfg?: Partial<WorkflowConfig>;
+  triggerKey?: string;
+  editableTrigger?: boolean;
+}) {
+  const [trigger, setTrigger] = useState(triggerKey);
+  const [title, setTitle] = useState(cfg?.title ?? defaultTitleFor(triggerKey));
+  const isAngebot = trigger === "angebot_alt_ohne_ab";
+
+  const onTriggerChange = (key: string) => {
+    // Standardtitel mitwechseln, solange der Nutzer ihn nicht angepasst hat.
+    if (title === defaultTitleFor(trigger)) setTitle(defaultTitleFor(key));
+    setTrigger(key);
+  };
+
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       <div className="sm:col-span-2">
         <label className="mb-1 block text-sm text-gray-600">Name der Regel *</label>
-        <input name="name" defaultValue={name ?? ""} required placeholder="z.B. Belegprüfung Büro" className={inputClass} />
+        <input name="name" defaultValue={name ?? ""} required placeholder="z.B. Angebote nachfassen" className={inputClass} />
       </div>
-      <div>
+      <div className="sm:col-span-2">
         <label className="mb-1 block text-sm text-gray-600">Auslöser</label>
-        <input value="Neuer Beleg (Eingangsrechnung)" disabled className={`${inputClass} opacity-60`} />
+        {editableTrigger ? (
+          <select name="triggerKey" value={trigger} onChange={(e) => onTriggerChange(e.target.value)} className={inputClass}>
+            {TRIGGER_OPTIONS.map((t) => (
+              <option key={t.key} value={t.key}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <>
+            <input type="hidden" name="triggerKey" value={trigger} />
+            <input value={triggerLabel(trigger)} disabled className={`${inputClass} opacity-60`} />
+          </>
+        )}
       </div>
+
+      {isAngebot && (
+        <div>
+          <label className="mb-1 block text-sm text-gray-600">Angebot älter als (Tage) *</label>
+          <input name="minAgeDays" type="number" min={1} defaultValue={cfg?.minAgeDays ?? 21} className={inputClass} />
+        </div>
+      )}
       <div>
         <label className="mb-1 block text-sm text-gray-600">Aufgabe an *</label>
         <select name="assigneeId" defaultValue={cfg?.assigneeId ?? ""} required className={inputClass}>
@@ -48,11 +109,12 @@ function RuleFields({ users, name, cfg }: { users: UserOption[]; name?: string; 
           ))}
         </select>
       </div>
+
       <div className="sm:col-span-2">
         <label className="mb-1 block text-sm text-gray-600">
-          Aufgaben-Titel <span className="text-gray-400">(Platzhalter: {"{nr} {lieferant} {betrag} {datum}"})</span>
+          Aufgaben-Titel <span className="text-gray-400">(Platzhalter: {placeholdersFor(trigger)})</span>
         </label>
-        <input name="title" defaultValue={cfg?.title ?? "Beleg prüfen: {nr} – {lieferant}"} className={inputClass} />
+        <input name="title" value={title} onChange={(e) => setTitle(e.target.value)} className={inputClass} />
       </div>
       <div className="sm:col-span-2">
         <label className="mb-1 block text-sm text-gray-600">Beschreibung (optional)</label>
@@ -64,11 +126,11 @@ function RuleFields({ users, name, cfg }: { users: UserOption[]; name?: string; 
       </div>
       <div className="grid grid-cols-2 gap-2">
         <div>
-          <label className="mb-1 block text-sm text-gray-600">Filter: Lieferant</label>
+          <label className="mb-1 block text-sm text-gray-600">Filter: {isAngebot ? "Kunde" : "Lieferant"}</label>
           <input name="filterSupplier" defaultValue={cfg?.filterSupplier ?? ""} placeholder="enthält …" className={inputClass} />
         </div>
         <div>
-          <label className="mb-1 block text-sm text-gray-600">Filter: ab Betrag €</label>
+          <label className="mb-1 block text-sm text-gray-600">Filter: ab {isAngebot ? "Angebotssumme" : "Betrag"} €</label>
           <input name="filterMinAmount" type="number" min={0} step="0.01" defaultValue={cfg?.filterMinAmount ?? ""} className={inputClass} />
         </div>
       </div>
@@ -85,7 +147,7 @@ function WorkflowRow({ wf, users }: { wf: Workflow; users: UserOption[] }) {
       <li className="bg-gray-50 px-5 py-4">
         <form action={updateWorkflowAction} className="flex flex-col gap-3">
           <input type="hidden" name="id" value={wf.id} />
-          <RuleFields users={users} name={wf.name} cfg={wf.config} />
+          <RuleFields users={users} name={wf.name} cfg={wf.config} triggerKey={wf.triggerKey} />
           <div className="flex items-center gap-2">
             <button type="submit" className="rounded-md bg-brand-red px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90">
               Speichern
@@ -105,9 +167,14 @@ function WorkflowRow({ wf, users }: { wf: Workflow; users: UserOption[] }) {
       <div className="min-w-0 flex-1">
         <p className="font-medium text-gray-900">{wf.name}</p>
         <p className="text-xs text-gray-500">
-          Neuer Beleg → Aufgabe an <span className="text-gray-700">{assignee}</span> · fällig in{" "}
+          {wf.triggerKey === "angebot_alt_ohne_ab"
+            ? `Angebot offen > ${wf.config.minAgeDays ?? 21} Tage ohne AB`
+            : "Neuer Beleg"}{" "}
+          → Aufgabe an <span className="text-gray-700">{assignee}</span> · fällig in{" "}
           {wf.config.dueOffsetDays} Tagen
-          {wf.config.filterSupplier ? ` · Lieferant „${wf.config.filterSupplier}"` : ""}
+          {wf.config.filterSupplier
+            ? ` · ${wf.triggerKey === "angebot_alt_ohne_ab" ? "Kunde" : "Lieferant"} „${wf.config.filterSupplier}"`
+            : ""}
           {wf.config.filterMinAmount != null ? ` · ab ${wf.config.filterMinAmount} €` : ""}
         </p>
       </div>
@@ -181,8 +248,13 @@ function FlowArrow() {
 /** Ablauf-Diagramm einer Regel: Auslöser → (Bedingung) → Aktion. */
 function WorkflowFlow({ wf, users }: { wf: Workflow; users: UserOption[] }) {
   const assignee = users.find((u) => u.id === wf.config.assigneeId)?.name ?? `#${wf.config.assigneeId}`;
+  const isAngebot = wf.triggerKey === "angebot_alt_ohne_ab";
+  const triggerLines = isAngebot
+    ? ["Angebot offen", `älter ${wf.config.minAgeDays ?? 21} Tage`, "kein AB"]
+    : ["Neuer Beleg", "Eingangsrechnung"];
   const conditions: string[] = [];
-  if (wf.config.filterSupplier) conditions.push(`Lieferant „${wf.config.filterSupplier}"`);
+  if (wf.config.filterSupplier)
+    conditions.push(`${isAngebot ? "Kunde" : "Lieferant"} „${wf.config.filterSupplier}"`);
   if (wf.config.filterMinAmount != null) conditions.push(`ab ${wf.config.filterMinAmount} €`);
   return (
     <div className={`rounded-lg border px-4 py-3 ${wf.active ? "border-gray-200 bg-white" : "border-gray-200 bg-gray-50 opacity-70"}`}>
@@ -192,7 +264,7 @@ function WorkflowFlow({ wf, users }: { wf: Workflow; users: UserOption[] }) {
         {!wf.active && <span className="text-xs text-gray-400">(inaktiv)</span>}
       </div>
       <div className="flex flex-wrap items-stretch gap-1 overflow-x-auto">
-        <FlowNode kind="trigger" title="Auslöser" lines={["Neuer Beleg", "Eingangsrechnung"]} />
+        <FlowNode kind="trigger" title="Auslöser" lines={triggerLines} />
         <FlowArrow />
         {conditions.length > 0 && (
           <>
@@ -256,7 +328,8 @@ export default function WorkflowsManager({
 
         {open && (
           <form action={formAction} className="flex flex-col gap-3 border-b border-gray-200 px-5 py-4">
-            <RuleFields users={users} />
+            <RuleFields users={users} editableTrigger />
+
             <div className="flex items-center gap-3">
               <button type="submit" disabled={pending} className="rounded-md bg-brand-red px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
                 {pending ? "Speichert …" : "Regel anlegen"}

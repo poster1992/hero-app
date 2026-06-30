@@ -8,6 +8,7 @@ import {
   updateWorkflow,
   setWorkflowActive,
   deleteWorkflow,
+  WORKFLOW_TRIGGER_KEYS,
   type WorkflowConfig,
 } from "@/lib/workflows";
 import { runWorkflowScan } from "@/lib/workflow-engine";
@@ -46,6 +47,7 @@ function readConfig(formData: FormData): WorkflowConfig {
     dueOffsetDays: num(formData.get("dueOffsetDays")) ?? 7,
     filterSupplier: String(formData.get("filterSupplier") ?? "").trim() || null,
     filterMinAmount: num(formData.get("filterMinAmount")),
+    minAgeDays: num(formData.get("minAgeDays")),
   };
 }
 
@@ -62,10 +64,14 @@ export async function createWorkflowAction(
   if (adminId == null) return { error: "Kein Zugriff." };
   const name = String(formData.get("name") ?? "").trim();
   if (!name) return { error: "Bitte einen Namen angeben." };
+  const triggerKey = String(formData.get("triggerKey") ?? "new_beleg");
+  if (!WORKFLOW_TRIGGER_KEYS.includes(triggerKey as (typeof WORKFLOW_TRIGGER_KEYS)[number])) {
+    return { error: "Unbekannter Auslöser." };
+  }
   const config = readConfig(formData);
   if (!config.assigneeId) return { error: "Bitte einen Mitarbeiter wählen." };
   try {
-    await createWorkflow({ name, triggerKey: "new_beleg", config, createdBy: adminId });
+    await createWorkflow({ name, triggerKey, config, createdBy: adminId });
   } catch {
     return { error: "Regel konnte nicht gespeichert werden." };
   }

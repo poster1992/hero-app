@@ -1,5 +1,5 @@
 import "server-only";
-import { getReceiptsInRange, type Receipt } from "./hero-api";
+import { getReceiptsInRange, getProjectPipeline, type Receipt } from "./hero-api";
 import { getCustomerName } from "./invoices";
 import { createTask } from "./tasks";
 import { sendPushToUsers } from "./push";
@@ -14,14 +14,25 @@ import {
   getSeenRefs,
   markSeen,
   addWorkflowLog,
+  WORKFLOW_TRIGGER_KEYS,
+  type WorkflowConfig,
 } from "./workflows";
 
-const TRIGGER = "new_beleg";
 const THROTTLE_MS = 5 * 60 * 1000;
+const MAX_PER_RUN = 25; // Schutz vor Flut beim ersten Lauf
 
 const euro = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
 
-function fillTemplate(tpl: string, r: Receipt, supplier: string): string {
+/** Ein Auslöser-Ereignis (z.B. ein neuer Beleg oder ein zu altes Angebot). */
+interface WfEvent {
+  ref: string;
+  supplier: string; // für filterSupplier (Lieferant/Kunde)
+  amount: number; // für filterMinAmount
+  ageDays?: number; // für Altersfilter
+  fill: (tpl: string) => string; // Titel-Vorlage füllen
+}
+
+function fillBeleg(tpl: string, r: Receipt, supplier: string): string {
   return tpl
     .replace(/\{nr\}/g, r.number || "")
     .replace(/\{lieferant\}/g, supplier || "")
@@ -29,26 +40,79 @@ function fillTemplate(tpl: string, r: Receipt, supplier: string): string {
     .replace(/\{datum\}/g, r.receiptDate ? r.receiptDate.slice(0, 10) : "");
 }
 
+function fillAngebot(
+  tpl: string,
+  p: { name: string; relativeId: number | null; customerName: string | null; offerSum: number; offerDate: string | null },
+  ageDays: number
+): string {
+  return tpl
+    .replace(/\{projekt\}/g, p.name || "")
+    .replace(/\{nr\}/g, p.relativeId != null ? `#${p.relativeId}` : "")
+    .replace(/\{kunde\}/g, p.customerName || "")
+    .replace(/\{betrag\}/g, euro.format(p.offerSum || 0))
+    .replace(/\{angebotsdatum\}/g, p.offerDate ? p.offerDate.slice(0, 10) : "")
+    .replace(/\{tage\}/g, String(ageDays));
+}
+
+async function collectEvents(triggerKey: string): Promise<WfEvent[]> {
+  if (triggerKey === "new_beleg") {
+    const now = new Date();
+    const from = new Date(now.getTime() - 120 * 24 * 3600 * 1000).toISOString();
+    const to = `${now.getUTCFullYear() + 1}-12-31T23:59:59Z`;
+    const receipts = (await getReceiptsInRange(from, to)).filter((r) => r.type === "output");
+    return receipts.map((r) => {
+      const supplier = getCustomerName(r);
+      return { ref: r.id, supplier, amount: r.value || 0, fill: (tpl: string) => fillBeleg(tpl, r, supplier) };
+    });
+  }
+
+  if (triggerKey === "angebot_alt_ohne_ab") {
+    // Projekte in der Pipeline-Phase „Angebot offen" (offenes Angebot, noch kein AB).
+    const pipe = await getProjectPipeline();
+    const stages = pipe.stages.filter(
+      (s) => /angebot/i.test(s.label) && /offen/i.test(s.label)
+    );
+    const now = Date.now();
+    const events: WfEvent[] = [];
+    for (const st of stages) {
+      for (const p of st.projects) {
+        if (!p.offerDate) continue; // ohne Versanddatum kein Alter bestimmbar
+        const ageDays = Math.floor((now - new Date(p.offerDate).getTime()) / 86_400_000);
+        if (ageDays < 0) continue;
+        events.push({
+          ref: `proj-${p.id}`,
+          supplier: p.customerName ?? "",
+          amount: p.offerSum || 0,
+          ageDays,
+          fill: (tpl: string) => fillAngebot(tpl, p, ageDays),
+        });
+      }
+    }
+    return events;
+  }
+
+  return [];
+}
+
+function matchesConfig(triggerKey: string, ev: WfEvent, cfg: WorkflowConfig): boolean {
+  if (cfg.filterSupplier && !ev.supplier.toLowerCase().includes(cfg.filterSupplier.toLowerCase())) return false;
+  if (cfg.filterMinAmount != null && ev.amount < cfg.filterMinAmount) return false;
+  if (triggerKey === "angebot_alt_ohne_ab") {
+    const threshold = cfg.minAgeDays != null ? cfg.minAgeDays : 14;
+    if ((ev.ageDays ?? 0) < threshold) return false;
+  }
+  return true;
+}
+
 /** Benachrichtigt den Zugewiesenen (In-App + Push + E-Mail) über eine neue Aufgabe. */
 async function notifyAssignee(assigneeId: number, title: string): Promise<void> {
   try {
-    await createTaskNotification({
-      userId: assigneeId,
-      taskId: null,
-      kind: "assigned",
-      message: `Neue Aufgabe: „${title}"`,
-      byName: "Workflow",
-    });
+    await createTaskNotification({ userId: assigneeId, taskId: null, kind: "assigned", message: `Neue Aufgabe: „${title}"`, byName: "Workflow" });
   } catch {
     /* ignore */
   }
   try {
-    await sendPushToUsers([assigneeId], {
-      title: "Neue Aufgabe",
-      body: title,
-      url: "/dashboard/aufgaben",
-      tag: "task-new",
-    });
+    await sendPushToUsers([assigneeId], { title: "Neue Aufgabe", body: title, url: "/dashboard/aufgaben", tag: "task-new" });
   } catch {
     /* ignore */
   }
@@ -72,65 +136,75 @@ async function notifyAssignee(assigneeId: number, title: string): Promise<void> 
   }
 }
 
-/**
- * Prüft (gedrosselt) auf neue Belege und löst die aktiven „Neuer Beleg"-Regeln aus.
- * Beim ersten Lauf wird der Altbestand nur als „gesehen" markiert (keine Aufgaben).
- */
-export async function runWorkflowScan(): Promise<void> {
-  const meta = await getWorkflowMeta(TRIGGER);
+async function runTrigger(triggerKey: string): Promise<void> {
+  const meta = await getWorkflowMeta(triggerKey);
   if (meta.lastRun && Date.now() - meta.lastRun.getTime() < THROTTLE_MS) return;
 
-  const workflows = await listActiveWorkflows(TRIGGER);
+  const workflows = await listActiveWorkflows(triggerKey);
   if (workflows.length === 0) return;
 
-  await touchWorkflowLastRun(TRIGGER); // sofort sperren (Mehrfachläufe vermeiden)
+  await touchWorkflowLastRun(triggerKey); // sofort sperren
 
-  let receipts: Receipt[];
+  let events: WfEvent[];
   try {
-    const now = new Date();
-    const from = new Date(now.getTime() - 120 * 24 * 3600 * 1000).toISOString();
-    const to = `${now.getUTCFullYear() + 1}-12-31T23:59:59Z`;
-    receipts = (await getReceiptsInRange(from, to)).filter((r) => r.type === "output");
+    events = await collectEvents(triggerKey);
   } catch {
     return;
   }
 
-  const seen = await getSeenRefs(TRIGGER);
+  const seen = await getSeenRefs(triggerKey);
 
-  // Erster Lauf: Altbestand nur markieren, nicht auslösen.
-  if (!meta.seeded) {
-    await markSeen(TRIGGER, receipts.map((r) => r.id));
-    await setWorkflowSeeded(TRIGGER);
+  // „new_beleg" ist ein Einmal-Ereignis → Altbestand beim ersten Lauf nur markieren.
+  // „angebot_alt_ohne_ab" ist eine fortlaufende Bedingung → bestehende alte Angebote
+  // sollen sofort eine Aufgabe erzeugen (kein Baseline).
+  const doBaseline = triggerKey === "new_beleg";
+  const markAllSeen = triggerKey === "new_beleg";
+
+  if (doBaseline && !meta.seeded) {
+    await markSeen(triggerKey, events.map((e) => e.ref));
+    await setWorkflowSeeded(triggerKey);
     return;
   }
 
-  const fresh = receipts.filter((r) => !seen.has(r.id));
-  for (const r of fresh) {
-    const supplier = getCustomerName(r);
+  let created = 0;
+  for (const ev of events) {
+    if (seen.has(ev.ref)) continue;
+    if (created >= MAX_PER_RUN) break;
+
+    let didCreate = false;
     for (const wf of workflows) {
       const c = wf.config;
       if (!c.assigneeId) continue;
-      if (c.filterSupplier && !supplier.toLowerCase().includes(c.filterSupplier.toLowerCase())) continue;
-      if (c.filterMinAmount != null && (r.value || 0) < c.filterMinAmount) continue;
+      if (!matchesConfig(triggerKey, ev, c)) continue;
 
-      const title = (fillTemplate(c.title, r, supplier).trim() || `Beleg prüfen: ${r.number}`).slice(0, 255);
-      const dueDate = new Date(Date.now() + (c.dueOffsetDays || 0) * 24 * 3600 * 1000)
-        .toISOString()
-        .slice(0, 10);
+      const title = (ev.fill(c.title).trim() || "Aufgabe").slice(0, 255);
+      const dueDate = new Date(Date.now() + (c.dueOffsetDays || 0) * 24 * 3600 * 1000).toISOString().slice(0, 10);
       try {
-        await createTask({
-          title,
-          description: c.description,
-          createdBy: wf.createdBy ?? c.assigneeId,
-          assignedTo: [c.assigneeId],
-          dueDate,
-        });
+        await createTask({ title, description: c.description, createdBy: wf.createdBy ?? c.assigneeId, assignedTo: [c.assigneeId], dueDate });
         await notifyAssignee(c.assigneeId, title);
-        await addWorkflowLog(wf.id, r.id, `Aufgabe erstellt: ${title}`);
+        await addWorkflowLog(wf.id, ev.ref, `Aufgabe erstellt: ${title}`);
+        didCreate = true;
       } catch (e) {
-        await addWorkflowLog(wf.id, r.id, `Fehler: ${e instanceof Error ? e.message : "unbekannt"}`);
+        await addWorkflowLog(wf.id, ev.ref, `Fehler: ${e instanceof Error ? e.message : "unbekannt"}`);
       }
     }
-    await markSeen(TRIGGER, [r.id]);
+
+    // Einmal-Ereignisse immer als gesehen markieren; fortlaufende Bedingungen nur,
+    // wenn tatsächlich eine Aufgabe erstellt wurde (sonst später erneut prüfen).
+    if (markAllSeen || didCreate) {
+      await markSeen(triggerKey, [ev.ref]);
+    }
+    if (didCreate) created++;
+  }
+}
+
+/** Prüft (gedrosselt) alle Auslöser und löst aktive Regeln aus. */
+export async function runWorkflowScan(): Promise<void> {
+  for (const t of WORKFLOW_TRIGGER_KEYS) {
+    try {
+      await runTrigger(t);
+    } catch {
+      /* nächster Trigger */
+    }
   }
 }

@@ -2,20 +2,27 @@ import type { RowDataPacket, ResultSetHeader } from "mysql2";
 import { getPool } from "./db";
 
 /** Aktuell unterstützte Auslöser. */
-export const WORKFLOW_TRIGGERS = [{ key: "new_beleg", label: "Neuer Beleg (Eingangsrechnung)" }] as const;
+export const WORKFLOW_TRIGGERS = [
+  { key: "new_beleg", label: "Neuer Beleg (Eingangsrechnung)" },
+  { key: "angebot_alt_ohne_ab", label: "Angebot zu alt ohne AB (Pipeline 'Angebot offen')" },
+] as const;
+
+export const WORKFLOW_TRIGGER_KEYS = WORKFLOW_TRIGGERS.map((t) => t.key);
 
 /** Aktion „Aufgabe erstellen" – Konfiguration einer Regel. */
 export interface WorkflowConfig {
   assigneeId: number;
-  /** Titel-Vorlage, Platzhalter: {nr} {lieferant} {betrag} {datum}. */
+  /** Titel-Vorlage, Platzhalter je Auslöser ({nr} {lieferant} {betrag} {datum} bzw. {projekt} {kunde} {tage} {angebotsdatum}). */
   title: string;
   description: string | null;
   /** Fälligkeit in Tagen ab Auslösung. */
   dueOffsetDays: number;
-  /** Optionaler Filter: Lieferantenname enthält … */
+  /** Optionaler Filter: Lieferanten-/Kundenname enthält … */
   filterSupplier: string | null;
-  /** Optionaler Filter: Mindest-Bruttobetrag. */
+  /** Optionaler Filter: Mindestbetrag (Beleg brutto bzw. Angebotssumme). */
   filterMinAmount: number | null;
+  /** Nur für „angebot_alt_ohne_ab": Mindestalter des Angebots in Tagen. */
+  minAgeDays: number | null;
 }
 
 export interface Workflow {
@@ -56,6 +63,8 @@ function parseConfig(value: unknown): WorkflowConfig {
       o.filterMinAmount != null && Number.isFinite(Number(o.filterMinAmount))
         ? Number(o.filterMinAmount)
         : null,
+    minAgeDays:
+      o.minAgeDays != null && Number.isFinite(Number(o.minAgeDays)) ? Number(o.minAgeDays) : null,
   };
 }
 
