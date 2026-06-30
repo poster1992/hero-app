@@ -11,7 +11,7 @@ import {
 } from "./hero-api";
 import { getCustomerName, getDocumentUrl, getReceiptProjects } from "./invoices";
 import { createTask, createReviewTask } from "./tasks";
-import { assignReviewer } from "./receipt-reviews";
+import { assignReviewer, getReceiptReview } from "./receipt-reviews";
 import { sendPushToUsers } from "./push";
 import { createTaskNotification } from "./task-notifications";
 import { getUsersForNotification } from "./users";
@@ -227,11 +227,19 @@ function effectiveAssignee(c: WorkflowConfig, supplier: string): number {
   return excluded && c.excludedAssigneeId ? c.excludedAssigneeId : c.assigneeId;
 }
 
-/** Führt die Aktion einer Regel für ein Ereignis aus (Aufgabe oder Rechnungsprüfung). */
-async function executeRule(wf: Workflow, ev: WfEvent): Promise<void> {
+/**
+ * Führt die Aktion einer Regel für ein Ereignis aus (Aufgabe oder Rechnungsprüfung).
+ * Gibt true zurück, wenn tatsächlich etwas erstellt wurde (false = übersprungen).
+ */
+async function executeRule(wf: Workflow, ev: WfEvent): Promise<boolean> {
   const c = wf.config;
   const assignee = effectiveAssignee(c, ev.supplier);
   if (c.actionType === "review" && ev.review) {
+    // Bereits entschiedene Belege (freigegeben/abgelehnt) nicht erneut zur Prüfung stellen.
+    const existing = await getReceiptReview(ev.review.heroId);
+    if (existing && (existing.status === "freigegeben" || existing.status === "abgelehnt")) {
+      return false;
+    }
     const lbl = reviewLabel(ev.review);
     await assignReviewer(ev.review.heroId, assignee, {
       number: ev.review.number,
@@ -245,6 +253,7 @@ async function executeRule(wf: Workflow, ev: WfEvent): Promise<void> {
     await createReviewTask(ev.review.heroId, lbl, wf.createdBy ?? assignee, assignee, c.description);
     await notifyAssignee(assignee, `Rechnung prüfen: ${lbl}`);
     await addWorkflowLog(wf.id, ev.ref, `Rechnungsprüfung gestartet: ${lbl} → Prüfer #${assignee}`);
+    return true;
   } else {
     const title = (ev.fill(c.title).trim() || "Aufgabe").slice(0, 255);
     const dueDate = new Date(Date.now() + (c.dueOffsetDays || 0) * 24 * 3600 * 1000).toISOString().slice(0, 10);
@@ -262,6 +271,7 @@ async function executeRule(wf: Workflow, ev: WfEvent): Promise<void> {
     });
     await notifyAssignee(assignee, title);
     await addWorkflowLog(wf.id, ev.ref, `Aufgabe erstellt: ${title} → #${assignee}`);
+    return true;
   }
 }
 
@@ -331,10 +341,10 @@ async function runTrigger(triggerKey: string, force = false): Promise<{ created:
       if (!matchesFilters(triggerKey, ev, wf.config)) continue;
 
       try {
-        await executeRule(wf, ev);
+        const acted = await executeRule(wf, ev);
         await markRuleSeen(wf.id, [ev.ref]);
         seen.add(ev.ref);
-        created++;
+        if (acted) created++;
       } catch (e) {
         await addWorkflowLog(wf.id, ev.ref, `Fehler: ${e instanceof Error ? e.message : "unbekannt"}`);
       }
