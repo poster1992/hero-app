@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import ProjectDetailModal from "@/components/ProjectDetailModal";
+import ProjectTaskModal from "@/components/ProjectTaskModal";
 
 export interface ProjectRow {
   id: number;
@@ -66,6 +67,7 @@ export default function ProjectsTable({ projects }: { projects: ProjectRow[] }) 
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [detail, setDetail] = useState<ProjectRow | null>(null);
+  const [taskProject, setTaskProject] = useState<ProjectRow | null>(null);
 
   const sortBy = (key: string) => {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -268,7 +270,10 @@ export default function ProjectsTable({ projects }: { projects: ProjectRow[] }) 
       <div className="rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-5 py-4">
           <h2 className="text-lg font-medium text-gray-900">Projekte</h2>
-          <p className="text-sm text-gray-600">{filtered.length} Projekte</p>
+          <p className="text-sm text-gray-600">
+            <span className="mr-3 text-gray-400">Tipp: Rechtsklick auf ein Projekt → Aufgabe erstellen</span>
+            {filtered.length} Projekte
+          </p>
         </div>
 
         {filtered.length === 0 ? (
@@ -325,6 +330,11 @@ export default function ProjectsTable({ projects }: { projects: ProjectRow[] }) 
               {sorted.map((p) => (
                 <tr
                   key={p.id}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    setTaskProject(p);
+                  }}
+                  title="Rechtsklick: Aufgabe erstellen"
                   className="border-b border-gray-200 last:border-0 hover:bg-gray-100"
                 >
                   <td className="px-3 py-2 align-top">
@@ -529,6 +539,14 @@ export default function ProjectsTable({ projects }: { projects: ProjectRow[] }) 
       </div>
 
       <ProjectDetailModal project={detail} onClose={() => setDetail(null)} />
+      {taskProject && (
+        <ProjectTaskModal
+          projectId={taskProject.id}
+          projectRelativeId={taskProject.relativeId}
+          projectName={taskProject.name}
+          onClose={() => setTaskProject(null)}
+        />
+      )}
     </div>
   );
 }
