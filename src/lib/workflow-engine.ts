@@ -30,6 +30,7 @@ interface WfEvent {
   supplier: string; // für filterSupplier (Lieferant/Kunde)
   amount: number; // für filterMinAmount
   ageDays?: number; // für Altersfilter
+  eventDate?: string | null; // YYYY-MM-DD (Beleg- bzw. Angebotsdatum), für „gilt ab"
   fill: (tpl: string) => string; // Titel-Vorlage füllen
   /** Beleg-Daten für die Aktion „Rechnungsprüfung" (nur new_beleg). */
   review?: { heroId: string; number: string; supplier: string; gross: number; docUrl: string | null };
@@ -74,6 +75,7 @@ async function collectEvents(triggerKey: string): Promise<WfEvent[]> {
         ref: r.id,
         supplier,
         amount: r.value || 0,
+        eventDate: r.receiptDate ? r.receiptDate.slice(0, 10) : null,
         fill: (tpl: string) => fillBeleg(tpl, r, supplier),
         review: {
           heroId: r.id,
@@ -104,6 +106,7 @@ async function collectEvents(triggerKey: string): Promise<WfEvent[]> {
           supplier: p.customerName ?? "",
           amount: p.offerSum || 0,
           ageDays,
+          eventDate: p.offerDate ? p.offerDate.slice(0, 10) : null,
           fill: (tpl: string) => fillAngebot(tpl, p, ageDays),
         });
       }
@@ -115,6 +118,10 @@ async function collectEvents(triggerKey: string): Promise<WfEvent[]> {
 }
 
 function matchesConfig(triggerKey: string, ev: WfEvent, cfg: WorkflowConfig): boolean {
+  // „Gilt ab": nur Ereignisse ab dem Datum berücksichtigen.
+  if (cfg.validFrom) {
+    if (!ev.eventDate || ev.eventDate < cfg.validFrom) return false;
+  }
   if (cfg.filterSupplier && !ev.supplier.toLowerCase().includes(cfg.filterSupplier.toLowerCase())) return false;
   if (cfg.filterMinAmount != null && ev.amount < cfg.filterMinAmount) return false;
   if (triggerKey === "angebot_alt_ohne_ab") {

@@ -27,6 +27,8 @@ export interface WorkflowConfig {
   minAgeDays: number | null;
   /** Antwort-Buttons, die an der erzeugten Aufgabe erscheinen. */
   buttons: string[];
+  /** Regel gilt erst ab diesem Datum (YYYY-MM-DD); nur Ereignisse ab hier lösen aus. */
+  validFrom: string | null;
 }
 
 export interface Workflow {
@@ -71,6 +73,8 @@ function parseConfig(value: unknown): WorkflowConfig {
     minAgeDays:
       o.minAgeDays != null && Number.isFinite(Number(o.minAgeDays)) ? Number(o.minAgeDays) : null,
     buttons: Array.isArray(o.buttons) ? o.buttons.map((b) => String(b).trim()).filter(Boolean) : [],
+    validFrom:
+      typeof o.validFrom === "string" && /^\d{4}-\d{2}-\d{2}$/.test(o.validFrom) ? o.validFrom : null,
   };
 }
 

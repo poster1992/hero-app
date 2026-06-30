@@ -54,6 +54,9 @@ function readConfig(formData: FormData): WorkflowConfig {
       .map((s) => s.trim())
       .filter(Boolean)
       .slice(0, 8),
+    validFrom: /^\d{4}-\d{2}-\d{2}$/.test(String(formData.get("validFrom") ?? ""))
+      ? String(formData.get("validFrom"))
+      : null,
   };
 }
 

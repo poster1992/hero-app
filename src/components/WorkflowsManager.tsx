@@ -172,6 +172,13 @@ function RuleFields({
           </div>
         </>
       )}
+      <div>
+        <label className="mb-1 block text-sm text-gray-600">Regel gilt ab (optional)</label>
+        <input name="validFrom" type="date" defaultValue={cfg?.validFrom ?? ""} className={inputClass} />
+        <p className="mt-1 text-xs text-gray-400">
+          Nur Ereignisse ab diesem Datum ({isAngebot ? "Angebotsdatum" : "Belegdatum"}) lösen aus.
+        </p>
+      </div>
       <div className="grid grid-cols-2 gap-2">
         <div>
           <label className="mb-1 block text-sm text-gray-600">Filter: {isAngebot ? "Kunde" : "Lieferant"}</label>
@@ -225,6 +232,7 @@ function WorkflowRow({ wf, users }: { wf: Workflow; users: UserOption[] }) {
             ? ` · ${wf.triggerKey === "angebot_alt_ohne_ab" ? "Kunde" : "Lieferant"} „${wf.config.filterSupplier}"`
             : ""}
           {wf.config.filterMinAmount != null ? ` · ab ${wf.config.filterMinAmount} €` : ""}
+          {wf.config.validFrom ? ` · gültig ab ${wf.config.validFrom.split("-").reverse().join(".")}` : ""}
         </p>
       </div>
       <form action={toggleWorkflowAction}>
