@@ -5,8 +5,10 @@ import { createPortal } from "react-dom";
 import {
   getProjectLogbook,
   addLogbookEntry,
+  listAssignableUsers,
   type LogbookEntry,
 } from "@/app/dashboard/logbook-actions";
+import { createTaskAction } from "@/app/dashboard/aufgaben/actions";
 
 const dateFormatter = new Intl.DateTimeFormat("de-DE", {
   day: "2-digit",
@@ -19,9 +21,11 @@ const dateFormatter = new Intl.DateTimeFormat("de-DE", {
 export default function LogbookButton({
   projectId,
   projectName,
+  projectRelativeId = null,
 }: {
   projectId: number;
   projectName: string;
+  projectRelativeId?: number | null;
 }) {
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -31,7 +35,63 @@ export default function LogbookButton({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  // Aufgabe zuweisen
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [users, setUsers] = useState<{ id: number; name: string }[] | null>(null);
+  const [assignee, setAssignee] = useState<number | "">("");
+  const [taskTitle, setTaskTitle] = useState("");
+  const [taskDesc, setTaskDesc] = useState("");
+  const [dueDate, setDueDate] = useState("");
+  const [assigning, setAssigning] = useState(false);
+  const [assignMsg, setAssignMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
   useEffect(() => setMounted(true), []);
+
+  async function toggleAssign() {
+    const next = !assignOpen;
+    setAssignOpen(next);
+    setAssignMsg(null);
+    if (next && users === null) {
+      try {
+        setUsers(await listAssignableUsers());
+      } catch {
+        setUsers([]);
+      }
+    }
+  }
+
+  async function onAssign(e: React.FormEvent) {
+    e.preventDefault();
+    setAssignMsg(null);
+    if (!assignee) return setAssignMsg({ ok: false, text: "Bitte einen Mitarbeiter wählen." });
+    if (!taskTitle.trim()) return setAssignMsg({ ok: false, text: "Bitte einen Titel angeben." });
+    if (!dueDate) return setAssignMsg({ ok: false, text: "Bitte ein Fälligkeitsdatum angeben." });
+    setAssigning(true);
+    try {
+      const fd = new FormData();
+      fd.set("title", taskTitle.trim());
+      if (taskDesc.trim()) fd.set("description", taskDesc.trim());
+      fd.append("assignedTo", String(assignee));
+      fd.set("dueDate", dueDate);
+      fd.set("projectId", String(projectId));
+      if (projectRelativeId != null) fd.set("projectRelativeId", String(projectRelativeId));
+      fd.set("projectName", projectName);
+      const res = await createTaskAction({}, fd);
+      if (res.error) {
+        setAssignMsg({ ok: false, text: res.error });
+      } else {
+        setAssignMsg({ ok: true, text: "Aufgabe zugewiesen ✅" });
+        setTaskTitle("");
+        setTaskDesc("");
+        setAssignee("");
+        setDueDate("");
+      }
+    } catch {
+      setAssignMsg({ ok: false, text: "Aufgabe konnte nicht erstellt werden." });
+    } finally {
+      setAssigning(false);
+    }
+  }
 
   useEffect(() => {
     if (!open) return;
@@ -121,6 +181,73 @@ export default function LogbookButton({
                 </li>
               ))}
             </ul>
+          )}
+        </div>
+
+        {/* Aufgabe für dieses Projekt zuweisen */}
+        <div className="border-t border-gray-800 px-5 py-3">
+          <button
+            type="button"
+            onClick={toggleAssign}
+            className="flex items-center gap-2 text-sm font-medium text-gray-200 transition-colors hover:text-white"
+          >
+            <span className="text-brand-red">＋</span>
+            Aufgabe zuweisen
+            <span className="text-gray-500">{assignOpen ? "▲" : "▼"}</span>
+          </button>
+          {assignOpen && (
+            <form onSubmit={onAssign} className="mt-3 flex flex-col gap-2">
+              <select
+                value={assignee}
+                onChange={(e) => setAssignee(e.target.value ? Number(e.target.value) : "")}
+                required
+                className="w-full rounded-lg border border-gray-700 bg-gray-950/60 px-3 py-2 text-sm text-gray-100 focus:border-brand-red focus:outline-none"
+              >
+                <option value="">Mitarbeiter wählen …</option>
+                {(users ?? []).map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="text"
+                value={taskTitle}
+                onChange={(e) => setTaskTitle(e.target.value)}
+                placeholder="Titel der Aufgabe *"
+                className="w-full rounded-lg border border-gray-700 bg-gray-950/60 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-brand-red focus:outline-none"
+              />
+              <textarea
+                value={taskDesc}
+                onChange={(e) => setTaskDesc(e.target.value)}
+                rows={2}
+                placeholder="Beschreibung (optional) …"
+                className="w-full resize-y rounded-lg border border-gray-700 bg-gray-950/60 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-brand-red focus:outline-none"
+              />
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-gray-400">Fällig bis *</label>
+                <input
+                  type="date"
+                  value={dueDate}
+                  onChange={(e) => setDueDate(e.target.value)}
+                  className="rounded-lg border border-gray-700 bg-gray-950/60 px-3 py-1.5 text-sm text-gray-100 focus:border-brand-red focus:outline-none"
+                />
+              </div>
+              {assignMsg && (
+                <p className={`text-xs ${assignMsg.ok ? "text-emerald-400" : "text-red-400"}`}>
+                  {assignMsg.text}
+                </p>
+              )}
+              <div className="flex justify-end">
+                <button
+                  type="submit"
+                  disabled={assigning}
+                  className="rounded-lg bg-brand-red px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-brand-red-dark disabled:opacity-50"
+                >
+                  {assigning ? "Weist zu …" : "Aufgabe zuweisen"}
+                </button>
+              </div>
+            </form>
           )}
         </div>
 

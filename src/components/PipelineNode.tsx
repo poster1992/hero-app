@@ -108,7 +108,7 @@ export default function PipelineNode({
                   </Link>
                   {showOffer && (
                     <div className="shrink-0 pr-4 pl-2">
-                      <LogbookButton projectId={p.id} projectName={p.name} />
+                      <LogbookButton projectId={p.id} projectName={p.name} projectRelativeId={p.relativeId} />
                     </div>
                   )}
                 </li>

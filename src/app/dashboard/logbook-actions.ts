@@ -1,6 +1,21 @@
 "use server";
 
 import { heroGraphQL } from "@/lib/hero-api";
+import { getSession } from "@/lib/session";
+import { listUsers } from "@/lib/users";
+
+/** Aktive Mitarbeiter (für die Aufgaben-Zuweisung im Logbuch). */
+export async function listAssignableUsers(): Promise<{ id: number; name: string }[]> {
+  if (!(await getSession())) return [];
+  try {
+    const users = await listUsers();
+    return users
+      .filter((u) => u.isActive)
+      .map((u) => ({ id: u.id, name: u.displayName || u.username }));
+  } catch {
+    return [];
+  }
+}
 
 export interface LogbookEntry {
   id: number;
