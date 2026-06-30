@@ -192,7 +192,13 @@ function NavIcon({ name }: { name: string }) {
 
 const STORAGE_KEY = "sidebar-collapsed";
 
-export default function Sidebar({ allowedModules }: { allowedModules: string[] }) {
+export default function Sidebar({
+  allowedModules,
+  taskNotifCount = 0,
+}: {
+  allowedModules: string[];
+  taskNotifCount?: number;
+}) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -292,6 +298,7 @@ export default function Sidebar({ allowedModules }: { allowedModules: string[] }
           const hasChildren = !!item.children?.length;
           const isOpen = openMenus[item.href] ?? active;
           const showChildren = !collapsed && hasChildren && isOpen;
+          const badge = item.module === "aufgaben" ? taskNotifCount : 0;
 
           const rowClass = `flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
             collapsed ? "md:justify-center" : "justify-start text-left"
@@ -336,8 +343,22 @@ export default function Sidebar({ allowedModules }: { allowedModules: string[] }
                   onClick={() => setMobileOpen(false)}
                   className={rowClass}
                 >
-                  <NavIcon name={item.icon} />
+                  <span className="relative flex shrink-0">
+                    <NavIcon name={item.icon} />
+                    {badge > 0 && collapsed && (
+                      <span className="absolute -right-1 -top-1 hidden h-2.5 w-2.5 rounded-full bg-brand-red ring-2 ring-black md:block" />
+                    )}
+                  </span>
                   <span className={collapsed ? "md:hidden" : ""}>{item.label}</span>
+                  {badge > 0 && (
+                    <span
+                      className={`ml-auto min-w-[1.25rem] rounded-full bg-brand-red px-1.5 py-0.5 text-center text-[10px] font-semibold leading-none text-white ${
+                        collapsed ? "md:hidden" : ""
+                      }`}
+                    >
+                      {badge > 99 ? "99+" : badge}
+                    </span>
+                  )}
                 </Link>
               )}
 

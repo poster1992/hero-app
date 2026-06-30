@@ -6,6 +6,8 @@ import DataChatWidget from "@/components/DataChatWidget";
 import IdleLogout from "@/components/IdleLogout";
 import { getSession, getEffectiveRole } from "@/lib/session";
 import { getAllowedModules } from "@/lib/role-store";
+import { getUserByUsername } from "@/lib/users";
+import { countUnacknowledged } from "@/lib/task-notifications";
 
 export default async function DashboardLayout({
   children,
@@ -13,14 +15,25 @@ export default async function DashboardLayout({
   children: React.ReactNode;
 }) {
   // Zentrale Auth-Sperre: ohne gültige Session kommt niemand an Dashboard-Seiten.
-  if (!(await getSession())) redirect("/login");
+  const session = await getSession();
+  if (!session) redirect("/login");
 
   const { role, isPreview } = await getEffectiveRole();
   const allowedModules = await getAllowedModules(role);
+
+  // Anzahl unbestätigter Aufgaben-Meldungen (Badge am Menüpunkt).
+  let taskNotifCount = 0;
+  try {
+    const me = await getUserByUsername(session.username);
+    if (me) taskNotifCount = await countUnacknowledged(me.id);
+  } catch {
+    // optional – ohne Zahl bleibt das Badge einfach aus.
+  }
+
   return (
     <div className="flex min-h-screen flex-col md:flex-row">
       <IdleLogout />
-      <Sidebar allowedModules={allowedModules} />
+      <Sidebar allowedModules={allowedModules} taskNotifCount={taskNotifCount} />
       <main className="flex min-w-0 flex-1 flex-col bg-black">
         {isPreview && <PreviewBanner role={role} />}
         <div className="flex items-center justify-center bg-black px-4 pb-2 pt-6">
