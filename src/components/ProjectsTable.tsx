@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import ProjectDetailModal from "@/components/ProjectDetailModal";
 import ProjectTaskModal from "@/components/ProjectTaskModal";
 
@@ -61,6 +61,7 @@ const STATUS_FILTERS: { key: string; label: string; needles: string[] | null }[]
 
 export default function ProjectsTable({ projects }: { projects: ProjectRow[] }) {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const [search, setSearch] = useState(searchParams.get("q") ?? "");
   const [statusFilter, setStatusFilter] = useState("all");
   const [yearFilter, setYearFilter] = useState("all");
@@ -70,7 +71,9 @@ export default function ProjectsTable({ projects }: { projects: ProjectRow[] }) 
   const [taskProject, setTaskProject] = useState<ProjectRow | null>(null);
 
   // Auto-Öffnen via ?open=<projectMatchId> (z.B. nach Rechnungsfreigabe → Artikel-Abgleich).
+  // ?from=aufgaben → nach dem Schließen zurück zur Aufgabenseite.
   const autoOpenedRef = useRef(false);
+  const fromAufgabenRef = useRef(false);
   useEffect(() => {
     if (autoOpenedRef.current) return;
     const openId = Number(searchParams.get("open"));
@@ -79,9 +82,19 @@ export default function ProjectsTable({ projects }: { projects: ProjectRow[] }) 
       if (p) {
         setDetail(p);
         autoOpenedRef.current = true;
+        fromAufgabenRef.current = searchParams.get("from") === "aufgaben";
       }
     }
   }, [searchParams, projects]);
+
+  // Schließt das Detail-Popup; kam es aus dem Prüf-Flow, zurück zu den Aufgaben.
+  const closeDetail = () => {
+    setDetail(null);
+    if (fromAufgabenRef.current) {
+      fromAufgabenRef.current = false;
+      router.push("/dashboard/aufgaben");
+    }
+  };
 
   const sortBy = (key: string) => {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -552,7 +565,7 @@ export default function ProjectsTable({ projects }: { projects: ProjectRow[] }) 
         )}
       </div>
 
-      <ProjectDetailModal project={detail} onClose={() => setDetail(null)} />
+      <ProjectDetailModal project={detail} onClose={closeDetail} />
       {taskProject && (
         <ProjectTaskModal
           projectId={taskProject.id}

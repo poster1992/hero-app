@@ -129,7 +129,7 @@ function TaskCard({
       if (reviewNote.trim()) fd.set("note", reviewNote.trim());
       const res = await decideReviewAction(fd);
       // Nach Freigabe: Projekt-Popup öffnen (Beleg-Artikel den Soll-Artikeln zuordnen).
-      if (res?.openProjectId) router.push(`/dashboard/projekte?open=${res.openProjectId}`);
+      if (res?.openProjectId) router.push(`/dashboard/projekte?open=${res.openProjectId}&from=aufgaben`);
       else router.refresh();
     } finally {
       setDeciding(false);
