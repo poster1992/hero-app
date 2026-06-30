@@ -23,20 +23,21 @@ const inputClass =
 const TRIGGER_OPTIONS = [
   { key: "new_beleg", label: "Neuer Beleg (Eingangsrechnung)" },
   { key: "angebot_alt_ohne_ab", label: "Angebot zu alt ohne AB (Pipeline 'Angebot offen')" },
+  { key: "stunden_ohne_abschlag", label: "Stunden gebucht, aber keine Abschlagsrechnung" },
 ] as const;
 
 function triggerLabel(key: string): string {
   return TRIGGER_OPTIONS.find((t) => t.key === key)?.label ?? key;
 }
 function placeholdersFor(key: string): string {
-  return key === "angebot_alt_ohne_ab"
-    ? "{projekt} {nr} {kunde} {betrag} {tage} {angebotsdatum}"
-    : "{nr} {lieferant} {betrag} {datum}";
+  if (key === "angebot_alt_ohne_ab") return "{projekt} {nr} {kunde} {betrag} {tage} {angebotsdatum}";
+  if (key === "stunden_ohne_abschlag") return "{projekt} {nr} {kunde} {stunden}";
+  return "{nr} {lieferant} {betrag} {datum}";
 }
 function defaultTitleFor(key: string): string {
-  return key === "angebot_alt_ohne_ab"
-    ? "Angebot nachfassen: {projekt} ({tage} Tage alt)"
-    : "Beleg prüfen: {nr} – {lieferant}";
+  if (key === "angebot_alt_ohne_ab") return "Angebot nachfassen: {projekt} ({tage} Tage alt)";
+  if (key === "stunden_ohne_abschlag") return "Abschlagsrechnung erstellen: {projekt} ({stunden} h)";
+  return "Beleg prüfen: {nr} – {lieferant}";
 }
 
 function fmtStamp(s: string | null): string {
@@ -100,7 +101,9 @@ function RuleFields({
   const [title, setTitle] = useState(cfg?.title ?? defaultTitleFor(triggerKey));
   const [actionType, setActionType] = useState<"task" | "review">(cfg?.actionType === "review" ? "review" : "task");
   const isAngebot = trigger === "angebot_alt_ohne_ab";
+  const isStunden = trigger === "stunden_ohne_abschlag";
   const isReview = trigger === "new_beleg" && actionType === "review";
+  const kundeLabel = isAngebot || isStunden ? "Kunde" : "Lieferant";
 
   const onTriggerChange = (key: string) => {
     // Standardtitel mitwechseln, solange der Nutzer ihn nicht angepasst hat.
@@ -214,17 +217,21 @@ function RuleFields({
         <label className="mb-1 block text-sm text-gray-600">Regel gilt ab (optional)</label>
         <input name="validFrom" type="date" defaultValue={cfg?.validFrom ?? ""} className={inputClass} />
         <p className="mt-1 text-xs text-gray-400">
-          Nur Ereignisse ab diesem Datum ({isAngebot ? "Angebotsdatum" : "Belegdatum"}) lösen aus.
+          {isStunden
+            ? "Regel ab diesem Datum aktiv (greift dann auch bestehende Projekte ab)."
+            : `Nur Ereignisse ab diesem Datum (${isAngebot ? "Angebotsdatum" : "Belegdatum"}) lösen aus.`}
         </p>
       </div>
       <div className="grid grid-cols-2 gap-2">
         <div>
-          <label className="mb-1 block text-sm text-gray-600">Filter: {isAngebot ? "Kunde" : "Lieferant"}</label>
+          <label className="mb-1 block text-sm text-gray-600">Filter: {kundeLabel}</label>
           <input name="filterSupplier" defaultValue={cfg?.filterSupplier ?? ""} placeholder="enthält …" className={inputClass} />
         </div>
         <div>
-          <label className="mb-1 block text-sm text-gray-600">Filter: ab {isAngebot ? "Angebotssumme" : "Betrag"} €</label>
-          <input name="filterMinAmount" type="number" min={0} step="0.01" defaultValue={cfg?.filterMinAmount ?? ""} className={inputClass} />
+          <label className="mb-1 block text-sm text-gray-600">
+            {isStunden ? "Filter: ab Stunden" : `Filter: ab ${isAngebot ? "Angebotssumme" : "Betrag"} €`}
+          </label>
+          <input name="filterMinAmount" type="number" min={0} step={isStunden ? "0.5" : "0.01"} defaultValue={cfg?.filterMinAmount ?? ""} className={inputClass} />
         </div>
       </div>
 
@@ -304,7 +311,9 @@ function WorkflowRow({ wf, users, suppliers }: { wf: Workflow; users: UserOption
         <p className="text-xs text-gray-500">
           {wf.triggerKey === "angebot_alt_ohne_ab"
             ? `Angebot offen > ${wf.config.minAgeDays ?? 21} Tage ohne AB`
-            : "Neuer Beleg"}{" "}
+            : wf.triggerKey === "stunden_ohne_abschlag"
+              ? "Stunden gebucht, keine Abschlagsrechnung"
+              : "Neuer Beleg"}{" "}
           → {wf.config.actionType === "review" ? "Rechnungsprüfung" : "Aufgabe"} an{" "}
           <span className="text-gray-700">{assignee}</span>
           {wf.config.actionType === "review" ? "" : ` · fällig in ${wf.config.dueOffsetDays} Tagen`}
@@ -398,14 +407,18 @@ function FlowArrow() {
 function WorkflowFlow({ wf, users }: { wf: Workflow; users: UserOption[] }) {
   const assignee = users.find((u) => u.id === wf.config.assigneeId)?.name ?? `#${wf.config.assigneeId}`;
   const isAngebot = wf.triggerKey === "angebot_alt_ohne_ab";
+  const isStunden = wf.triggerKey === "stunden_ohne_abschlag";
   const isReview = wf.config.actionType === "review";
   const triggerLines = isAngebot
     ? ["Angebot offen", `älter ${wf.config.minAgeDays ?? 21} Tage`, "kein AB"]
-    : ["Neuer Beleg", "Eingangsrechnung"];
+    : isStunden
+      ? ["Stunden gebucht", "keine Abschlags-", "rechnung"]
+      : ["Neuer Beleg", "Eingangsrechnung"];
   const conditions: string[] = [];
   if (wf.config.filterSupplier)
-    conditions.push(`${isAngebot ? "Kunde" : "Lieferant"} „${wf.config.filterSupplier}"`);
-  if (wf.config.filterMinAmount != null) conditions.push(`ab ${wf.config.filterMinAmount} €`);
+    conditions.push(`${isAngebot || isStunden ? "Kunde" : "Lieferant"} „${wf.config.filterSupplier}"`);
+  if (wf.config.filterMinAmount != null)
+    conditions.push(isStunden ? `ab ${wf.config.filterMinAmount} h` : `ab ${wf.config.filterMinAmount} €`);
   if (wf.config.excludeManual) conditions.push("ohne manuelle Belege");
 
   const excludedName = wf.config.excludedAssigneeId

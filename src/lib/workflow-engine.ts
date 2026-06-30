@@ -1,5 +1,13 @@
 import "server-only";
-import { getReceiptsInRange, getProjectPipeline, type Receipt } from "./hero-api";
+import {
+  getReceiptsInRange,
+  getProjectPipeline,
+  getProjects,
+  getHoursByProject,
+  getInvoiceNetByProject,
+  type Receipt,
+  type ProjectSummary,
+} from "./hero-api";
 import { getCustomerName, getDocumentUrl, getReceiptProjects } from "./invoices";
 import { createTask, createReviewTask } from "./tasks";
 import { assignReviewer } from "./receipt-reviews";
@@ -23,6 +31,7 @@ const THROTTLE_MS = 5 * 60 * 1000;
 const MAX_PER_RUN = 25; // Schutz vor Flut beim ersten Lauf
 
 const euro = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
+const hoursFmt = new Intl.NumberFormat("de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
 /** Ein Auslöser-Ereignis (z.B. ein neuer Beleg oder ein zu altes Angebot). */
 interface WfEvent {
@@ -71,6 +80,14 @@ function fillAngebot(
     .replace(/\{betrag\}/g, euro.format(p.offerSum || 0))
     .replace(/\{angebotsdatum\}/g, p.offerDate ? p.offerDate.slice(0, 10) : "")
     .replace(/\{tage\}/g, String(ageDays));
+}
+
+function fillStunden(tpl: string, p: ProjectSummary, hrs: number): string {
+  return tpl
+    .replace(/\{projekt\}/g, p.name || "")
+    .replace(/\{nr\}/g, p.relativeId != null ? `#${p.relativeId}` : "")
+    .replace(/\{kunde\}/g, p.customerName || "")
+    .replace(/\{stunden\}/g, hoursFmt.format(hrs));
 }
 
 async function collectEvents(triggerKey: string): Promise<WfEvent[]> {
@@ -125,6 +142,30 @@ async function collectEvents(triggerKey: string): Promise<WfEvent[]> {
           fill: (tpl: string) => fillAngebot(tpl, p, ageDays),
         });
       }
+    }
+    return events;
+  }
+
+  if (triggerKey === "stunden_ohne_abschlag") {
+    // Projekte mit gebuchten Stunden, aber (noch) ohne Rechnung/Abschlagsrechnung.
+    const [projects, hours, invoice] = await Promise.all([
+      getProjects(),
+      getHoursByProject(),
+      getInvoiceNetByProject(),
+    ]);
+    const today = new Date().toISOString().slice(0, 10);
+    const events: WfEvent[] = [];
+    for (const p of projects) {
+      const h = hours.get(p.id) ?? 0;
+      if (h <= 0) continue; // keine Stunden gebucht
+      if (invoice.has(p.id)) continue; // bereits eine Rechnung/Abschlag vorhanden
+      events.push({
+        ref: `projstd-${p.id}`,
+        supplier: p.customerName ?? "",
+        amount: h, // Stunden (für Mindeststunden-Filter)
+        eventDate: today,
+        fill: (tpl: string) => fillStunden(tpl, p, h),
+      });
     }
     return events;
   }
