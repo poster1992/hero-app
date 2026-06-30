@@ -3,10 +3,11 @@ import {
   getReceiptsInRange,
   getProjectPipeline,
   getProjects,
-  getHoursByProject,
+  getProjectHourDetails,
   getInvoiceNetByProject,
   type Receipt,
   type ProjectSummary,
+  type ProjectHourDetail,
 } from "./hero-api";
 import { getCustomerName, getDocumentUrl, getReceiptProjects } from "./invoices";
 import { createTask, createReviewTask } from "./tasks";
@@ -41,6 +42,7 @@ interface WfEvent {
   hasDoc?: boolean; // Beleg hat ein Dokument (für „manuelle Belege ausschließen")
   ageDays?: number; // für Altersfilter
   eventDate?: string | null; // YYYY-MM-DD (Beleg- bzw. Angebotsdatum), für „gilt ab"
+  note?: string; // Zusatzinfo, die der Aufgaben-Beschreibung angehängt wird
   fill: (tpl: string) => string; // Titel-Vorlage füllen
   /** Beleg-Daten für die Aktion „Rechnungsprüfung" (nur new_beleg). */
   review?: {
@@ -82,12 +84,30 @@ function fillAngebot(
     .replace(/\{tage\}/g, String(ageDays));
 }
 
-function fillStunden(tpl: string, p: ProjectSummary, hrs: number): string {
+function fmtDay(d: string | null): string {
+  return d ? d.split("-").reverse().join(".") : "";
+}
+
+/** "Max (12,5 h), Erika (3,0 h)" – Mitarbeiter mit erfassten Stunden. */
+function employeesText(d: ProjectHourDetail): string {
+  return d.employees.map((e) => `${e.name} (${hoursFmt.format(e.hours)} h)`).join(", ");
+}
+
+/** "01.05.2026 – 20.06.2026" bzw. einzelnes Datum. */
+function zeitraumText(d: ProjectHourDetail): string {
+  if (!d.firstDate && !d.lastDate) return "";
+  if (d.firstDate === d.lastDate) return fmtDay(d.firstDate);
+  return `${fmtDay(d.firstDate)} – ${fmtDay(d.lastDate)}`;
+}
+
+function fillStunden(tpl: string, p: ProjectSummary, det: ProjectHourDetail): string {
   return tpl
     .replace(/\{projekt\}/g, p.name || "")
     .replace(/\{nr\}/g, p.relativeId != null ? `#${p.relativeId}` : "")
     .replace(/\{kunde\}/g, p.customerName || "")
-    .replace(/\{stunden\}/g, hoursFmt.format(hrs));
+    .replace(/\{stunden\}/g, hoursFmt.format(det.hours))
+    .replace(/\{mitarbeiter\}/g, employeesText(det))
+    .replace(/\{zeitraum\}/g, zeitraumText(det));
 }
 
 async function collectEvents(triggerKey: string): Promise<WfEvent[]> {
@@ -148,23 +168,30 @@ async function collectEvents(triggerKey: string): Promise<WfEvent[]> {
 
   if (triggerKey === "stunden_ohne_abschlag") {
     // Projekte mit gebuchten Stunden, aber (noch) ohne Rechnung/Abschlagsrechnung.
-    const [projects, hours, invoice] = await Promise.all([
+    const [projects, hourDetails, invoice] = await Promise.all([
       getProjects(),
-      getHoursByProject(),
+      getProjectHourDetails(),
       getInvoiceNetByProject(),
     ]);
     const today = new Date().toISOString().slice(0, 10);
     const events: WfEvent[] = [];
     for (const p of projects) {
-      const h = hours.get(p.id) ?? 0;
-      if (h <= 0) continue; // keine Stunden gebucht
+      const det = hourDetails.get(p.id);
+      if (!det || det.hours <= 0) continue; // keine Stunden gebucht
       if (invoice.has(p.id)) continue; // bereits eine Rechnung/Abschlag vorhanden
+      const note = [
+        `Projekt: ${p.name}${p.relativeId != null ? ` (#${p.relativeId})` : ""}`,
+        `Gebuchte Stunden: ${hoursFmt.format(det.hours)} h`,
+        `Erfasst von: ${employeesText(det) || "—"}`,
+        `Zeitraum: ${zeitraumText(det) || "—"} (${det.entries} Buchungen)`,
+      ].join("\n");
       events.push({
         ref: `projstd-${p.id}`,
         supplier: p.customerName ?? "",
-        amount: h, // Stunden (für Mindeststunden-Filter)
+        amount: det.hours, // Stunden (für Mindeststunden-Filter)
         eventDate: today,
-        fill: (tpl: string) => fillStunden(tpl, p, h),
+        note,
+        fill: (tpl: string) => fillStunden(tpl, p, det),
       });
     }
     return events;
@@ -221,9 +248,13 @@ async function executeRule(wf: Workflow, ev: WfEvent): Promise<void> {
   } else {
     const title = (ev.fill(c.title).trim() || "Aufgabe").slice(0, 255);
     const dueDate = new Date(Date.now() + (c.dueOffsetDays || 0) * 24 * 3600 * 1000).toISOString().slice(0, 10);
+    // Zusatzinfo (z.B. wer/wann Stunden erfasst hat) an die Beschreibung anhängen.
+    const description = ev.note
+      ? [ev.fill(c.description ?? ""), ev.note].filter((s) => s && s.trim()).join("\n\n")
+      : c.description;
     await createTask({
       title,
-      description: c.description,
+      description,
       createdBy: wf.createdBy ?? assignee,
       assignedTo: [assignee],
       dueDate,

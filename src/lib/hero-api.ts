@@ -1006,6 +1006,80 @@ export async function getHoursByProjectAndEmployee(): Promise<HoursByProjectEmpl
   return { byProject, names };
 }
 
+export interface ProjectHourDetail {
+  hours: number;
+  /** Mitarbeiter mit erfassten Stunden, absteigend nach Stunden. */
+  employees: { name: string; hours: number }[];
+  /** Erste/letzte Erfassung (yyyy-mm-dd) und Anzahl Buchungen. */
+  firstDate: string | null;
+  lastDate: string | null;
+  entries: number;
+}
+
+/** Stundendetails je Projekt: Summe, Mitarbeiter und Erfassungszeitraum (für Workflows). */
+export async function getProjectHourDetails(): Promise<Map<number, ProjectHourDetail>> {
+  const pageSize = 200;
+  const maxPages = 200;
+  const acc = new Map<
+    number,
+    { hours: number; emp: Map<string, number>; first: string | null; last: string | null; entries: number }
+  >();
+
+  for (let page = 0; page < maxPages; page++) {
+    const data = await heroGraphQL<{
+      tracking_times: {
+        project_match_id: number | null;
+        start: string | null;
+        end: string | null;
+        partner: { id: number; name: string | null } | null;
+      }[];
+    }>(
+      `query HoursDetail($first: Int, $offset: Int) {
+        tracking_times(show_all_partners: true, orderBy: "id", first: $first, offset: $offset) {
+          project_match_id
+          start
+          end
+          partner { id name }
+        }
+      }`,
+      { first: pageSize, offset: page * pageSize }
+    );
+    const entries = data.tracking_times ?? [];
+    for (const e of entries) {
+      if (e.project_match_id == null || !e.start || !e.end) continue;
+      const ms = new Date(e.end).getTime() - new Date(e.start).getTime();
+      if (ms <= 0) continue;
+      const hours = ms / 3_600_000;
+      const day = e.start.slice(0, 10);
+      const cur =
+        acc.get(e.project_match_id) ??
+        { hours: 0, emp: new Map<string, number>(), first: null, last: null, entries: 0 };
+      cur.hours += hours;
+      cur.entries += 1;
+      const name = e.partner?.name ?? "Unbekannt";
+      cur.emp.set(name, (cur.emp.get(name) ?? 0) + hours);
+      if (!cur.first || day < cur.first) cur.first = day;
+      if (!cur.last || day > cur.last) cur.last = day;
+      acc.set(e.project_match_id, cur);
+    }
+    if (entries.length < pageSize) break;
+  }
+
+  const out = new Map<number, ProjectHourDetail>();
+  for (const [pid, v] of acc) {
+    out.set(pid, {
+      hours: Math.round(v.hours * 100) / 100,
+      employees: Array.from(v.emp.entries())
+        .map(([name, h]) => ({ name, hours: Math.round(h * 100) / 100 }))
+        .sort((a, b) => b.hours - a.hours),
+      firstDate: v.first,
+      lastDate: v.last,
+      entries: v.entries,
+    });
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // Project pipeline — projects grouped by their current status phase.
 // Phases (by status_code): 201 Neu-Erstkontakt, 601 Angebotserstellung,

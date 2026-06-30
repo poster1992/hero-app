@@ -31,12 +31,12 @@ function triggerLabel(key: string): string {
 }
 function placeholdersFor(key: string): string {
   if (key === "angebot_alt_ohne_ab") return "{projekt} {nr} {kunde} {betrag} {tage} {angebotsdatum}";
-  if (key === "stunden_ohne_abschlag") return "{projekt} {nr} {kunde} {stunden}";
+  if (key === "stunden_ohne_abschlag") return "{projekt} {nr} {kunde} {stunden} {mitarbeiter} {zeitraum}";
   return "{nr} {lieferant} {betrag} {datum}";
 }
 function defaultTitleFor(key: string): string {
   if (key === "angebot_alt_ohne_ab") return "Angebot nachfassen: {projekt} ({tage} Tage alt)";
-  if (key === "stunden_ohne_abschlag") return "Abschlagsrechnung erstellen: {projekt} ({stunden} h)";
+  if (key === "stunden_ohne_abschlag") return "Abschlagsrechnung erstellen: {projekt} {nr} ({stunden} h)";
   return "Beleg prüfen: {nr} – {lieferant}";
 }
 
@@ -189,6 +189,12 @@ function RuleFields({
       <div className="sm:col-span-2">
         <label className="mb-1 block text-sm text-gray-600">Beschreibung (optional)</label>
         <textarea name="description" defaultValue={cfg?.description ?? ""} rows={2} className={inputClass} />
+        {isStunden && (
+          <p className="mt-1 text-xs text-gray-400">
+            Projektnummer, Stundensumme sowie <strong>wer</strong> die Stunden erfasst hat und der{" "}
+            <strong>Zeitraum</strong> werden automatisch an die Aufgabe angehängt.
+          </p>
+        )}
       </div>
       {!isReview && (
         <>
