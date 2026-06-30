@@ -84,6 +84,15 @@ const STATUS_ACTIONS: { key: TaskStatus; label: string }[] = [
   { key: "erledigt", label: "Erledigt" },
 ];
 
+/** Farbe des aktiven Segments im Status-Schalter. */
+function statusActiveClass(status: TaskStatus): string {
+  return status === "erledigt"
+    ? "bg-emerald-600 text-white"
+    : status === "in_arbeit"
+      ? "bg-amber-500 text-white"
+      : "bg-gray-700 text-white";
+}
+
 function TaskCard({
   task,
   users,
@@ -93,43 +102,57 @@ function TaskCard({
   users: UserOption[];
   review?: ReviewTaskInfo | null;
 }) {
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [fwdOpen, setFwdOpen] = useState(false);
   const assigneeNames = task.assignees.map((a) => a.name).join(", ") || "—";
   const overdue = isOverdue(task.dueDate, task.status);
   const heroId = reviewHeroId(task.description);
   const desc = cleanDescription(task.description);
+  const accentLeft = overdue
+    ? "border-l-rose-500"
+    : task.status === "erledigt"
+      ? "border-l-emerald-500"
+      : task.status === "in_arbeit"
+        ? "border-l-amber-500"
+        : "border-l-gray-400";
   return (
     <div
-      className={`rounded-lg border p-4 ${
+      className={`rounded-lg border border-l-4 p-4 ${
         task.status === "erledigt"
-          ? "border-gray-200 bg-gray-50 opacity-75"
+          ? "border-gray-200 bg-gray-50"
           : overdue
-            ? "border-rose-500/40 bg-rose-500/10"
+            ? "border-rose-200 bg-rose-50/40"
             : "border-gray-300 bg-white"
-      }`}
+      } ${accentLeft}`}
     >
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="font-medium text-gray-900">{task.title}</p>
-          {desc && (
-            <p className="mt-1 whitespace-pre-wrap text-sm text-gray-600">{desc}</p>
-          )}
-          <p className="mt-2 text-xs text-gray-500">
-            von {task.createdByName} · an {assigneeNames}
-            {task.dueDate && (
-              <span className={overdue ? "font-semibold text-rose-600" : ""}>
-                {" · "}fällig {formatDate(task.dueDate)}
-                {overdue ? " (überfällig)" : ""}
-              </span>
-            )}
-          </p>
-          {task.projectName && (
-            <p className="mt-0.5 text-xs text-gray-500">
-              Projekt: {task.projectRelativeId != null ? `#${task.projectRelativeId} ` : ""}
-              {task.projectName}
-            </p>
-          )}
-        </div>
+        <p
+          className={`min-w-0 font-medium ${
+            task.status === "erledigt" ? "text-gray-500 line-through" : "text-gray-900"
+          }`}
+        >
+          {task.title}
+        </p>
         <StatusBadge status={task.status} />
+      </div>
+      {desc && <p className="mt-1 whitespace-pre-wrap text-sm text-gray-600">{desc}</p>}
+      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
+        <span className="inline-flex items-center gap-1">
+          <span aria-hidden>👤</span>
+          {task.createdByName} → {assigneeNames}
+        </span>
+        {task.dueDate && (
+          <span className={overdue ? "font-semibold text-rose-600" : ""}>
+            📅 {formatDate(task.dueDate)}
+            {overdue ? " · überfällig" : ""}
+          </span>
+        )}
+        {task.projectName && (
+          <span>
+            📁 {task.projectRelativeId != null ? `#${task.projectRelativeId} ` : ""}
+            {task.projectName}
+          </span>
+        )}
       </div>
 
       {/* Rechnungsprüfung: PDF + Entscheidung direkt in der Aufgabe */}
@@ -212,27 +235,58 @@ function TaskCard({
       )}
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        {STATUS_ACTIONS.filter((s) => s.key !== task.status).map((s) => (
-          <form key={s.key} action={setStatusAction}>
-            <input type="hidden" name="id" value={task.id} />
-            <input type="hidden" name="status" value={s.key} />
-            <button
-              type="submit"
-              className="rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900"
-            >
-              → {s.label}
-            </button>
-          </form>
-        ))}
+        {/* Status-Schalter (aktueller Status hervorgehoben) */}
+        <div className="inline-flex overflow-hidden rounded-md border border-gray-300">
+          {STATUS_ACTIONS.map((s, i) => {
+            const cur = s.key === task.status;
+            const base = `px-2.5 py-1 text-xs font-medium ${i > 0 ? "border-l border-gray-300" : ""}`;
+            if (cur) {
+              return (
+                <span key={s.key} className={`${base} ${statusActiveClass(task.status)}`}>
+                  {s.label}
+                </span>
+              );
+            }
+            return (
+              <form key={s.key} action={setStatusAction} className="contents">
+                <input type="hidden" name="id" value={task.id} />
+                <input type="hidden" name="status" value={s.key} />
+                <button type="submit" className={`${base} bg-white text-gray-600 hover:bg-gray-100`}>
+                  {s.label}
+                </button>
+              </form>
+            );
+          })}
+        </div>
 
-        {/* Weiterleiten */}
-        <form action={forwardAction} className="ml-auto flex items-center gap-1">
+        <div className="ml-auto flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setFwdOpen((o) => !o)}
+            title="Weiterleiten"
+            className="flex h-7 items-center gap-1 rounded-md border border-gray-300 px-2 text-xs font-medium text-gray-600 transition-colors hover:border-brand-red/50 hover:text-gray-900"
+          >
+            ↗ Weiterleiten
+          </button>
+          <button
+            type="button"
+            onClick={() => setNoteOpen((o) => !o)}
+            title="Notiz / Rückmeldung"
+            className="flex h-7 items-center gap-1 rounded-md border border-gray-300 px-2 text-xs font-medium text-gray-600 transition-colors hover:border-brand-red/50 hover:text-gray-900"
+          >
+            💬 Notiz
+          </button>
+        </div>
+      </div>
+
+      {fwdOpen && (
+        <form action={forwardAction} className="mt-2 flex items-center gap-2">
           <input type="hidden" name="id" value={task.id} />
           <select
             name="toUserId"
             defaultValue=""
             required
-            className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-800 outline-none focus:border-brand-red/60"
+            className="flex-1 rounded-md border border-gray-300 px-2 py-1.5 text-xs text-gray-800 outline-none focus:border-brand-red/60"
           >
             <option value="" disabled>
               weiterleiten an …
@@ -245,30 +299,31 @@ function TaskCard({
           </select>
           <button
             type="submit"
-            className="rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900"
+            className="shrink-0 rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900"
           >
-            ➜
+            Weiterleiten
           </button>
         </form>
-      </div>
+      )}
 
-      {/* Notiz / Rückmeldung hinzufügen (geht als Meldung an den Ersteller) */}
-      <form action={addNoteAction} className="mt-3 flex items-end gap-2">
-        <input type="hidden" name="id" value={task.id} />
-        <textarea
-          name="note"
-          rows={1}
-          required
-          placeholder="Notiz / Rückmeldung … (geht an den Ersteller)"
-          className="min-h-[2.25rem] flex-1 resize-y rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-brand-red/60"
-        />
-        <button
-          type="submit"
-          className="shrink-0 rounded-md border border-gray-300 px-2.5 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900"
-        >
-          💬 Notiz
-        </button>
-      </form>
+      {noteOpen && (
+        <form action={addNoteAction} className="mt-2 flex items-end gap-2">
+          <input type="hidden" name="id" value={task.id} />
+          <textarea
+            name="note"
+            rows={2}
+            required
+            placeholder="Notiz / Rückmeldung … (geht an den Ersteller)"
+            className="min-h-[2.5rem] flex-1 resize-y rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-brand-red/60"
+          />
+          <button
+            type="submit"
+            className="shrink-0 rounded-md bg-brand-red px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90"
+          >
+            Senden
+          </button>
+        </form>
+      )}
 
       {task.history.length > 0 && (
         <details className="mt-3">
