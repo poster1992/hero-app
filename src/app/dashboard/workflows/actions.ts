@@ -77,6 +77,12 @@ function readConfig(formData: FormData): WorkflowConfig {
     validFrom: /^\d{4}-\d{2}-\d{2}$/.test(String(formData.get("validFrom") ?? ""))
       ? String(formData.get("validFrom"))
       : null,
+    excludedSuppliers: String(formData.get("excludedSuppliers") ?? "")
+      .split(/[\n,]/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .slice(0, 50),
+    excludedAssigneeId: Number(formData.get("excludedAssigneeId")) > 0 ? Number(formData.get("excludedAssigneeId")) : null,
   };
 }
 

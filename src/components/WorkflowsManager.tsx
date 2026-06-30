@@ -191,6 +191,40 @@ function RuleFields({
           <input name="filterMinAmount" type="number" min={0} step="0.01" defaultValue={cfg?.filterMinAmount ?? ""} className={inputClass} />
         </div>
       </div>
+
+      {/* Split nach Lieferant: ausgewaehlte Lieferanten gehen an einen anderen Bearbeiter */}
+      <div className="sm:col-span-2 rounded-md border border-gray-200 p-3">
+        <p className="mb-2 text-sm font-medium text-gray-700">
+          Lieferanten-Split <span className="font-normal text-gray-400">(optional)</span>
+        </p>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <label className="mb-1 block text-sm text-gray-600">Ausgeschlossene Lieferanten</label>
+            <input
+              name="excludedSuppliers"
+              defaultValue={(cfg?.excludedSuppliers ?? []).join(", ")}
+              placeholder="z.B. Circle, Amazon (kommagetrennt)"
+              className={inputClass}
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm text-gray-600">… gehen stattdessen an</label>
+            <select name="excludedAssigneeId" defaultValue={cfg?.excludedAssigneeId ?? ""} className={inputClass}>
+              <option value="">— niemand (überspringen) —</option>
+              {users.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <p className="mt-1 text-xs text-gray-400">
+          {isReview
+            ? "Belege dieser Lieferanten gehen zur Prüfung an die hier gewählte Person, alle anderen an den Prüfer oben."
+            : "Vorgänge dieser Lieferanten gehen an die hier gewählte Person, alle anderen an den Bearbeiter oben."}
+        </p>
+      </div>
     </div>
   );
 }
@@ -198,6 +232,9 @@ function RuleFields({
 function WorkflowRow({ wf, users }: { wf: Workflow; users: UserOption[] }) {
   const [editing, setEditing] = useState(false);
   const assignee = users.find((u) => u.id === wf.config.assigneeId)?.name ?? `#${wf.config.assigneeId}`;
+  const excludedName = wf.config.excludedAssigneeId
+    ? users.find((u) => u.id === wf.config.excludedAssigneeId)?.name ?? `#${wf.config.excludedAssigneeId}`
+    : null;
 
   if (editing) {
     return (
@@ -235,6 +272,9 @@ function WorkflowRow({ wf, users }: { wf: Workflow; users: UserOption[] }) {
             : ""}
           {wf.config.filterMinAmount != null ? ` · ab ${wf.config.filterMinAmount} €` : ""}
           {wf.config.validFrom ? ` · gültig ab ${wf.config.validFrom.split("-").reverse().join(".")}` : ""}
+          {wf.config.excludedSuppliers.length > 0 && excludedName
+            ? ` · Split: „${wf.config.excludedSuppliers.join(", ")}" → ${excludedName}`
+            : ""}
         </p>
       </div>
       <form action={toggleWorkflowAction}>

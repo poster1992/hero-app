@@ -29,6 +29,10 @@ export interface WorkflowConfig {
   buttons: string[];
   /** Regel gilt erst ab diesem Datum (YYYY-MM-DD); nur Ereignisse ab hier lösen aus. */
   validFrom: string | null;
+  /** Split: Lieferanten (Teilstring), die an einen anderen Prüfer gehen. */
+  excludedSuppliers: string[];
+  /** Prüfer/Bearbeiter für die ausgeschlossenen Lieferanten. */
+  excludedAssigneeId: number | null;
 }
 
 export interface Workflow {
@@ -77,6 +81,13 @@ function parseConfig(value: unknown): WorkflowConfig {
     buttons: Array.isArray(o.buttons) ? o.buttons.map((b) => String(b).trim()).filter(Boolean) : [],
     validFrom:
       typeof o.validFrom === "string" && /^\d{4}-\d{2}-\d{2}$/.test(o.validFrom) ? o.validFrom : null,
+    excludedSuppliers: Array.isArray(o.excludedSuppliers)
+      ? o.excludedSuppliers.map((s) => String(s).trim()).filter(Boolean)
+      : [],
+    excludedAssigneeId:
+      o.excludedAssigneeId != null && Number.isFinite(Number(o.excludedAssigneeId)) && Number(o.excludedAssigneeId) > 0
+        ? Number(o.excludedAssigneeId)
+        : null,
   };
 }
 

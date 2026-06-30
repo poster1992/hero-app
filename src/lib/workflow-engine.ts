@@ -148,12 +148,21 @@ function matchesFilters(triggerKey: string, ev: WfEvent, cfg: WorkflowConfig): b
   return true;
 }
 
+/** Effektiver Bearbeiter: Split nach ausgeschlossenen Lieferanten. */
+function effectiveAssignee(c: WorkflowConfig, supplier: string): number {
+  const excluded =
+    c.excludedSuppliers.length > 0 &&
+    c.excludedSuppliers.some((s) => supplier.toLowerCase().includes(s.toLowerCase()));
+  return excluded && c.excludedAssigneeId ? c.excludedAssigneeId : c.assigneeId;
+}
+
 /** Führt die Aktion einer Regel für ein Ereignis aus (Aufgabe oder Rechnungsprüfung). */
 async function executeRule(wf: Workflow, ev: WfEvent): Promise<void> {
   const c = wf.config;
+  const assignee = effectiveAssignee(c, ev.supplier);
   if (c.actionType === "review" && ev.review) {
     const lbl = reviewLabel(ev.review);
-    await assignReviewer(ev.review.heroId, c.assigneeId, {
+    await assignReviewer(ev.review.heroId, assignee, {
       number: ev.review.number,
       supplier: ev.review.supplier,
       gross: ev.review.gross,
@@ -162,22 +171,22 @@ async function executeRule(wf: Workflow, ev: WfEvent): Promise<void> {
       projectRelativeId: ev.review.projectRelativeId,
       projectName: ev.review.projectName,
     });
-    await createReviewTask(ev.review.heroId, lbl, wf.createdBy ?? c.assigneeId, c.assigneeId, c.description);
-    await notifyAssignee(c.assigneeId, `Rechnung prüfen: ${lbl}`);
-    await addWorkflowLog(wf.id, ev.ref, `Rechnungsprüfung gestartet: ${lbl}`);
+    await createReviewTask(ev.review.heroId, lbl, wf.createdBy ?? assignee, assignee, c.description);
+    await notifyAssignee(assignee, `Rechnung prüfen: ${lbl}`);
+    await addWorkflowLog(wf.id, ev.ref, `Rechnungsprüfung gestartet: ${lbl} → Prüfer #${assignee}`);
   } else {
     const title = (ev.fill(c.title).trim() || "Aufgabe").slice(0, 255);
     const dueDate = new Date(Date.now() + (c.dueOffsetDays || 0) * 24 * 3600 * 1000).toISOString().slice(0, 10);
     await createTask({
       title,
       description: c.description,
-      createdBy: wf.createdBy ?? c.assigneeId,
-      assignedTo: [c.assigneeId],
+      createdBy: wf.createdBy ?? assignee,
+      assignedTo: [assignee],
       dueDate,
       actionButtons: c.buttons,
     });
-    await notifyAssignee(c.assigneeId, title);
-    await addWorkflowLog(wf.id, ev.ref, `Aufgabe erstellt: ${title}`);
+    await notifyAssignee(assignee, title);
+    await addWorkflowLog(wf.id, ev.ref, `Aufgabe erstellt: ${title} → #${assignee}`);
   }
 }
 
