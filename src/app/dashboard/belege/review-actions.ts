@@ -65,20 +65,21 @@ export async function assignReviewAction(formData: FormData): Promise<void> {
  * Trägt die Prüfentscheidung ein (Freigeben/Ablehnen) und schließt die Aufgabe.
  * Erlaubt für Berechtigte ODER den zugewiesenen Prüfer (z. B. aus der Aufgabe).
  */
-export async function decideReviewAction(formData: FormData): Promise<void> {
+export async function decideReviewAction(
+  formData: FormData
+): Promise<{ openProjectId: number | null }> {
+  const none = { openProjectId: null };
   const session = await getSession();
-  if (!session) return;
+  if (!session) return none;
   const user = await getUserByUsername(session.username);
-  if (!user) return;
+  if (!user) return none;
   const heroId = String(formData.get("heroId") ?? "").trim();
   const decision = String(formData.get("decision") ?? "") as ReviewStatus;
-  if (!heroId || (decision !== "freigegeben" && decision !== "abgelehnt")) return;
+  if (!heroId || (decision !== "freigegeben" && decision !== "abgelehnt")) return none;
 
+  const review = await getReceiptReview(heroId);
   const allowed = (await getAllowedModules(user.role)).includes("rechnungspruefung");
-  if (!allowed) {
-    const review = await getReceiptReview(heroId);
-    if (review?.assignedToId !== user.id) return;
-  }
+  if (!allowed && review?.assignedToId !== user.id) return none;
 
   const note = String(formData.get("note") ?? "").trim() || null;
   await setReviewDecision(heroId, decision, user.id, note, snapshot(formData));
@@ -86,4 +87,10 @@ export async function decideReviewAction(formData: FormData): Promise<void> {
   await completeReviewTasks(heroId, user.id);
   revalidatePath(PATH);
   revalidatePath(TASKS_PATH);
+
+  // Nach Freigabe: Projekt-Popup öffnen, damit der Prüfer die Beleg-Artikel
+  // den Soll-Artikeln zuordnet.
+  return {
+    openProjectId: decision === "freigegeben" ? review?.projectMatchId ?? null : null,
+  };
 }

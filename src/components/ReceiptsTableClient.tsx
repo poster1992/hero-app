@@ -157,7 +157,7 @@ export default function ReceiptsTableClient({
   const [historyRow, setHistoryRow] = useState<ReceiptRow | null>(null);
   const [filters, setFilters] = useState<Record<FilterKey, string>>(EMPTY_FILTERS);
 
-  const runAction = (fd: FormData, fn: (fd: FormData) => Promise<void>) => {
+  const runAction = (fd: FormData, fn: (fd: FormData) => Promise<unknown>) => {
     startTransition(async () => {
       await fn(fd);
       router.refresh();

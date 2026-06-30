@@ -61,6 +61,7 @@ export default async function AufgabenPage() {
         gross: r.gross,
         reviewedByName: r.reviewedByName,
         note: r.note,
+        projectMatchId: r.projectMatchId,
         history: r.history.map((h) => ({
           actionLabel: h.actionLabel,
           detail: h.detail,

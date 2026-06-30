@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import ProjectDetailModal from "@/components/ProjectDetailModal";
 import ProjectTaskModal from "@/components/ProjectTaskModal";
@@ -68,6 +68,20 @@ export default function ProjectsTable({ projects }: { projects: ProjectRow[] }) 
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [detail, setDetail] = useState<ProjectRow | null>(null);
   const [taskProject, setTaskProject] = useState<ProjectRow | null>(null);
+
+  // Auto-Öffnen via ?open=<projectMatchId> (z.B. nach Rechnungsfreigabe → Artikel-Abgleich).
+  const autoOpenedRef = useRef(false);
+  useEffect(() => {
+    if (autoOpenedRef.current) return;
+    const openId = Number(searchParams.get("open"));
+    if (openId > 0) {
+      const p = projects.find((x) => x.id === openId);
+      if (p) {
+        setDetail(p);
+        autoOpenedRef.current = true;
+      }
+    }
+  }, [searchParams, projects]);
 
   const sortBy = (key: string) => {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));

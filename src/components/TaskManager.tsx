@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState, useEffect, useRef, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import {
   createTaskAction,
   setStatusAction,
@@ -21,6 +22,7 @@ export interface ReviewTaskInfo {
   gross: number | null;
   reviewedByName: string | null;
   note: string | null;
+  projectMatchId: number | null;
   history: { actionLabel: string; detail: string | null; byName: string | null; at: string | null }[];
 }
 
@@ -106,10 +108,34 @@ function TaskCard({
   const [noteOpen, setNoteOpen] = useState(false);
   const [fwdOpen, setFwdOpen] = useState(false);
   const [statusTarget, setStatusTarget] = useState<TaskStatus | null>(null);
+  const [reviewNote, setReviewNote] = useState("");
+  const [deciding, setDeciding] = useState(false);
+  const router = useRouter();
   const assigneeNames = task.assignees.map((a) => a.name).join(", ") || "—";
   const overdue = isOverdue(task.dueDate, task.status);
   const heroId = reviewHeroId(task.description);
   const desc = cleanDescription(task.description);
+
+  const decideReview = async (decision: "freigegeben" | "abgelehnt") => {
+    if (!heroId) return;
+    setDeciding(true);
+    try {
+      const fd = new FormData();
+      fd.set("heroId", heroId);
+      fd.set("number", review?.number ?? "");
+      fd.set("supplier", review?.supplier ?? "");
+      fd.set("gross", String(review?.gross ?? ""));
+      fd.set("decision", decision);
+      if (reviewNote.trim()) fd.set("note", reviewNote.trim());
+      const res = await decideReviewAction(fd);
+      // Nach Freigabe: Projekt-Popup öffnen (Beleg-Artikel den Soll-Artikeln zuordnen).
+      if (res?.openProjectId) router.push(`/dashboard/projekte?open=${res.openProjectId}`);
+      else router.refresh();
+    } finally {
+      setDeciding(false);
+    }
+  };
+
   const accentLeft = overdue
     ? "border-l-rose-500"
     : task.status === "erledigt"
@@ -210,36 +236,37 @@ function TaskCard({
               {review.note ? ` · ${review.note}` : ""}
             </p>
           ) : (
-            <form action={decideReviewAction} className="mt-2 flex flex-col gap-2">
-              <input type="hidden" name="heroId" value={heroId} />
-              <input type="hidden" name="number" value={review?.number ?? ""} />
-              <input type="hidden" name="supplier" value={review?.supplier ?? ""} />
-              <input type="hidden" name="gross" value={review?.gross ?? ""} />
+            <div className="mt-2 flex flex-col gap-2">
               <textarea
-                name="note"
+                value={reviewNote}
+                onChange={(e) => setReviewNote(e.target.value)}
                 rows={2}
                 placeholder="Kommentar (optional) …"
                 className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-brand-red/60"
               />
               <div className="flex items-center gap-2">
                 <button
-                  type="submit"
-                  name="decision"
-                  value="freigegeben"
-                  className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90"
+                  type="button"
+                  disabled={deciding}
+                  onClick={() => decideReview("freigegeben")}
+                  title={review?.projectMatchId ? "Freigeben und Projekt zum Artikel-Abgleich öffnen" : "Freigeben"}
+                  className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
                 >
-                  Freigeben
+                  {deciding ? "…" : "Freigeben"}
                 </button>
                 <button
-                  type="submit"
-                  name="decision"
-                  value="abgelehnt"
-                  className="rounded-md bg-brand-red px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90"
+                  type="button"
+                  disabled={deciding}
+                  onClick={() => decideReview("abgelehnt")}
+                  className="rounded-md bg-brand-red px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
                 >
                   Ablehnen
                 </button>
+                {review?.projectMatchId && (
+                  <span className="text-xs text-gray-400">→ öffnet Projekt zum Artikel-Abgleich</span>
+                )}
               </div>
-            </form>
+            </div>
           )}
 
           {review?.history && review.history.length > 0 && (

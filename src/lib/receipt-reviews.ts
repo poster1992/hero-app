@@ -25,6 +25,9 @@ export interface ReceiptReview {
   number: string | null;
   supplier: string | null;
   gross: number | null;
+  projectMatchId: number | null;
+  projectRelativeId: number | null;
+  projectName: string | null;
   history: ReviewHistoryEntry[];
 }
 
@@ -63,6 +66,9 @@ interface ReviewRow extends RowDataPacket {
   receipt_number: string | null;
   supplier: string | null;
   gross: string | number | null;
+  project_match_id: number | null;
+  project_relative_id: number | null;
+  project_name: string | null;
 }
 
 export function reviewStatusLabel(s: ReviewStatus): string {
@@ -83,6 +89,9 @@ function mapRow(r: ReviewRow): ReceiptReview {
     number: r.receipt_number,
     supplier: r.supplier,
     gross: r.gross == null ? null : Number(r.gross),
+    projectMatchId: r.project_match_id,
+    projectRelativeId: r.project_relative_id,
+    projectName: r.project_name,
     history: [],
   };
 }
@@ -121,6 +130,7 @@ export async function addReviewHistory(
 const SELECT = `
   SELECT rr.hero_receipt_id, rr.status, rr.assigned_to, rr.reviewed_by, rr.reviewed_at, rr.note,
          rr.doc_url, rr.receipt_number, rr.supplier, rr.gross,
+         rr.project_match_id, rr.project_relative_id, rr.project_name,
          COALESCE(NULLIF(au.display_name, ''), au.username) AS assigned_to_name,
          COALESCE(NULLIF(ru.display_name, ''), ru.username) AS reviewed_by_name
   FROM receipt_reviews rr
@@ -164,6 +174,9 @@ interface ReceiptSnapshot {
   supplier: string | null;
   gross: number | null;
   docUrl?: string | null;
+  projectMatchId?: number | null;
+  projectRelativeId?: number | null;
+  projectName?: string | null;
 }
 
 /** Assigns a reviewer to a receipt (status stays "offen"). */
@@ -173,12 +186,26 @@ export async function assignReviewer(
   snap: ReceiptSnapshot
 ): Promise<void> {
   await getPool().query(
-    `INSERT INTO receipt_reviews (hero_receipt_id, status, assigned_to, receipt_number, supplier, gross, doc_url)
-     VALUES (?, 'offen', ?, ?, ?, ?, ?)
+    `INSERT INTO receipt_reviews (hero_receipt_id, status, assigned_to, receipt_number, supplier, gross, doc_url,
+       project_match_id, project_relative_id, project_name)
+     VALUES (?, 'offen', ?, ?, ?, ?, ?, ?, ?, ?)
      ON DUPLICATE KEY UPDATE assigned_to = VALUES(assigned_to),
        receipt_number = VALUES(receipt_number), supplier = VALUES(supplier), gross = VALUES(gross),
-       doc_url = VALUES(doc_url)`,
-    [heroReceiptId, userId, snap.number, snap.supplier, snap.gross, snap.docUrl ?? null]
+       doc_url = VALUES(doc_url),
+       project_match_id = COALESCE(VALUES(project_match_id), project_match_id),
+       project_relative_id = COALESCE(VALUES(project_relative_id), project_relative_id),
+       project_name = COALESCE(VALUES(project_name), project_name)`,
+    [
+      heroReceiptId,
+      userId,
+      snap.number,
+      snap.supplier,
+      snap.gross,
+      snap.docUrl ?? null,
+      snap.projectMatchId ?? null,
+      snap.projectRelativeId ?? null,
+      snap.projectName ?? null,
+    ]
   );
 }
 

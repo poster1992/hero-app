@@ -1,6 +1,6 @@
 import "server-only";
 import { getReceiptsInRange, getProjectPipeline, type Receipt } from "./hero-api";
-import { getCustomerName, getDocumentUrl } from "./invoices";
+import { getCustomerName, getDocumentUrl, getReceiptProjects } from "./invoices";
 import { createTask, createReviewTask } from "./tasks";
 import { assignReviewer } from "./receipt-reviews";
 import { sendPushToUsers } from "./push";
@@ -33,7 +33,16 @@ interface WfEvent {
   eventDate?: string | null; // YYYY-MM-DD (Beleg- bzw. Angebotsdatum), für „gilt ab"
   fill: (tpl: string) => string; // Titel-Vorlage füllen
   /** Beleg-Daten für die Aktion „Rechnungsprüfung" (nur new_beleg). */
-  review?: { heroId: string; number: string; supplier: string; gross: number; docUrl: string | null };
+  review?: {
+    heroId: string;
+    number: string;
+    supplier: string;
+    gross: number;
+    docUrl: string | null;
+    projectMatchId: number | null;
+    projectRelativeId: number | null;
+    projectName: string | null;
+  };
 }
 
 function reviewLabel(rv: { number: string; supplier: string; gross: number }): string {
@@ -71,6 +80,7 @@ async function collectEvents(triggerKey: string): Promise<WfEvent[]> {
     const receipts = (await getReceiptsInRange(from, to)).filter((r) => r.type === "output");
     return receipts.map((r) => {
       const supplier = getCustomerName(r);
+      const proj = getReceiptProjects(r)[0] ?? null;
       return {
         ref: r.id,
         supplier,
@@ -83,6 +93,9 @@ async function collectEvents(triggerKey: string): Promise<WfEvent[]> {
           supplier,
           gross: r.value || 0,
           docUrl: r.fileUpload?.src ? getDocumentUrl(r.fileUpload.src) : null,
+          projectMatchId: proj?.id ?? null,
+          projectRelativeId: proj?.relativeId ?? null,
+          projectName: proj?.name ?? null,
         },
       };
     });
@@ -145,6 +158,9 @@ async function executeRule(wf: Workflow, ev: WfEvent): Promise<void> {
       supplier: ev.review.supplier,
       gross: ev.review.gross,
       docUrl: ev.review.docUrl,
+      projectMatchId: ev.review.projectMatchId,
+      projectRelativeId: ev.review.projectRelativeId,
+      projectName: ev.review.projectName,
     });
     await createReviewTask(ev.review.heroId, lbl, wf.createdBy ?? c.assigneeId, c.assigneeId, c.description);
     await notifyAssignee(c.assigneeId, `Rechnung prüfen: ${lbl}`);
