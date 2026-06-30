@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import Logo from "./Logo";
+import PushBell from "@/components/PushBell";
 import { logout } from "@/app/login/actions";
 
 interface NavItem {
@@ -368,6 +369,7 @@ export default function Sidebar({ allowedModules }: { allowedModules: string[] }
       </nav>
 
       <div className="border-t border-white/10 px-3 py-3">
+        <PushBell collapsed={collapsed} />
         <form action={logout}>
           <button
             type="submit"
