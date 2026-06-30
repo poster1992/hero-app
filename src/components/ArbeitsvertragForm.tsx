@@ -1,6 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import {
+  saveContractAction,
+  deleteContractAction,
+  type SaveContractResult,
+} from "@/app/dashboard/arbeitsvertrag/actions";
+import type { SavedContract } from "@/lib/contracts";
 
 interface ContractData {
   companyName: string;
@@ -39,6 +46,18 @@ const EMPTY: ContractData = {
   place: "",
   contractDate: new Date().toISOString().slice(0, 10),
 };
+
+/** Gespeicherte (lose getypte) Daten in ein vollständiges ContractData überführen. */
+function toContractData(raw: Record<string, unknown>): ContractData {
+  const out: ContractData = { ...EMPTY };
+  for (const k of Object.keys(EMPTY) as (keyof ContractData)[]) {
+    const v = raw[k];
+    if (k === "limited") out.limited = v === true || v === "true";
+    else if (typeof v === "string") (out[k] as string) = v;
+    else if (typeof v === "number") (out[k] as string) = String(v);
+  }
+  return out;
+}
 
 const inputClass =
   "w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-brand-red/60";
@@ -151,15 +170,20 @@ function buildSections(d: ContractData): Section[] {
   return sections;
 }
 
-export default function ArbeitsvertragForm() {
+export default function ArbeitsvertragForm({ contracts }: { contracts: SavedContract[] }) {
   const [d, setD] = useState<ContractData>(EMPTY);
   const set = (k: keyof ContractData, v: string | boolean) => setD((p) => ({ ...p, [k]: v }));
   const sections = useMemo(() => buildSections(d), [d]);
+  const router = useRouter();
+  const [saving, startSave] = useTransition();
+  const [busy, startBusy] = useTransition();
+  const [msg, setMsg] = useState<string | null>(null);
 
-  const printContract = () => {
+  const printData = (data: ContractData) => {
+    const secs = buildSections(data);
     const esc = (s: string) =>
       s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    const body = sections
+    const body = secs
       .map((sec) => {
         const head = sec.title ? `<h2>${esc(sec.title)}</h2>` : "";
         const paras = sec.paras.map((p) => `<p>${esc(p)}</p>`).join("");
@@ -167,13 +191,13 @@ export default function ArbeitsvertragForm() {
       })
       .join("");
     const signatures = `
-      <div class="sig-line">${esc(ph(d.place))}, den ${fmtDate(d.contractDate)}</div>
+      <div class="sig-line">${esc(ph(data.place))}, den ${fmtDate(data.contractDate)}</div>
       <table class="sigs"><tr>
-        <td><div class="line"></div>Arbeitgeber<br/>${esc(ph(d.companyName))}</td>
-        <td><div class="line"></div>Arbeitnehmer/in<br/>${esc(ph(d.employeeName))}</td>
+        <td><div class="line"></div>Arbeitgeber<br/>${esc(ph(data.companyName))}</td>
+        <td><div class="line"></div>Arbeitnehmer/in<br/>${esc(ph(data.employeeName))}</td>
       </tr></table>`;
     const html = `<!doctype html><html lang="de"><head><meta charset="utf-8"/>
-      <title>Arbeitsvertrag ${esc(d.employeeName)}</title>
+      <title>Arbeitsvertrag ${esc(data.employeeName)}</title>
       <style>
         @page { margin: 2.2cm; }
         * { box-sizing: border-box; }
@@ -197,6 +221,41 @@ export default function ArbeitsvertragForm() {
     w.document.close();
     w.focus();
     setTimeout(() => w.print(), 250);
+  };
+
+  const saveContract = () => {
+    setMsg(null);
+    startSave(async () => {
+      const res: SaveContractResult = await saveContractAction(d.employeeName, { ...d });
+      if (res.ok) {
+        setMsg("Vertrag gespeichert.");
+        router.refresh();
+      } else {
+        setMsg(res.error ?? "Speichern fehlgeschlagen.");
+      }
+    });
+  };
+
+  const loadContract = (c: SavedContract) => {
+    setD(toContractData(c.data));
+    setMsg(`„${c.employeeName}" geladen.`);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const removeContract = (id: number) => {
+    if (!window.confirm("Diesen gespeicherten Vertrag löschen?")) return;
+    startBusy(async () => {
+      await deleteContractAction(id);
+      router.refresh();
+    });
+  };
+
+  const fmtStamp = (s: string | null) => {
+    if (!s) return "";
+    const dt = new Date(s.replace(" ", "T"));
+    return Number.isNaN(dt.getTime())
+      ? s
+      : dt.toLocaleString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" });
   };
 
   return (
@@ -284,10 +343,18 @@ export default function ArbeitsvertragForm() {
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={printContract}
-            className="rounded-md bg-brand-red px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
+            onClick={saveContract}
+            disabled={saving}
+            className="rounded-md bg-brand-red px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
           >
-            Drucken / als PDF speichern
+            {saving ? "Speichert …" : "Speichern"}
+          </button>
+          <button
+            type="button"
+            onClick={() => printData(d)}
+            className="rounded-md border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-800 hover:border-brand-red/50"
+          >
+            Drucken / als PDF
           </button>
           <button
             type="button"
@@ -296,6 +363,53 @@ export default function ArbeitsvertragForm() {
           >
             Zurücksetzen
           </button>
+          {msg && <span className="text-sm text-gray-500">{msg}</span>}
+        </div>
+
+        {/* Gespeicherte Verträge */}
+        <div className="mt-5 border-t border-gray-200 pt-4">
+          <h3 className="mb-2 text-sm font-semibold text-gray-700">
+            Gespeicherte Verträge <span className="font-normal text-gray-400">({contracts.length})</span>
+          </h3>
+          {contracts.length === 0 ? (
+            <p className="text-sm text-gray-400">Noch keine gespeicherten Verträge.</p>
+          ) : (
+            <ul className="divide-y divide-gray-100">
+              {contracts.map((c) => (
+                <li key={c.id} className="flex flex-wrap items-center gap-2 py-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-gray-900">{c.employeeName}</p>
+                    <p className="text-xs text-gray-400">
+                      {fmtStamp(c.createdAt)}
+                      {c.createdByName ? ` · ${c.createdByName}` : ""}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => loadContract(c)}
+                    className="rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:border-brand-red/50"
+                  >
+                    Laden
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => printData(toContractData(c.data))}
+                    className="rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:border-brand-red/50"
+                  >
+                    Drucken
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => removeContract(c.id)}
+                    disabled={busy}
+                    className="rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:border-brand-red/50 hover:text-brand-red disabled:opacity-50"
+                  >
+                    Löschen
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </div>
 
