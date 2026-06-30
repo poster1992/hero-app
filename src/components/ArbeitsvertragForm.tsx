@@ -11,39 +11,41 @@ import type { SavedContract } from "@/lib/contracts";
 
 interface ContractData {
   companyName: string;
-  companyAddress: string;
-  companyRep: string;
+  companyStreet: string;
+  companyZipCity: string;
   employeeName: string;
-  employeeAddress: string;
+  employeeStreet: string;
+  employeeZipCity: string;
   employeeBirth: string;
-  position: string;
+  matrikel: string;
   startDate: string;
-  limited: boolean;
-  endDate: string;
-  probationMonths: string;
+  position: string;
   weeklyHours: string;
-  grossSalary: string;
-  vacationDays: string;
+  hourlyWage: string;
+  index: string;
+  probationMonths: string;
+  additionalAgreement: string;
   place: string;
   contractDate: string;
 }
 
 const EMPTY: ContractData = {
-  companyName: "FLOORTEC",
-  companyAddress: "",
-  companyRep: "",
+  companyName: "FLOORTEC S.à r.l.",
+  companyStreet: "11, Um Lenster Bierg",
+  companyZipCity: "L-6125 Junglinster",
   employeeName: "",
-  employeeAddress: "",
+  employeeStreet: "",
+  employeeZipCity: "",
   employeeBirth: "",
-  position: "",
+  matrikel: "-",
   startDate: "",
-  limited: false,
-  endDate: "",
-  probationMonths: "6",
+  position: "",
   weeklyHours: "40",
-  grossSalary: "",
-  vacationDays: "25",
-  place: "",
+  hourlyWage: "",
+  index: "",
+  probationMonths: "6",
+  additionalAgreement: "-",
+  place: "Junglinster",
   contractDate: new Date().toISOString().slice(0, 10),
 };
 
@@ -52,9 +54,8 @@ function toContractData(raw: Record<string, unknown>): ContractData {
   const out: ContractData = { ...EMPTY };
   for (const k of Object.keys(EMPTY) as (keyof ContractData)[]) {
     const v = raw[k];
-    if (k === "limited") out.limited = v === true || v === "true";
-    else if (typeof v === "string") (out[k] as string) = v;
-    else if (typeof v === "number") (out[k] as string) = String(v);
+    if (typeof v === "string") out[k] = v;
+    else if (typeof v === "number") out[k] = String(v);
   }
   return out;
 }
@@ -63,155 +64,252 @@ const inputClass =
   "w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-brand-red/60";
 
 function fmtDate(iso: string): string {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso || "________________";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso || "____________";
   return iso.split("-").reverse().join(".");
 }
 
-function fmtSalary(v: string): string {
-  const n = Number(v.replace(/\./g, "").replace(",", "."));
-  if (v.trim() && Number.isFinite(n)) {
-    return n.toLocaleString("de-DE", { style: "currency", currency: "EUR" });
-  }
-  return v.trim() ? v.trim() : "________________ €";
+function v(s: string, fallback = "____________"): string {
+  return s.trim() ? s.trim() : fallback;
 }
 
-function ph(v: string): string {
-  return v.trim() ? v.trim() : "________________";
+interface TableSpec {
+  headers: string[];
+  rows: string[][];
 }
 
-interface Section {
-  title?: string;
+interface Block {
+  article?: string;
+  heading?: string;
   paras: string[];
+  table?: TableSpec;
+  parasAfter?: string[];
 }
 
-/** Baut die personalisierten Vertragsabschnitte aus den Eingaben. */
-function buildSections(d: ContractData): Section[] {
-  const sections: Section[] = [];
-
-  sections.push({
+/** Baut die personalisierte FLOORTEC-Vertragsvorlage (Wortlaut der Muster-PDF). */
+function buildBlocks(d: ContractData): Block[] {
+  const intro: Block = {
     paras: [
       "Zwischen",
-      `${ph(d.companyName)}, ${ph(d.companyAddress)}${d.companyRep.trim() ? `, vertreten durch ${d.companyRep.trim()}` : ""}`,
-      "– nachfolgend „Arbeitgeber“ genannt –",
+      `1) Herr/Frau: **${v(d.employeeName)}**, wohnhaft in: ${v(d.employeeStreet)}, ${v(d.employeeZipCity)}, geboren am: ${fmtDate(d.employeeBirth)}, nationale Matrikelnummer: ${v(d.matrikel, "-")}`,
+      "Arbeitnehmer einerseits,",
       "und",
-      `${ph(d.employeeName)}, ${ph(d.employeeAddress)}${d.employeeBirth.trim() ? `, geboren am ${fmtDate(d.employeeBirth)}` : ""}`,
-      "– nachfolgend „Arbeitnehmer/in“ genannt –",
-      "wird folgender Arbeitsvertrag geschlossen:",
+      `2) Dem Unternehmen: **${v(d.companyName)}**, mit Sitz in: ${v(d.companyStreet)}, ${v(d.companyZipCity)}`,
+      "als Arbeitgeber andererseits,",
+      "wurde folgender Arbeitsvertrag auf unbestimmte Zeit, der den Bestimmungen des Arbeitsgesetzbuches unterliegt, abgeschlossen.",
     ],
-  });
+  };
 
-  const beginn = [
-    `Der/Die Arbeitnehmer/in wird ab dem ${fmtDate(d.startDate)} als ${ph(d.position)} eingestellt.`,
-    d.limited
-      ? `Das Arbeitsverhältnis ist befristet und endet ohne Kündigung mit Ablauf des ${fmtDate(d.endDate)}.`
-      : "Das Arbeitsverhältnis wird auf unbestimmte Zeit geschlossen.",
-  ];
-  sections.push({ title: "§ 1 Beginn und Tätigkeit", paras: beginn });
-
-  if (Number(d.probationMonths) > 0) {
-    sections.push({
-      title: "§ 2 Probezeit",
+  return [
+    intro,
+    {
+      article: "Artikel 1",
       paras: [
-        `Die ersten ${ph(d.probationMonths)} Monate gelten als Probezeit. Während der Probezeit kann das Arbeitsverhältnis beiderseits mit einer Frist von zwei Wochen gekündigt werden.`,
+        `Der unter 1) bezeichnete Arbeitnehmer tritt ab dem **${fmtDate(d.startDate)}** in die Dienste des unter 2) bezeichneten Arbeitgebers ein.`,
       ],
-    });
-  }
-
-  sections.push({
-    title: "§ 3 Arbeitszeit",
-    paras: [
-      `Die regelmäßige wöchentliche Arbeitszeit beträgt ${ph(d.weeklyHours)} Stunden. Beginn und Ende der täglichen Arbeitszeit richten sich nach den betrieblichen Erfordernissen.`,
-    ],
-  });
-
-  sections.push({
-    title: "§ 4 Vergütung",
-    paras: [
-      `Der/Die Arbeitnehmer/in erhält ein monatliches Bruttogehalt von ${fmtSalary(d.grossSalary)}. Die Zahlung erfolgt jeweils zum Ende eines Kalendermonats bargeldlos auf ein vom Arbeitnehmer/von der Arbeitnehmerin anzugebendes Konto.`,
-    ],
-  });
-
-  sections.push({
-    title: "§ 5 Urlaub",
-    paras: [
-      `Der jährliche Erholungsurlaub beträgt ${ph(d.vacationDays)} Arbeitstage. Der Urlaub ist rechtzeitig zu beantragen und unter Berücksichtigung der betrieblichen Belange zu nehmen.`,
-    ],
-  });
-
-  sections.push({
-    title: "§ 6 Arbeitsverhinderung",
-    paras: [
-      "Der/Die Arbeitnehmer/in ist verpflichtet, dem Arbeitgeber jede Arbeitsverhinderung und ihre voraussichtliche Dauer unverzüglich mitzuteilen. Bei Arbeitsunfähigkeit infolge Krankheit ist spätestens am dritten Tag eine ärztliche Bescheinigung vorzulegen.",
-    ],
-  });
-
-  sections.push({
-    title: "§ 7 Kündigung",
-    paras: [
-      "Nach Ablauf der Probezeit kann das Arbeitsverhältnis unter Einhaltung der gesetzlichen Kündigungsfristen gekündigt werden. Die Kündigung bedarf zu ihrer Wirksamkeit der Schriftform.",
-    ],
-  });
-
-  sections.push({
-    title: "§ 8 Verschwiegenheit",
-    paras: [
-      "Der/Die Arbeitnehmer/in verpflichtet sich, über alle Betriebs- und Geschäftsgeheimnisse sowie sonstige vertrauliche Angelegenheiten Stillschweigen zu bewahren. Diese Pflicht besteht auch nach Beendigung des Arbeitsverhältnisses fort.",
-    ],
-  });
-
-  sections.push({
-    title: "§ 9 Schlussbestimmungen",
-    paras: [
-      "Änderungen und Ergänzungen dieses Vertrages bedürfen der Schriftform. Mündliche Nebenabreden bestehen nicht.",
-      "Sollte eine Bestimmung dieses Vertrages unwirksam sein oder werden, so bleibt die Wirksamkeit der übrigen Bestimmungen hiervon unberührt.",
-    ],
-  });
-
-  return sections;
+    },
+    {
+      article: "Artikel 2",
+      paras: [
+        "Die Arbeitsleistung wird vorwiegend an der Betriebsadresse des Unternehmens erbracht. Ungeachtet vorstehendem, erklärt der Arbeitnehmer sein Einverständnis für den Fall, dass er seine Leistung auch an anderen Betriebsstätten des Arbeitgebers oder dessen Kunden erbringen muss, wenn er entsendet wird.",
+      ],
+    },
+    {
+      article: "Artikel 3",
+      paras: [
+        `Der Arbeitnehmer wird, unbeachtet einer späteren Zuweisung, die den beruflichen und persönlichen Fähigkeiten des Arbeitnehmers oder des Unternehmens Rechnung tragen, unter Beachtung des Artikels L.121-7 des Arbeitsgesetzbuchs, als **${v(d.position)}** eingestellt.`,
+      ],
+    },
+    {
+      article: "Artikel 4",
+      paras: [
+        `Die normale Arbeitszeit beträgt **${v(d.weeklyHours)}** Stunden pro Woche.`,
+        "Die Arbeitszeit und der (die) wöchentliche(n) Ruhetag(e) dürfen den Bedürfnissen des Unternehmens angepasst werden und können dementsprechend ändern.",
+      ],
+    },
+    {
+      article: "Artikel 5",
+      paras: [
+        `Der Anfangsbruttolohn oder Anfangsgehalt ist auf **${v(d.hourlyWage)}** pro Stunde, Index **${v(d.index)}** festgelegt.`,
+        "Der Bruttolohn oder das Bruttogehalt werden am Ende des Monats unter Abzug der gesetzlich vorgesehenen Soziallasten (inklusive der Pflegeversicherung) und Steuern ausbezahlt.",
+      ],
+    },
+    {
+      article: "Artikel 6",
+      paras: [
+        "Die Dauer des jährlichen Erholungsurlaubs wird durch die Bestimmungen der Artikel L.233-1 bis L.233-20 des Arbeitsgesetzbuches geregelt.",
+        "Prinzipiell wird der Urlaub aufgrund des, von dem Arbeitnehmer geäußerten Wunschs, und unter Vorbehalt, dass die Bedürfnisse des Unternehmens es gestatten respektive die anderen Arbeitnehmer sich dessen nicht widersetzen, gewährt.",
+        "Außer, wenn eine Bestimmung eine günstigere Regelung aufweist, beträgt der jährliche Erholungsurlaub 26 Arbeitstage pro Jahr.",
+        "Der Erholungsurlaub, der bis zum Jahresende nicht vom Arbeitnehmer genommen wurde, verfällt wenn Arbeitgeber und Arbeitnehmer diesbezüglich keine Einigung erzielen.",
+        "Der Erholungsurlaub kann dem Arbeitnehmer verweigert werden, wenn dessen ungerechtfertigte Abwesenheit, die auf den abgelaufenen Teil des Jahrs berechnet wird, 10 Prozent der Zeit überschreiten, in der er normalerweise hätte arbeiten müssen.",
+      ],
+    },
+    {
+      article: "Artikel 7",
+      paras: [
+        "Bei krankheitsbedingter Arbeitsunfähigkeit oder bei einer Arbeitsunfähigkeit aufgrund eines Unfalls, verpflichtet sich der Arbeitnehmer, den Arbeitgeber, am Tag wo diese Arbeitsunfähigkeit eintritt, vor neun Uhr zu informieren.",
+        "Spätestens am dritten Tag seiner Abwesenheit überbringt der Arbeitnehmer dem Arbeitgeber eine ärztliche Bescheinigung bezüglich der Arbeitsunfähigkeit ab dem ersten Krankentag sowie die voraussichtliche Dauer der Krankheit.",
+      ],
+    },
+    {
+      article: "Artikel 8",
+      paras: [
+        `Die **${v(d.probationMonths)} Monate** nach Arbeitsbeginn stellen die Probezeit dar. Diese Probezeit wird durch die diesbezüglichen gesetzlichen Bestimmungen geregelt.`,
+      ],
+    },
+    {
+      article: "Artikel 9",
+      heading: "KÜNDIGUNG DES ARBEITSVERTRAGS WÄHREND DER PROBEZEIT",
+      paras: [
+        "Der Mindestprobezeit von zwei Wochen kann nicht, außer bei schwerwiegender Verfehlung, ein Ende gesetzt werden.",
+        "Nach Ablauf der zwei Wochen kann der Vertrag auf Probe, von beiden Seiten durch eingeschriebenen Brief, oder durch Unterschrift auf der Ablichtung des Briefs, unter Wahrung folgender Kündigungsfristen, gekündigt werden:",
+      ],
+      table: {
+        headers: ["Dauer der Probezeit", "Kündigungsfrist"],
+        rows: [
+          ["bis 4 Wochen", "4 Kalendertage"],
+          ["bis 3 Monate", "15 Kalendertage"],
+          ["bis 6 Monate", "24 Kalendertage"],
+        ],
+      },
+      parasAfter: [
+        "Wenn keine der Vertragsparteien vor Ende der vereinbarten Probezeit der anderen Partei, unter Wahrung der gesetzlichen Kündigungsfrist von 24 Kalendertagen mittels eingeschriebenen Briefs, informiert hat, wird gegenwärtiger Vertrag als ein, endgültig und auf unbestimmte Zeit abgeschlossener, Vertrag betrachtet, und zwar von dem Tag an wo der Arbeitnehmer in die Dienste des Arbeitgebers eingetreten ist.",
+      ],
+    },
+    {
+      article: "Artikel 10",
+      paras: [
+        "Nach dem Ende der Probezeit kann gegenwärtiger Vertrag mittels eingeschriebenen Briefs, respektive durch die, auf der Ablichtung des Briefes eingetragene Unterschrift unter Wahrung nachstehender Kündigungsfristen, gekündigt werden:",
+      ],
+      heading: "KÜNDIGUNGSFRISTEN",
+      table: {
+        headers: ["Dienstalter", "für den Arbeitgeber", "für den Arbeitnehmer"],
+        rows: [
+          ["unter fünf (5) Jahre", "zwei (2) Monate", "ein (1) Monat"],
+          ["zwischen fünf (5) Jahren und zehn (10) Jahren", "vier (4) Monate", "zwei (2) Monate"],
+          ["bei zehn (10) Jahren und mehr", "sechs (6) Monate", "drei (3) Monate"],
+        ],
+      },
+      parasAfter: ["Die Kündigungsfristen können erst am 15. oder am 1. des Kalendermonats beginnen."],
+    },
+    {
+      article: "Artikel 11",
+      paras: [
+        "Der Arbeitnehmer verpflichtet sich seine Fähigkeiten und sein Wissen sowie seine beruflichen Tätigkeiten ausschließlich des Dienstes seines Arbeitgebers zu widmen und dies unabhängig von den, ihm zugewiesenen oder zugeteilten Bereichen.",
+      ],
+    },
+    {
+      article: "Artikel 12",
+      paras: [
+        "Der Arbeitnehmer verpflichtet sich, alle Informationen im Zusammenhang mit den Aktivitäten des Arbeitgebers, die er während seiner Dienstzeit für den Arbeitgeber erhalten hat, seien sie mündlich oder schriftlich, als vertrauliche Informationen zu behandeln und sie keiner dritten Person weiterzugeben, sie für seine eigenen Zwecke zu verwenden oder in irgendeiner Weise zu verbreiten.",
+      ],
+    },
+    {
+      article: "Artikel 13",
+      paras: [
+        "Der Arbeitnehmer verpflichtet sich, während seiner Dienstzeit sich korrekt und seiner Arbeit angemessen zu kleiden und sich gegenüber anderen Personen zuvorkommend zu verhalten.",
+      ],
+    },
+    {
+      article: "Artikel 14",
+      paras: [
+        "Gegenwärtiger Arbeitsvertrag unterliegt den gesetzlichen Bestimmungen und insbesondere dem Arbeitsgesetzbuchs sowie dem Tarifvertrag, dem das Unternehmen gegebenenfalls unterliegt.",
+      ],
+    },
+    {
+      article: "Artikel 15",
+      paras: [
+        "Die Vertragsparteien vereinbaren ausdrücklich, dass gegenwärtiger Vertrag nur dann zum Tragen kommt, wenn dem Arbeitnehmer, im Rahmen der arbeitsmedizinischen Untersuchung bei der Einstellung, bescheinigt wird, dass er den Posten, für den er eingestellt wird, auch ausüben kann.",
+        "Sollte bei der arbeitsmedizinischen Untersuchung bei der Einstellung festgestellt werden, dass der Arzt der Arbeitsmediziner eine Untauglichkeit für den Posten feststellt, wird gegenwärtiger Vertrag aufgelöst und beendet.",
+        "Das Vertragsende tritt an dem Tag ein, wo der Arbeitgeber die Bescheinigung des arbeitsmedizinischen Dienstes empfängt.",
+      ],
+    },
+    {
+      article: "Artikel 16",
+      paras: [
+        "Der Arbeitnehmer bestätigt keine Drogen zu nehmen, nicht alkoholabhängig zu sein, keine körperliche Beeinträchtigung, Behinderung oder Krankheit zu haben, die während der Dauer von seinem Arbeitsverhältnis eine Invalidität oder Krankheit mit sich führen würde. Es wurde ausdrücklich unter beiden Parteien vereinbart und anerkannt durch den Arbeitnehmer, dass jeglicher Verbrauch von Drogen und Alkohol während der Arbeit und vom Arbeitsverhältnis eine schwere Verfehlung ist, was zur Kündigung des Arbeitsvertrages mit sofortiger Wirkung führen könnte.",
+      ],
+    },
+    {
+      article: "Artikel 17",
+      heading: "Abweichende und zusätzliche Vereinbarungen",
+      paras: [`Zusatzvereinbarung: ${v(d.additionalAgreement, "-")}`],
+    },
+    {
+      paras: [
+        "Der Arbeitnehmer bescheinigt und erklärt ausdrücklich, dass er ein unterzeichnetes Exemplar gegenwärtigen Arbeitsvertrags bei der Unterzeichnung erhalten hat.",
+        `Erstellt in zweifacher Ausführung in ${v(d.place)}, am ${fmtDate(d.contractDate)}.`,
+      ],
+    },
+  ];
 }
+
+/** Inline **fett** in JSX rendern. */
+function Rich({ text }: { text: string }) {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return (
+    <>
+      {parts.map((p, i) =>
+        p.startsWith("**") && p.endsWith("**") ? <strong key={i}>{p.slice(2, -2)}</strong> : <span key={i}>{p}</span>
+      )}
+    </>
+  );
+}
+
+const TITLE = "ARBEITSVERTRAG AUF UNBEFRISTETE ZEIT";
 
 export default function ArbeitsvertragForm({ contracts }: { contracts: SavedContract[] }) {
   const [d, setD] = useState<ContractData>(EMPTY);
-  const set = (k: keyof ContractData, v: string | boolean) => setD((p) => ({ ...p, [k]: v }));
-  const sections = useMemo(() => buildSections(d), [d]);
+  const set = (k: keyof ContractData, val: string) => setD((p) => ({ ...p, [k]: val }));
+  const blocks = useMemo(() => buildBlocks(d), [d]);
   const router = useRouter();
   const [saving, startSave] = useTransition();
   const [busy, startBusy] = useTransition();
   const [msg, setMsg] = useState<string | null>(null);
 
   const printData = (data: ContractData) => {
-    const secs = buildSections(data);
-    const esc = (s: string) =>
-      s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    const body = secs
-      .map((sec) => {
-        const head = sec.title ? `<h2>${esc(sec.title)}</h2>` : "";
-        const paras = sec.paras.map((p) => `<p>${esc(p)}</p>`).join("");
-        return `<section>${head}${paras}</section>`;
+    const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const rich = (s: string) => esc(s).replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    const blks = buildBlocks(data);
+    const body = blks
+      .map((b) => {
+        const art = b.article ? `<div class="art">${esc(b.article)}</div>` : "";
+        const head = b.heading ? `<div class="head">${esc(b.heading)}</div>` : "";
+        const paras = b.paras.map((p) => `<p>${rich(p)}</p>`).join("");
+        let table = "";
+        if (b.table) {
+          const th = b.table.headers.map((h) => `<th>${esc(h)}</th>`).join("");
+          const tr = b.table.rows
+            .map((r) => `<tr>${r.map((c) => `<td>${esc(c)}</td>`).join("")}</tr>`)
+            .join("");
+          table = `<table class="kf"><thead><tr>${th}</tr></thead><tbody>${tr}</tbody></table>`;
+        }
+        const after = (b.parasAfter ?? []).map((p) => `<p>${rich(p)}</p>`).join("");
+        return `<section>${art}${head}${paras}${table}${after}</section>`;
       })
       .join("");
-    const signatures = `
-      <div class="sig-line">${esc(ph(data.place))}, den ${fmtDate(data.contractDate)}</div>
-      <table class="sigs"><tr>
-        <td><div class="line"></div>Arbeitgeber<br/>${esc(ph(data.companyName))}</td>
-        <td><div class="line"></div>Arbeitnehmer/in<br/>${esc(ph(data.employeeName))}</td>
+    const sigs = `<table class="sigs"><tr>
+        <td><div class="line"></div>Der Arbeitnehmer</td>
+        <td><div class="line"></div>Der Arbeitgeber</td>
       </tr></table>`;
     const html = `<!doctype html><html lang="de"><head><meta charset="utf-8"/>
       <title>Arbeitsvertrag ${esc(data.employeeName)}</title>
       <style>
-        @page { margin: 2.2cm; }
+        @page { margin: 2cm; }
         * { box-sizing: border-box; }
-        body { font-family: "Times New Roman", Georgia, serif; color: #000; font-size: 12pt; line-height: 1.5; }
-        h1 { text-align: center; font-size: 18pt; margin: 0 0 1.4em; }
-        h2 { font-size: 12.5pt; margin: 1.1em 0 0.3em; }
-        p { margin: 0 0 0.5em; text-align: justify; }
-        section { margin-bottom: 0.3em; }
-        .sig-line { margin-top: 2.5em; }
-        table.sigs { width: 100%; margin-top: 3.5em; border-collapse: collapse; }
-        table.sigs td { width: 50%; vertical-align: top; padding-right: 1.5em; font-size: 10.5pt; }
-        .line { border-top: 1px solid #000; margin-bottom: 0.3em; height: 0; }
+        body { font-family: "Times New Roman", Georgia, serif; color: #000; font-size: 11.5pt; line-height: 1.45; }
+        h1 { text-align: center; font-size: 15pt; text-decoration: underline; margin: 0 0 1.6em; }
+        .art { font-weight: bold; text-decoration: underline; margin: 1.1em 0 0.25em; }
+        .head { font-weight: bold; text-decoration: underline; text-align: center; margin: 0.4em 0; }
+        p { margin: 0 0 0.45em; text-align: justify; }
+        section { margin-bottom: 0.2em; }
+        table.kf { margin: 0.6em auto; border-collapse: collapse; width: 90%; }
+        table.kf th { text-decoration: underline; padding: 0.2em 0.8em; text-align: center; font-weight: bold; }
+        table.kf td { padding: 0.15em 0.8em; text-align: center; }
+        table.sigs { width: 100%; margin-top: 4em; border-collapse: collapse; }
+        table.sigs td { width: 50%; vertical-align: top; padding-right: 2em; font-size: 10.5pt; }
+        .line { border-top: 1px solid #000; margin-bottom: 0.3em; height: 2.5em; }
       </style></head>
-      <body><h1>Arbeitsvertrag</h1>${body}${signatures}</body></html>`;
+      <body><h1>${esc(TITLE)}</h1>${body}${sigs}</body></html>`;
     const w = window.open("", "_blank", "width=820,height=1040");
     if (!w) {
       alert("Bitte Pop-ups für diese Seite erlauben, um den Vertrag zu drucken.");
@@ -265,74 +363,79 @@ export default function ArbeitsvertragForm({ contracts }: { contracts: SavedCont
         <h2 className="mb-3 text-lg font-medium text-gray-900">Angaben</h2>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="sm:col-span-2">
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Arbeitgeber</p>
-          </div>
-          <div>
-            <label className="mb-1 block text-sm text-gray-600">Firma</label>
-            <input className={inputClass} value={d.companyName} onChange={(e) => set("companyName", e.target.value)} />
-          </div>
-          <div>
-            <label className="mb-1 block text-sm text-gray-600">Vertreten durch (optional)</label>
-            <input className={inputClass} value={d.companyRep} onChange={(e) => set("companyRep", e.target.value)} placeholder="z.B. Pascal Oster" />
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Arbeitnehmer</p>
           </div>
           <div className="sm:col-span-2">
-            <label className="mb-1 block text-sm text-gray-600">Anschrift Firma</label>
-            <input className={inputClass} value={d.companyAddress} onChange={(e) => set("companyAddress", e.target.value)} placeholder="Straße Nr., PLZ Ort" />
+            <label className="mb-1 block text-sm text-gray-600">Name</label>
+            <input className={inputClass} value={d.employeeName} onChange={(e) => set("employeeName", e.target.value)} placeholder="z.B. Engels Willi" />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm text-gray-600">Straße / Nr.</label>
+            <input className={inputClass} value={d.employeeStreet} onChange={(e) => set("employeeStreet", e.target.value)} placeholder="Merowingerstraße 50" />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm text-gray-600">PLZ / Ort</label>
+            <input className={inputClass} value={d.employeeZipCity} onChange={(e) => set("employeeZipCity", e.target.value)} placeholder="D-54293 Trier" />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm text-gray-600">Geboren am</label>
+            <input type="date" className={inputClass} value={d.employeeBirth} onChange={(e) => set("employeeBirth", e.target.value)} />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm text-gray-600">Nationale Matrikelnummer</label>
+            <input className={inputClass} value={d.matrikel} onChange={(e) => set("matrikel", e.target.value)} placeholder="-" />
           </div>
 
           <div className="sm:col-span-2 mt-2">
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Arbeitnehmer/in</p>
-          </div>
-          <div>
-            <label className="mb-1 block text-sm text-gray-600">Name</label>
-            <input className={inputClass} value={d.employeeName} onChange={(e) => set("employeeName", e.target.value)} placeholder="Vor- und Nachname" />
-          </div>
-          <div>
-            <label className="mb-1 block text-sm text-gray-600">Geburtsdatum</label>
-            <input type="date" className={inputClass} value={d.employeeBirth} onChange={(e) => set("employeeBirth", e.target.value)} />
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Arbeitgeber</p>
           </div>
           <div className="sm:col-span-2">
-            <label className="mb-1 block text-sm text-gray-600">Anschrift</label>
-            <input className={inputClass} value={d.employeeAddress} onChange={(e) => set("employeeAddress", e.target.value)} placeholder="Straße Nr., PLZ Ort" />
+            <label className="mb-1 block text-sm text-gray-600">Unternehmen</label>
+            <input className={inputClass} value={d.companyName} onChange={(e) => set("companyName", e.target.value)} />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm text-gray-600">Straße / Nr.</label>
+            <input className={inputClass} value={d.companyStreet} onChange={(e) => set("companyStreet", e.target.value)} />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm text-gray-600">PLZ / Ort</label>
+            <input className={inputClass} value={d.companyZipCity} onChange={(e) => set("companyZipCity", e.target.value)} />
           </div>
 
           <div className="sm:col-span-2 mt-2">
             <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Vertragsdaten</p>
           </div>
           <div>
-            <label className="mb-1 block text-sm text-gray-600">Position / Tätigkeit</label>
-            <input className={inputClass} value={d.position} onChange={(e) => set("position", e.target.value)} placeholder="z.B. Bodenleger/in" />
-          </div>
-          <div>
-            <label className="mb-1 block text-sm text-gray-600">Eintrittsdatum</label>
+            <label className="mb-1 block text-sm text-gray-600">Eintrittsdatum (Art. 1)</label>
             <input type="date" className={inputClass} value={d.startDate} onChange={(e) => set("startDate", e.target.value)} />
           </div>
-          <div className="sm:col-span-2 flex items-center gap-2">
-            <input id="limited" type="checkbox" checked={d.limited} onChange={(e) => set("limited", e.target.checked)} />
-            <label htmlFor="limited" className="text-sm text-gray-700">Befristet</label>
-            {d.limited && (
-              <input type="date" className={`${inputClass} ml-2 max-w-[12rem]`} value={d.endDate} onChange={(e) => set("endDate", e.target.value)} />
-            )}
+          <div>
+            <label className="mb-1 block text-sm text-gray-600">Position / Tätigkeit (Art. 3)</label>
+            <input className={inputClass} value={d.position} onChange={(e) => set("position", e.target.value)} placeholder="FLIESENLEGER" />
           </div>
           <div>
-            <label className="mb-1 block text-sm text-gray-600">Probezeit (Monate)</label>
-            <input type="number" min={0} className={inputClass} value={d.probationMonths} onChange={(e) => set("probationMonths", e.target.value)} />
+            <label className="mb-1 block text-sm text-gray-600">Wochenstunden (Art. 4)</label>
+            <input className={inputClass} value={d.weeklyHours} onChange={(e) => set("weeklyHours", e.target.value)} placeholder="40" />
           </div>
           <div>
-            <label className="mb-1 block text-sm text-gray-600">Wochenstunden</label>
-            <input type="number" min={0} step="0.5" className={inputClass} value={d.weeklyHours} onChange={(e) => set("weeklyHours", e.target.value)} />
+            <label className="mb-1 block text-sm text-gray-600">Stundenlohn brutto (Art. 5)</label>
+            <input className={inputClass} value={d.hourlyWage} onChange={(e) => set("hourlyWage", e.target.value)} placeholder="25,50 €" />
           </div>
           <div>
-            <label className="mb-1 block text-sm text-gray-600">Bruttogehalt / Monat</label>
-            <input className={inputClass} value={d.grossSalary} onChange={(e) => set("grossSalary", e.target.value)} placeholder="z.B. 2800" />
+            <label className="mb-1 block text-sm text-gray-600">Index (Art. 5)</label>
+            <input className={inputClass} value={d.index} onChange={(e) => set("index", e.target.value)} placeholder="992,24" />
           </div>
           <div>
-            <label className="mb-1 block text-sm text-gray-600">Urlaubstage / Jahr</label>
-            <input type="number" min={0} className={inputClass} value={d.vacationDays} onChange={(e) => set("vacationDays", e.target.value)} />
+            <label className="mb-1 block text-sm text-gray-600">Probezeit in Monaten (Art. 8)</label>
+            <input className={inputClass} value={d.probationMonths} onChange={(e) => set("probationMonths", e.target.value)} placeholder="6" />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="mb-1 block text-sm text-gray-600">Zusatzvereinbarung (Art. 17)</label>
+            <textarea className={inputClass} rows={2} value={d.additionalAgreement} onChange={(e) => set("additionalAgreement", e.target.value)} placeholder="-" />
           </div>
           <div>
             <label className="mb-1 block text-sm text-gray-600">Ort (Unterschrift)</label>
-            <input className={inputClass} value={d.place} onChange={(e) => set("place", e.target.value)} placeholder="z.B. Trier" />
+            <input className={inputClass} value={d.place} onChange={(e) => set("place", e.target.value)} placeholder="Junglinster" />
           </div>
           <div>
             <label className="mb-1 block text-sm text-gray-600">Datum (Unterschrift)</label>
@@ -384,26 +487,13 @@ export default function ArbeitsvertragForm({ contracts }: { contracts: SavedCont
                       {c.createdByName ? ` · ${c.createdByName}` : ""}
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => loadContract(c)}
-                    className="rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:border-brand-red/50"
-                  >
+                  <button type="button" onClick={() => loadContract(c)} className="rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:border-brand-red/50">
                     Laden
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => printData(toContractData(c.data))}
-                    className="rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:border-brand-red/50"
-                  >
+                  <button type="button" onClick={() => printData(toContractData(c.data))} className="rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:border-brand-red/50">
                     Drucken
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => removeContract(c.id)}
-                    disabled={busy}
-                    className="rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:border-brand-red/50 hover:text-brand-red disabled:opacity-50"
-                  >
+                  <button type="button" onClick={() => removeContract(c.id)} disabled={busy} className="rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:border-brand-red/50 hover:text-brand-red disabled:opacity-50">
                     Löschen
                   </button>
                 </li>
@@ -417,26 +507,49 @@ export default function ArbeitsvertragForm({ contracts }: { contracts: SavedCont
       <div className="rounded-xl border border-gray-300 bg-gray-100 p-4 shadow-lg shadow-black/10">
         <p className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">Vorschau</p>
         <div
-          className="mx-auto max-w-[800px] rounded-md bg-white px-8 py-10 text-[13px] leading-relaxed text-gray-900 shadow"
+          className="mx-auto max-w-[800px] rounded-md bg-white px-8 py-10 text-[12.5px] leading-relaxed text-gray-900 shadow"
           style={{ fontFamily: '"Times New Roman", Georgia, serif' }}
         >
-          <h1 className="mb-6 text-center text-2xl font-bold">Arbeitsvertrag</h1>
-          {sections.map((sec, i) => (
+          <h1 className="mb-6 text-center text-lg font-bold underline">{TITLE}</h1>
+          {blocks.map((b, i) => (
             <div key={i} className="mb-2">
-              {sec.title && <h3 className="mt-3 mb-1 font-semibold">{sec.title}</h3>}
-              {sec.paras.map((p, j) => (
-                <p key={j} className="mb-1.5 text-justify">{p}</p>
+              {b.article && <p className="mt-3 font-bold underline">{b.article}</p>}
+              {b.heading && <p className="text-center font-bold underline">{b.heading}</p>}
+              {b.paras.map((p, j) => (
+                <p key={j} className="mb-1 text-justify">
+                  <Rich text={p} />
+                </p>
+              ))}
+              {b.table && (
+                <table className="mx-auto my-2 w-[90%] border-collapse">
+                  <thead>
+                    <tr>
+                      {b.table.headers.map((h, k) => (
+                        <th key={k} className="px-2 py-0.5 text-center font-bold underline">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {b.table.rows.map((r, k) => (
+                      <tr key={k}>
+                        {r.map((cell, m) => (
+                          <td key={m} className="px-2 py-0.5 text-center">{cell}</td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              {(b.parasAfter ?? []).map((p, j) => (
+                <p key={`a${j}`} className="mb-1 text-justify">
+                  <Rich text={p} />
+                </p>
               ))}
             </div>
           ))}
-          <p className="mt-8">{ph(d.place)}, den {fmtDate(d.contractDate)}</p>
           <div className="mt-12 grid grid-cols-2 gap-6 text-xs">
-            <div>
-              <div className="border-t border-black pt-1">Arbeitgeber<br />{ph(d.companyName)}</div>
-            </div>
-            <div>
-              <div className="border-t border-black pt-1">Arbeitnehmer/in<br />{ph(d.employeeName)}</div>
-            </div>
+            <div className="border-t border-black pt-1">Der Arbeitnehmer</div>
+            <div className="border-t border-black pt-1">Der Arbeitgeber</div>
           </div>
         </div>
       </div>
