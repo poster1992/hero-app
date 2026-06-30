@@ -197,12 +197,14 @@ async function notifyAssignee(assigneeId: number, title: string): Promise<void> 
   }
 }
 
-async function runTrigger(triggerKey: string): Promise<void> {
+async function runTrigger(triggerKey: string, force = false): Promise<{ created: number; checked: number }> {
   const meta = await getWorkflowMeta(triggerKey);
-  if (meta.lastRun && Date.now() - meta.lastRun.getTime() < THROTTLE_MS) return;
+  if (!force && meta.lastRun && Date.now() - meta.lastRun.getTime() < THROTTLE_MS) {
+    return { created: 0, checked: 0 };
+  }
 
   const workflows = await listActiveWorkflows(triggerKey);
-  if (workflows.length === 0) return;
+  if (workflows.length === 0) return { created: 0, checked: 0 };
 
   await touchWorkflowLastRun(triggerKey); // sofort sperren
 
@@ -210,9 +212,9 @@ async function runTrigger(triggerKey: string): Promise<void> {
   try {
     events = await collectEvents(triggerKey);
   } catch {
-    return;
+    return { created: 0, checked: 0 };
   }
-  if (events.length === 0) return;
+  if (events.length === 0) return { created: 0, checked: 0 };
 
   let created = 0;
   // Je Regel: Ereignisse ab dem „gilt ab"-Datum, die diese Regel noch nicht getaskt hat.
@@ -238,15 +240,21 @@ async function runTrigger(triggerKey: string): Promise<void> {
       }
     }
   }
+  return { created, checked: events.length };
 }
 
-/** Prüft (gedrosselt) alle Auslöser und löst aktive Regeln aus. */
-export async function runWorkflowScan(): Promise<void> {
+/** Prüft alle Auslöser und löst aktive Regeln aus. force=true umgeht die Drossel. */
+export async function runWorkflowScan(force = false): Promise<{ created: number; checked: number }> {
+  let created = 0;
+  let checked = 0;
   for (const t of WORKFLOW_TRIGGER_KEYS) {
     try {
-      await runTrigger(t);
+      const r = await runTrigger(t, force);
+      created += r.created;
+      checked += r.checked;
     } catch {
       /* nächster Trigger */
     }
   }
+  return { created, checked };
 }

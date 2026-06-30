@@ -25,6 +25,26 @@ export async function triggerWorkflowScan(): Promise<void> {
   }
 }
 
+export interface RunNowResult {
+  ok: boolean;
+  created: number;
+  checked: number;
+  error?: string;
+}
+
+/** Admin: führt die Workflow-Prüfung sofort aus (umgeht die Drossel). */
+export async function runWorkflowsNowAction(): Promise<RunNowResult> {
+  const session = await getSession();
+  if (!session || session.role !== "administrator") return { ok: false, created: 0, checked: 0, error: "Kein Zugriff." };
+  try {
+    const r = await runWorkflowScan(true);
+    revalidatePath(PATH);
+    return { ok: true, created: r.created, checked: r.checked };
+  } catch (e) {
+    return { ok: false, created: 0, checked: 0, error: e instanceof Error ? e.message : "Fehler beim Ausführen." };
+  }
+}
+
 async function requireAdmin(): Promise<number | null> {
   const session = await getSession();
   if (!session || session.role !== "administrator") return null;

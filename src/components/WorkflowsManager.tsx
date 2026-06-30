@@ -1,11 +1,13 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import {
   createWorkflowAction,
   updateWorkflowAction,
   toggleWorkflowAction,
   deleteWorkflowAction,
+  runWorkflowsNowAction,
   type WorkflowFormState,
 } from "@/app/dashboard/workflows/actions";
 import type { Workflow, WorkflowConfig, WorkflowLogItem } from "@/lib/workflows";
@@ -355,6 +357,18 @@ export default function WorkflowsManager({
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<"liste" | "diagramm">("liste");
   const [state, formAction, pending] = useActionState<WorkflowFormState, FormData>(createWorkflowAction, {});
+  const router = useRouter();
+  const [running, startRun] = useTransition();
+  const [runMsg, setRunMsg] = useState<string | null>(null);
+  const runNow = () => {
+    setRunMsg(null);
+    startRun(async () => {
+      const r = await runWorkflowsNowAction();
+      if (!r.ok) setRunMsg(r.error ?? "Fehler.");
+      else setRunMsg(`Geprüft: ${r.checked} · Aufgaben erstellt: ${r.created}`);
+      router.refresh();
+    });
+  };
 
   return (
     <div className="flex flex-col gap-6">
@@ -362,7 +376,17 @@ export default function WorkflowsManager({
       <div className="rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-5 py-4">
           <h2 className="text-lg font-medium text-gray-900">Regeln</h2>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {runMsg && <span className="text-xs text-gray-500">{runMsg}</span>}
+            <button
+              type="button"
+              onClick={runNow}
+              disabled={running}
+              title="Regeln sofort prüfen (umgeht die 5-Min-Drossel)"
+              className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:border-brand-red/50 disabled:opacity-50"
+            >
+              {running ? "Prüfe …" : "Jetzt prüfen"}
+            </button>
             <div className="flex overflow-hidden rounded-md border border-gray-300 text-xs">
               {(["liste", "diagramm"] as const).map((v) => (
                 <button
