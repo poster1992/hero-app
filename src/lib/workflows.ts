@@ -231,6 +231,44 @@ export async function addWorkflowLog(workflowId: number | null, ref: string | nu
   );
 }
 
+// --- Lauf-Historie (jeder Durchlauf der Prüfung) ---
+
+export interface WorkflowRun {
+  id: number;
+  source: string;
+  checked: number;
+  created: number;
+  error: string | null;
+  ranAt: string | null;
+}
+
+export async function addWorkflowRun(input: {
+  source: string;
+  checked: number;
+  created: number;
+  error?: string | null;
+}): Promise<void> {
+  await getPool().query(
+    "INSERT INTO workflow_runs (source, checked, created, error) VALUES (?, ?, ?, ?)",
+    [input.source.slice(0, 20), input.checked, input.created, input.error?.slice(0, 255) ?? null]
+  );
+}
+
+export async function listWorkflowRuns(limit = 30): Promise<WorkflowRun[]> {
+  const [rows] = await getPool().query<RowDataPacket[]>(
+    "SELECT id, source, checked, created, error, ran_at FROM workflow_runs ORDER BY id DESC LIMIT ?",
+    [limit]
+  );
+  return (rows as { id: number; source: string; checked: number; created: number; error: string | null; ran_at: string | null }[]).map((r) => ({
+    id: r.id,
+    source: r.source,
+    checked: r.checked,
+    created: r.created,
+    error: r.error,
+    ranAt: r.ran_at ? String(r.ran_at) : null,
+  }));
+}
+
 export async function listWorkflowLog(limit = 30): Promise<WorkflowLogItem[]> {
   const [rows] = await getPool().query<RowDataPacket[]>(
     "SELECT id, workflow_id, ref, detail, created_at FROM workflow_log ORDER BY id DESC LIMIT ?",

@@ -1,7 +1,14 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
 import { listUsers } from "@/lib/users";
-import { listWorkflows, listWorkflowLog, type Workflow, type WorkflowLogItem } from "@/lib/workflows";
+import {
+  listWorkflows,
+  listWorkflowLog,
+  listWorkflowRuns,
+  type Workflow,
+  type WorkflowLogItem,
+  type WorkflowRun,
+} from "@/lib/workflows";
 import { getDistinctSuppliers } from "@/lib/invoices";
 import WorkflowsManager from "@/components/WorkflowsManager";
 
@@ -19,12 +26,19 @@ export default async function WorkflowsPage() {
 
   let workflows: Workflow[] = [];
   let log: WorkflowLogItem[] = [];
+  let runs: WorkflowRun[] = [];
   let users: { id: number; name: string }[] = [];
   let suppliers: string[] = [];
   try {
-    const [wf, lg, us] = await Promise.all([listWorkflows(), listWorkflowLog(30), listUsers()]);
+    const [wf, lg, rn, us] = await Promise.all([
+      listWorkflows(),
+      listWorkflowLog(30),
+      listWorkflowRuns(30),
+      listUsers(),
+    ]);
     workflows = wf;
     log = lg;
+    runs = rn;
     users = us.filter((u) => u.isActive).map((u) => ({ id: u.id, name: u.displayName || u.username }));
   } catch {
     // leer lassen
@@ -40,11 +54,11 @@ export default async function WorkflowsPage() {
       <header>
         <h1 className="text-2xl font-semibold text-gray-900">Workflows</h1>
         <p className="mt-1 text-sm text-gray-600">
-          Automatische Regeln: Auslöser → Aktion. Aktuell: bei neuen Belegen automatisch eine
-          Aufgabe erstellen. Prüfung erfolgt bei App-Nutzung (alle paar Minuten).
+          Automatische Regeln: Auslöser → Aktion. Die Prüfung läuft automatisch alle 10 Minuten
+          (serverseitig) sowie bei App-Nutzung. Jeder Lauf wird in der Dienst-Historie protokolliert.
         </p>
       </header>
-      <WorkflowsManager workflows={workflows} users={users} log={log} suppliers={suppliers} />
+      <WorkflowsManager workflows={workflows} users={users} log={log} runs={runs} suppliers={suppliers} />
     </div>
   );
 }

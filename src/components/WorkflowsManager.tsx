@@ -10,7 +10,7 @@ import {
   runWorkflowsNowAction,
   type WorkflowFormState,
 } from "@/app/dashboard/workflows/actions";
-import type { Workflow, WorkflowConfig, WorkflowLogItem } from "@/lib/workflows";
+import type { Workflow, WorkflowConfig, WorkflowLogItem, WorkflowRun } from "@/lib/workflows";
 
 interface UserOption {
   id: number;
@@ -492,11 +492,13 @@ export default function WorkflowsManager({
   workflows,
   users,
   log,
+  runs,
   suppliers,
 }: {
   workflows: Workflow[];
   users: UserOption[];
   log: WorkflowLogItem[];
+  runs: WorkflowRun[];
   suppliers: string[];
 }) {
   const [open, setOpen] = useState(false);
@@ -584,6 +586,33 @@ export default function WorkflowsManager({
               <WorkflowFlow key={wf.id} wf={wf} users={users} />
             ))}
           </div>
+        )}
+      </div>
+
+      {/* Dienst-Historie (Läufe der automatischen Prüfung) */}
+      <div className="rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-5 py-4">
+          <h2 className="text-lg font-medium text-gray-900">Dienst-Historie (Prüfläufe)</h2>
+          <span className="text-xs text-gray-500">Läuft automatisch alle 10 Minuten</span>
+        </div>
+        {runs.length === 0 ? (
+          <p className="px-5 py-6 text-center text-sm text-gray-500">Noch keine Läufe protokolliert.</p>
+        ) : (
+          <ul className="divide-y divide-gray-100">
+            {runs.map((r) => (
+              <li key={r.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-5 py-2 text-sm">
+                <span className={`h-2 w-2 shrink-0 rounded-full ${r.error ? "bg-rose-500" : "bg-emerald-500"}`} />
+                <span className="text-xs text-gray-500">{fmtStamp(r.ranAt)}</span>
+                <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-600">
+                  {r.source === "timer" ? "automatisch" : r.source === "manuell" ? "manuell" : r.source}
+                </span>
+                <span className="text-gray-700">
+                  geprüft: {r.checked} · erstellt: {r.created}
+                </span>
+                {r.error && <span className="text-xs text-rose-600">Fehler: {r.error}</span>}
+              </li>
+            ))}
+          </ul>
         )}
       </div>
 

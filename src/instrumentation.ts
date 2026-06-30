@@ -15,7 +15,7 @@ export async function register(): Promise<void> {
   const run = async () => {
     try {
       const { runWorkflowScan } = await import("./lib/workflow-engine");
-      const r = await runWorkflowScan(true);
+      const r = await runWorkflowScan(true, "timer");
       if (r.created > 0) {
         console.log(`[workflow-cron] geprüft: ${r.checked}, erstellt: ${r.created}`);
       }

@@ -37,7 +37,7 @@ export async function runWorkflowsNowAction(): Promise<RunNowResult> {
   const session = await getSession();
   if (!session || session.role !== "administrator") return { ok: false, created: 0, checked: 0, error: "Kein Zugriff." };
   try {
-    const r = await runWorkflowScan(true);
+    const r = await runWorkflowScan(true, "manuell");
     revalidatePath(PATH);
     return { ok: true, created: r.created, checked: r.checked };
   } catch (e) {

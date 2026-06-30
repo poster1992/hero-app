@@ -23,6 +23,7 @@ import {
   getRuleSeen,
   markRuleSeen,
   addWorkflowLog,
+  addWorkflowRun,
   WORKFLOW_TRIGGER_KEYS,
   type Workflow,
   type WorkflowConfig,
@@ -353,17 +354,32 @@ async function runTrigger(triggerKey: string, force = false): Promise<{ created:
   return { created, checked: events.length };
 }
 
-/** Prüft alle Auslöser und löst aktive Regeln aus. force=true umgeht die Drossel. */
-export async function runWorkflowScan(force = false): Promise<{ created: number; checked: number }> {
+/**
+ * Prüft alle Auslöser und löst aktive Regeln aus. force=true umgeht die Drossel.
+ * Bei force-Läufen (Timer/„Jetzt prüfen") wird ein Historien-Eintrag geschrieben,
+ * damit sichtbar ist, dass der Dienst gelaufen ist.
+ */
+export async function runWorkflowScan(
+  force = false,
+  source = "auto"
+): Promise<{ created: number; checked: number }> {
   let created = 0;
   let checked = 0;
+  let error: string | null = null;
   for (const t of WORKFLOW_TRIGGER_KEYS) {
     try {
       const r = await runTrigger(t, force);
       created += r.created;
       checked += r.checked;
+    } catch (e) {
+      error = e instanceof Error ? e.message : "unbekannter Fehler";
+    }
+  }
+  if (force) {
+    try {
+      await addWorkflowRun({ source, checked, created, error });
     } catch {
-      /* nächster Trigger */
+      /* Historie ist best-effort */
     }
   }
   return { created, checked };
