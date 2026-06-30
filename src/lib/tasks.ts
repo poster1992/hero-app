@@ -158,10 +158,12 @@ export async function listTasksCreatedBy(userId: number): Promise<Task[]> {
 
 /** All tasks (any status) where a person is an assignee OR the creator (admin view). */
 export async function listTasksForPerson(userId: number): Promise<Task[]> {
+  // Nur Aufgaben, die der Person zugewiesen sind (nicht die von ihr erstellten).
   const [rows] = await getPool().query<TaskRow[]>(
-    `${SELECT} WHERE t.created_by = ?
-       OR EXISTS (SELECT 1 FROM task_assignees ta WHERE ta.task_id = t.id AND ta.user_id = ?) ${ORDER}`,
-    [userId, userId]
+    `${SELECT} WHERE EXISTS (
+        SELECT 1 FROM task_assignees ta WHERE ta.task_id = t.id AND ta.user_id = ?
+      ) ${ORDER}`,
+    [userId]
   );
   return hydrate(rows);
 }
