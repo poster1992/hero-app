@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { getSession } from "@/lib/session";
 import { getUserByUsername, getUsersForNotification, type AppUser } from "@/lib/users";
 import { sendMail } from "@/lib/mailer";
+import { sendPushToUsers } from "@/lib/push";
 import {
   createTask,
   setTaskStatus,
@@ -102,6 +103,14 @@ async function notifyCreator(
         return sendMail(r.email as string, `${opts.subject}: ${task.title}`, text);
       })
   );
+
+  // Push-Benachrichtigung an den Ersteller.
+  await sendPushToUsers([task.createdById], {
+    title: opts.subject,
+    body: `${task.title} – ${opts.eventLine}${opts.note ? ` ${opts.note}` : ""}`,
+    url: "/dashboard/aufgaben",
+    tag: `task-${task.id}`,
+  });
 }
 
 export async function createTaskAction(
@@ -157,6 +166,13 @@ export async function createTaskAction(
       ? `${projectRelativeId != null ? `#${projectRelativeId} ` : ""}${projectName}`
       : null,
     fromName: me.displayName || me.username,
+  });
+  // Push an die zugewiesenen Mitarbeiter.
+  await sendPushToUsers(assignedTo, {
+    title: "Neue Aufgabe",
+    body: `${title} – von ${me.displayName || me.username}`,
+    url: "/dashboard/aufgaben",
+    tag: "task-new",
   });
 
   revalidatePath(PATH);
@@ -249,6 +265,13 @@ export async function forwardAction(formData: FormData): Promise<void> {
       ? `${task.projectRelativeId != null ? `#${task.projectRelativeId} ` : ""}${task.projectName}`
       : null,
     fromName: me.displayName || me.username,
+  });
+  // Push an die Person, an die weitergeleitet wurde.
+  await sendPushToUsers([toUserId], {
+    title: "Aufgabe weitergeleitet",
+    body: `${task.title} – von ${me.displayName || me.username}`,
+    url: "/dashboard/aufgaben",
+    tag: `task-${task.id}`,
   });
 
   // Rückmeldung an den Ersteller (sofern nicht er selbst weitergeleitet hat).

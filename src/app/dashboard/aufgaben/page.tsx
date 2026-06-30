@@ -5,6 +5,7 @@ import { listTasksAssignedTo, listTasksCreatedBy, listAllOpenTasks } from "@/lib
 import { getProjects } from "@/lib/hero-api";
 import { listReceiptReviews } from "@/lib/receipt-reviews";
 import TaskManager, { type ReviewTaskInfo } from "@/components/TaskManager";
+import PushSetup from "@/components/PushSetup";
 
 export default async function AufgabenPage() {
   const session = await getSession();
@@ -76,6 +77,8 @@ export default async function AufgabenPage() {
           Aufgaben an Mitarbeiter senden und den Fortschritt verfolgen.
         </p>
       </header>
+
+      <PushSetup />
 
       {error ? (
         <div className="rounded-md border border-brand-red/30 bg-brand-red/10 p-4 text-sm text-red-300">

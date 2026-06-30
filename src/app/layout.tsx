@@ -15,6 +15,12 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "FLOORTEC",
   description: "FLOORTEC Dashboard",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "FLOORTEC" },
+  icons: {
+    icon: "/icon-192.png",
+    apple: "/apple-touch-icon.png",
+  },
 };
 
 // Tablets/Mobil (z. B. iPad) skalieren das komplette Desktop-Layout auf die
