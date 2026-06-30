@@ -777,6 +777,8 @@ export default function TaskManager({
         </section>
       )}
 
+      {/* Eigene Listen ausblenden, wenn eine Person gefiltert ist (nur deren Aufgaben zeigen). */}
+      {personId === 0 && (
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Mir zugewiesen */}
         <section className="flex flex-col gap-3">
@@ -818,6 +820,7 @@ export default function TaskManager({
           )}
         </section>
       </div>
+      )}
     </div>
   );
 }
