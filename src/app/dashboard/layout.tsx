@@ -41,7 +41,7 @@ export default async function DashboardLayout({
         </div>
         <div className="flex flex-1 flex-col">{children}</div>
       </main>
-      <DataChatWidget />
+      {allowedModules.includes("ki") && <DataChatWidget />}
     </div>
   );
 }

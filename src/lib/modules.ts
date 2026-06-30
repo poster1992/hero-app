@@ -17,6 +17,7 @@ export const MODULES: AppModule[] = [
   { key: "ueberfaellige_aufgaben", label: "Überfällige Aufgaben (Unternehmen)" },
   { key: "cockpit", label: "Cockpit (Arbeitsplanung, Belege, Rechnungen, …)" },
   { key: "rechnungspruefung", label: "Rechnungsprüfung (Belege prüfen)" },
+  { key: "ki", label: "KI-Assistent (Chat-Widget)" },
   { key: "hilfe", label: "Hilfe" },
 ];
 
