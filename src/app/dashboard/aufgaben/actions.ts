@@ -343,6 +343,30 @@ export async function acknowledgeAllNotificationsAction(): Promise<void> {
   revalidatePath(PATH);
 }
 
+/** Antwort-Button an einer Aufgabe: protokolliert die Antwort, erledigt die Aufgabe, meldet dem Ersteller. */
+export async function taskButtonAction(formData: FormData): Promise<void> {
+  const me = await currentUser();
+  if (!me) return;
+  const id = Number(formData.get("id"));
+  const label = String(formData.get("label") ?? "").trim();
+  if (!Number.isFinite(id) || !label) return;
+
+  const task = await getTaskById(id);
+  if (!task) return;
+  // Nur vordefinierte Buttons dieser Aufgabe zulassen.
+  if (!task.actionButtons.includes(label)) return;
+  const may = task.createdById === me.id || task.assignees.some((a) => a.id === me.id);
+  if (!may) return;
+
+  await setTaskStatus(id, "erledigt", me.id, `Antwort: ${label}`);
+  await notifyCreator(task, me.id, {
+    subject: "Aufgabe beantwortet",
+    eventLine: `Antwort: „${label}" – Aufgabe erledigt.`,
+    fromName: me.displayName || me.username,
+  });
+  revalidatePath(PATH);
+}
+
 /** Admin: lädt alle Aufgaben einer bestimmten Person (zugewiesen oder erstellt). */
 export async function loadPersonTasksAction(userId: number): Promise<Task[]> {
   const me = await currentUser();

@@ -180,7 +180,14 @@ async function runTrigger(triggerKey: string): Promise<void> {
       const title = (ev.fill(c.title).trim() || "Aufgabe").slice(0, 255);
       const dueDate = new Date(Date.now() + (c.dueOffsetDays || 0) * 24 * 3600 * 1000).toISOString().slice(0, 10);
       try {
-        await createTask({ title, description: c.description, createdBy: wf.createdBy ?? c.assigneeId, assignedTo: [c.assigneeId], dueDate });
+        await createTask({
+          title,
+          description: c.description,
+          createdBy: wf.createdBy ?? c.assigneeId,
+          assignedTo: [c.assigneeId],
+          dueDate,
+          actionButtons: c.buttons,
+        });
         await notifyAssignee(c.assigneeId, title);
         await addWorkflowLog(wf.id, ev.ref, `Aufgabe erstellt: ${title}`);
         didCreate = true;

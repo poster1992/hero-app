@@ -48,6 +48,11 @@ function readConfig(formData: FormData): WorkflowConfig {
     filterSupplier: String(formData.get("filterSupplier") ?? "").trim() || null,
     filterMinAmount: num(formData.get("filterMinAmount")),
     minAgeDays: num(formData.get("minAgeDays")),
+    buttons: String(formData.get("buttons") ?? "")
+      .split(/[\n,]/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .slice(0, 8),
   };
 }
 

@@ -6,6 +6,7 @@ import {
   setStatusAction,
   forwardAction,
   addNoteAction,
+  taskButtonAction,
   loadPersonTasksAction,
   type CreateTaskState,
 } from "@/app/dashboard/aufgaben/actions";
@@ -155,6 +156,26 @@ function TaskCard({
           </span>
         )}
       </div>
+
+      {/* Vordefinierte Antwort-Buttons (z.B. aus einer Workflow-Regel) */}
+      {task.actionButtons.length > 0 && task.status !== "erledigt" && (
+        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-md border border-brand-red/20 bg-brand-red/5 p-2">
+          <span className="text-xs font-medium text-gray-600">Antwort:</span>
+          {task.actionButtons.map((label) => (
+            <form key={label} action={taskButtonAction}>
+              <input type="hidden" name="id" value={task.id} />
+              <input type="hidden" name="label" value={label} />
+              <button
+                type="submit"
+                title="Antwort senden & Aufgabe erledigen"
+                className="rounded-md border border-brand-red/40 bg-white px-3 py-1 text-xs font-semibold text-brand-red transition-colors hover:bg-brand-red hover:text-white"
+              >
+                {label}
+              </button>
+            </form>
+          ))}
+        </div>
+      )}
 
       {/* Rechnungsprüfung: PDF + Entscheidung direkt in der Aufgabe */}
       {heroId && (

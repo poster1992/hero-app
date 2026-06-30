@@ -23,6 +23,8 @@ export interface WorkflowConfig {
   filterMinAmount: number | null;
   /** Nur für „angebot_alt_ohne_ab": Mindestalter des Angebots in Tagen. */
   minAgeDays: number | null;
+  /** Antwort-Buttons, die an der erzeugten Aufgabe erscheinen. */
+  buttons: string[];
 }
 
 export interface Workflow {
@@ -65,6 +67,7 @@ function parseConfig(value: unknown): WorkflowConfig {
         : null,
     minAgeDays:
       o.minAgeDays != null && Number.isFinite(Number(o.minAgeDays)) ? Number(o.minAgeDays) : null,
+    buttons: Array.isArray(o.buttons) ? o.buttons.map((b) => String(b).trim()).filter(Boolean) : [],
   };
 }
 

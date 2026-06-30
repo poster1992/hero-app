@@ -49,4 +49,6 @@ export interface Task {
   projectRelativeId: number | null;
   projectName: string | null;
   createdAt: string | null;
+  /** Vordefinierte Antwort-Buttons (z.B. aus einer Workflow-Regel). */
+  actionButtons: string[];
 }

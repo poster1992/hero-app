@@ -120,6 +120,21 @@ function RuleFields({
         <label className="mb-1 block text-sm text-gray-600">Beschreibung (optional)</label>
         <textarea name="description" defaultValue={cfg?.description ?? ""} rows={2} className={inputClass} />
       </div>
+      <div className="sm:col-span-2">
+        <label className="mb-1 block text-sm text-gray-600">
+          Antwort-Buttons <span className="text-gray-400">(Komma- oder zeilengetrennt, max. 8)</span>
+        </label>
+        <input
+          name="buttons"
+          defaultValue={(cfg?.buttons ?? []).join(", ")}
+          placeholder="z.B. Erledigt, Nachfassen nötig, Kein Interesse"
+          className={inputClass}
+        />
+        <p className="mt-1 text-xs text-gray-400">
+          Erscheinen an der Aufgabe; ein Klick protokolliert die Antwort, meldet sie dem Ersteller und
+          erledigt die Aufgabe.
+        </p>
+      </div>
       <div>
         <label className="mb-1 block text-sm text-gray-600">Fällig in (Tagen)</label>
         <input name="dueOffsetDays" type="number" min={0} defaultValue={cfg?.dueOffsetDays ?? 7} className={inputClass} />

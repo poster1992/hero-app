@@ -25,6 +25,20 @@ interface TaskRow extends RowDataPacket {
   project_id: number | null;
   project_relative_id: number | null;
   project_name: string | null;
+  action_buttons: unknown;
+}
+
+function parseButtons(value: unknown): string[] {
+  let raw = value;
+  if (typeof raw === "string") {
+    try {
+      raw = JSON.parse(raw);
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(raw)) return [];
+  return raw.map((x) => String(x)).filter((s) => s.trim().length > 0);
 }
 
 interface AssigneeRow extends RowDataPacket {
@@ -57,7 +71,7 @@ async function addHistory(
 
 const SELECT = `
   SELECT t.id, t.title, t.description, t.status, t.due_date, t.created_by, t.created_at,
-         t.project_id, t.project_relative_id, t.project_name,
+         t.project_id, t.project_relative_id, t.project_name, t.action_buttons,
          COALESCE(NULLIF(cu.display_name, ''), cu.username) AS created_by_name
   FROM tasks t
   JOIN users cu ON cu.id = t.created_by
@@ -121,6 +135,7 @@ async function hydrate(rows: TaskRow[]): Promise<Task[]> {
     projectRelativeId: r.project_relative_id,
     projectName: r.project_name,
     createdAt: r.created_at ? String(r.created_at) : null,
+    actionButtons: parseButtons(r.action_buttons),
   }));
 }
 
@@ -182,11 +197,13 @@ export async function createTask(input: {
   projectId?: number | null;
   projectRelativeId?: number | null;
   projectName?: string | null;
+  actionButtons?: string[] | null;
 }): Promise<void> {
   const pool = getPool();
+  const buttons = (input.actionButtons ?? []).map((s) => String(s).trim()).filter(Boolean);
   const [res] = await pool.query(
-    `INSERT INTO tasks (title, description, created_by, status, due_date, project_id, project_relative_id, project_name)
-     VALUES (?, ?, ?, 'offen', ?, ?, ?, ?)`,
+    `INSERT INTO tasks (title, description, created_by, status, due_date, project_id, project_relative_id, project_name, action_buttons)
+     VALUES (?, ?, ?, 'offen', ?, ?, ?, ?, ?)`,
     [
       input.title,
       input.description,
@@ -195,6 +212,7 @@ export async function createTask(input: {
       input.projectId ?? null,
       input.projectRelativeId ?? null,
       input.projectName ?? null,
+      buttons.length > 0 ? JSON.stringify(buttons) : null,
     ]
   );
   const taskId = (res as { insertId: number }).insertId;
