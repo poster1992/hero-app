@@ -46,6 +46,19 @@
   select {
     color-scheme: dark;
   }
+
+  /* Aufgeklappte Dropdown-Listen dunkel + lesbar (sonst helle Liste mit heller
+     Schrift im Dark-Theme). Gilt global für alle <select>. */
+  select option,
+  select optgroup {
+    background-color: #1b1e24 !important;
+    color: #f3f4f6 !important;
+  }
+  select option:checked,
+  select option:hover {
+    background-color: #2a2f37 !important;
+    color: #ffffff !important;
+  }
 }
 
 @theme inline {
