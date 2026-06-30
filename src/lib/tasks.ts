@@ -293,14 +293,16 @@ export async function completeReviewTasks(heroReceiptId: string, byUserId: numbe
   for (const r of rows) await setTaskStatus(r.id as number, "erledigt", byUserId);
 }
 
-/** Updates a task's status and logs it. Tasks are never deleted, only their status changes. */
+/** Updates a task's status and logs it (with an optional remark). */
 export async function setTaskStatus(
   id: number,
   status: TaskStatus,
-  byUserId: number
+  byUserId: number,
+  note: string | null = null
 ): Promise<void> {
   await getPool().query("UPDATE tasks SET status = ? WHERE id = ?", [status, id]);
-  await addHistory(id, byUserId, "status", `Status: ${taskStatusLabel(status)}`);
+  const detail = `Status: ${taskStatusLabel(status)}${note ? ` – ${note}` : ""}`;
+  await addHistory(id, byUserId, "status", detail);
 }
 
 /** Adds a free-text note (comment) to a task and logs it in the history. */
