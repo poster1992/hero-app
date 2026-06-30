@@ -6,11 +6,17 @@ import { getUserByUsername, getUsersForNotification, type AppUser } from "@/lib/
 import { sendMail } from "@/lib/mailer";
 import { sendPushToUsers } from "@/lib/push";
 import {
+  createTaskNotification,
+  acknowledgeNotification,
+  acknowledgeAllNotifications,
+} from "@/lib/task-notifications";
+import {
   createTask,
   setTaskStatus,
   forwardTask,
   addTaskNote,
   getTaskById,
+  listTasksForPerson,
   taskStatusLabel,
   TASK_STATUSES,
   type Task,
@@ -111,6 +117,15 @@ async function notifyCreator(
     url: "/dashboard/aufgaben",
     tag: `task-${task.id}`,
   });
+
+  // In-App-Meldung (muss bestätigt werden).
+  await createTaskNotification({
+    userId: task.createdById,
+    taskId: task.id,
+    kind: "feedback",
+    message: `„${task.title}": ${opts.eventLine}${opts.note ? ` – Notiz: ${opts.note}` : ""}`,
+    byName: opts.fromName,
+  });
 }
 
 export async function createTaskAction(
@@ -174,6 +189,20 @@ export async function createTaskAction(
     url: "/dashboard/aufgaben",
     tag: "task-new",
   });
+  // In-App-Meldung (muss bestätigt werden) an die Zugewiesenen (außer Ersteller).
+  await Promise.all(
+    assignedTo
+      .filter((uid) => uid !== meId)
+      .map((uid) =>
+        createTaskNotification({
+          userId: uid,
+          taskId: null,
+          kind: "assigned",
+          message: `Neue Aufgabe: „${title}"`,
+          byName: me.displayName || me.username,
+        })
+      )
+  );
 
   revalidatePath(PATH);
   return { success: "Aufgabe wurde gesendet." };
@@ -273,6 +302,14 @@ export async function forwardAction(formData: FormData): Promise<void> {
     url: "/dashboard/aufgaben",
     tag: `task-${task.id}`,
   });
+  // In-App-Meldung an die Person, an die weitergeleitet wurde.
+  await createTaskNotification({
+    userId: toUserId,
+    taskId: task.id,
+    kind: "assigned",
+    message: `Aufgabe weitergeleitet: „${task.title}"`,
+    byName: me.displayName || me.username,
+  });
 
   // Rückmeldung an den Ersteller (sofern nicht er selbst weitergeleitet hat).
   await notifyCreator(task, meId, {
@@ -282,4 +319,36 @@ export async function forwardAction(formData: FormData): Promise<void> {
   });
 
   revalidatePath(PATH);
+}
+
+/** Bestätigt eine Meldung („zur Kenntnis genommen"). */
+export async function acknowledgeNotificationAction(formData: FormData): Promise<void> {
+  const me = await currentUser();
+  if (!me) return;
+  const id = Number(formData.get("id"));
+  if (!Number.isFinite(id)) return;
+  await acknowledgeNotification(id, me.id);
+  revalidatePath(PATH);
+}
+
+/** Bestätigt alle eigenen Meldungen. */
+export async function acknowledgeAllNotificationsAction(): Promise<void> {
+  const me = await currentUser();
+  if (!me) return;
+  await acknowledgeAllNotifications(me.id);
+  revalidatePath(PATH);
+}
+
+/** Admin: lädt alle Aufgaben einer bestimmten Person (zugewiesen oder erstellt). */
+export async function loadPersonTasksAction(userId: number): Promise<Task[]> {
+  const me = await currentUser();
+  if (!me) return [];
+  const session = await getSession();
+  if (session?.role !== "administrator") return [];
+  if (!Number.isFinite(userId) || userId <= 0) return [];
+  try {
+    return await listTasksForPerson(userId);
+  } catch {
+    return [];
+  }
 }

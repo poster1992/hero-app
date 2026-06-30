@@ -6,6 +6,8 @@ import { getProjects } from "@/lib/hero-api";
 import { listReceiptReviews } from "@/lib/receipt-reviews";
 import TaskManager, { type ReviewTaskInfo } from "@/components/TaskManager";
 import PushSetup from "@/components/PushSetup";
+import TaskNotifications from "@/components/TaskNotifications";
+import { listUnacknowledged, type TaskNotification } from "@/lib/task-notifications";
 
 export default async function AufgabenPage() {
   const session = await getSession();
@@ -18,15 +20,17 @@ export default async function AufgabenPage() {
   let created: Awaited<ReturnType<typeof listTasksCreatedBy>> = [];
   let allOpen: Awaited<ReturnType<typeof listAllOpenTasks>> = [];
   let users: Awaited<ReturnType<typeof listUsers>> = [];
+  let notifications: TaskNotification[] = [];
   let projects: { id: number; relativeId: number | null; name: string }[] = [];
 
   try {
     me = await getUserByUsername(session.username);
     if (me) {
-      [assigned, created, users] = await Promise.all([
+      [assigned, created, users, notifications] = await Promise.all([
         listTasksAssignedTo(me.id),
         listTasksCreatedBy(me.id),
         listUsers(),
+        listUnacknowledged(me.id),
       ]);
       if (isAdmin) allOpen = await listAllOpenTasks();
     }
@@ -79,6 +83,7 @@ export default async function AufgabenPage() {
       </header>
 
       <PushSetup />
+      <TaskNotifications items={notifications} />
 
       {error ? (
         <div className="rounded-md border border-brand-red/30 bg-brand-red/10 p-4 text-sm text-red-300">

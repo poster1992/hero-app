@@ -1,11 +1,12 @@
 "use client";
 
-import { useActionState, useState, useEffect, useRef } from "react";
+import { useActionState, useState, useEffect, useRef, useTransition } from "react";
 import {
   createTaskAction,
   setStatusAction,
   forwardAction,
   addNoteAction,
+  loadPersonTasksAction,
   type CreateTaskState,
 } from "@/app/dashboard/aufgaben/actions";
 import { decideReviewAction } from "@/app/dashboard/belege/review-actions";
@@ -346,6 +347,21 @@ export default function TaskManager({
     "alle" | "offen" | "in_arbeit" | "erledigt" | "ueberfaellig"
   >("alle");
   const [search, setSearch] = useState("");
+  // Admin: Aufgaben einer bestimmten Person anzeigen.
+  const [personId, setPersonId] = useState<number>(0);
+  const [personTasks, setPersonTasks] = useState<Task[] | null>(null);
+  const [loadingPerson, startLoadPerson] = useTransition();
+  const selectPerson = (id: number) => {
+    setPersonId(id);
+    if (id > 0) {
+      startLoadPerson(async () => {
+        setPersonTasks(await loadPersonTasksAction(id));
+      });
+    } else {
+      setPersonTasks(null);
+    }
+  };
+  const personName = users.find((u) => u.id === personId)?.name ?? "";
   const matchesFilter = (t: Task) => {
     if (statusFilter === "ueberfaellig") {
       if (!isOverdue(t.dueDate, t.status)) return false;
@@ -543,6 +559,21 @@ export default function TaskManager({
             );
           })}
         </div>
+        {isAdmin && (
+          <select
+            value={personId}
+            onChange={(e) => selectPerson(Number(e.target.value))}
+            title="Alle Aufgaben einer Person anzeigen"
+            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-800 outline-none focus:border-brand-red/60"
+          >
+            <option value={0}>Person: alle</option>
+            {users.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.name}
+              </option>
+            ))}
+          </select>
+        )}
         <input
           type="text"
           value={search}
@@ -552,8 +583,36 @@ export default function TaskManager({
         />
       </div>
 
+      {/* Admin: Aufgaben einer bestimmten Person */}
+      {isAdmin && personId > 0 && (
+        <section className="flex flex-col gap-3">
+          <h2 className="text-lg font-semibold text-gray-900">
+            Aufgaben von {personName}{" "}
+            <span className="text-sm font-normal text-gray-500">
+              ({(personTasks ?? []).filter(matchesFilter).length})
+            </span>
+          </h2>
+          {loadingPerson ? (
+            <p className="text-sm text-gray-400">Wird geladen …</p>
+          ) : (personTasks ?? []).filter(matchesFilter).length === 0 ? (
+            <p className="text-sm text-gray-400">Keine Aufgaben für diesen Filter.</p>
+          ) : (
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+              {(personTasks ?? []).filter(matchesFilter).map((t) => (
+                <TaskCard
+                  key={t.id}
+                  task={t}
+                  users={users}
+                  review={reviewsByHeroId[reviewHeroId(t.description) ?? ""]}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
       {/* Admin: alle offenen Aufgaben */}
-      {isAdmin && (
+      {isAdmin && personId === 0 && (
         <section className="flex flex-col gap-3">
           <h2 className="text-lg font-semibold text-gray-900">
             Alle offenen Aufgaben{" "}

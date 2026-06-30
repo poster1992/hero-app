@@ -141,6 +141,16 @@ export async function listTasksCreatedBy(userId: number): Promise<Task[]> {
   return hydrate(rows);
 }
 
+/** All tasks (any status) where a person is an assignee OR the creator (admin view). */
+export async function listTasksForPerson(userId: number): Promise<Task[]> {
+  const [rows] = await getPool().query<TaskRow[]>(
+    `${SELECT} WHERE t.created_by = ?
+       OR EXISTS (SELECT 1 FROM task_assignees ta WHERE ta.task_id = t.id AND ta.user_id = ?) ${ORDER}`,
+    [userId, userId]
+  );
+  return hydrate(rows);
+}
+
 /** All not-yet-completed tasks (administrator overview). */
 export async function listAllOpenTasks(): Promise<Task[]> {
   const [rows] = await getPool().query<TaskRow[]>(
