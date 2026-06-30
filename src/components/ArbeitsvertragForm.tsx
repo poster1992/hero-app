@@ -85,22 +85,25 @@ interface Block {
   parasAfter?: string[];
 }
 
-/** Baut die personalisierte FLOORTEC-Vertragsvorlage (Wortlaut der Muster-PDF). */
-function buildBlocks(d: ContractData): Block[] {
-  const intro: Block = {
-    paras: [
-      "Zwischen",
-      `1) Herr/Frau: **${v(d.employeeName)}**, wohnhaft in: ${v(d.employeeStreet)}, ${v(d.employeeZipCity)}, geboren am: ${fmtDate(d.employeeBirth)}, nationale Matrikelnummer: ${v(d.matrikel, "-")}`,
-      "Arbeitnehmer einerseits,",
-      "und",
-      `2) Dem Unternehmen: **${v(d.companyName)}**, mit Sitz in: ${v(d.companyStreet)}, ${v(d.companyZipCity)}`,
-      "als Arbeitgeber andererseits,",
-      "wurde folgender Arbeitsvertrag auf unbestimmte Zeit, der den Bestimmungen des Arbeitsgesetzbuches unterliegt, abgeschlossen.",
+/** Parteienblock (Arbeitnehmer / Arbeitgeber) als Label-Wert-Zeilen. */
+function partyRows(d: ContractData): { employee: [string, string][]; employer: [string, string][] } {
+  return {
+    employee: [
+      ["1) Herr/Frau:", `**${v(d.employeeName)}**`],
+      ["wohnhaft in:", `${v(d.employeeStreet)}\n${v(d.employeeZipCity)}`],
+      ["geboren am:", fmtDate(d.employeeBirth)],
+      ["nationale Matrikelnummer:", v(d.matrikel, "-")],
+    ],
+    employer: [
+      ["2) Dem Unternehmen:", `**${v(d.companyName)}**`],
+      ["mit Sitz in:", `${v(d.companyStreet)}\n${v(d.companyZipCity)}`],
     ],
   };
+}
 
+/** Baut die personalisierte FLOORTEC-Vertragsvorlage (Wortlaut der Muster-PDF). */
+function buildBlocks(d: ContractData): Block[] {
   return [
-    intro,
     {
       article: "Artikel 1",
       paras: [
@@ -255,6 +258,36 @@ function Rich({ text }: { text: string }) {
   );
 }
 
+/** Mehrzeiliger Wert (\n) mit **fett** für die Parteien-Tabelle. */
+function PartyVal({ text }: { text: string }) {
+  return (
+    <>
+      {text.split("\n").map((ln, i) => (
+        <div key={i}>
+          <Rich text={ln} />
+        </div>
+      ))}
+    </>
+  );
+}
+
+function PartyTable({ rows }: { rows: [string, string][] }) {
+  return (
+    <table className="my-1 ml-3 border-collapse">
+      <tbody>
+        {rows.map(([k, val], i) => (
+          <tr key={i}>
+            <td className="w-[5.4cm] pr-2 align-top">{k}</td>
+            <td className="align-top">
+              <PartyVal text={val} />
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 const TITLE = "ARBEITSVERTRAG AUF UNBEFRISTETE ZEIT";
 
 export default function ArbeitsvertragForm({ contracts }: { contracts: SavedContract[] }) {
@@ -287,29 +320,60 @@ export default function ArbeitsvertragForm({ contracts }: { contracts: SavedCont
         return `<section>${art}${head}${paras}${table}${after}</section>`;
       })
       .join("");
+    const { employee, employer } = partyRows(data);
+    const partyTable = (rows: [string, string][]) =>
+      `<table class="party">${rows
+        .map(
+          ([k, val]) =>
+            `<tr><td class="k">${esc(k)}</td><td class="val">${rich(val).replace(/\n/g, "<br/>")}</td></tr>`
+        )
+        .join("")}</table>`;
+    const parties = `
+      <p class="lead">Zwischen</p>
+      ${partyTable(employee)}
+      <p class="lead">Arbeitnehmer einerseits,</p>
+      <p class="lead">und</p>
+      ${partyTable(employer)}
+      <p class="lead">als Arbeitgeber andererseits,</p>
+      <p>wurde folgender Arbeitsvertrag auf unbestimmte Zeit, der den Bestimmungen des Arbeitsgesetzbuches unterliegt, abgeschlossen.</p>`;
+    const letterhead = `
+      <div class="lh">
+        <div class="brand">FLOORTEC</div>
+        <div class="lh-meta">${esc(v(data.companyName, ""))}<br/>${esc(v(data.companyStreet, ""))} · ${esc(v(data.companyZipCity, ""))}</div>
+      </div>`;
     const sigs = `<table class="sigs"><tr>
-        <td><div class="line"></div>Der Arbeitnehmer</td>
-        <td><div class="line"></div>Der Arbeitgeber</td>
+        <td><div class="line"></div><div class="who">Der Arbeitnehmer</div><div class="who-sub">${esc(v(data.employeeName, ""))}</div></td>
+        <td><div class="line"></div><div class="who">Der Arbeitgeber</div><div class="who-sub">${esc(v(data.companyName, ""))}<br/>${esc(v(data.companyStreet, ""))}, ${esc(v(data.companyZipCity, ""))}</div></td>
       </tr></table>`;
     const html = `<!doctype html><html lang="de"><head><meta charset="utf-8"/>
       <title>Arbeitsvertrag ${esc(data.employeeName)}</title>
       <style>
-        @page { margin: 2cm; }
+        @page { margin: 1.8cm 2cm; }
         * { box-sizing: border-box; }
-        body { font-family: "Times New Roman", Georgia, serif; color: #000; font-size: 11.5pt; line-height: 1.45; }
-        h1 { text-align: center; font-size: 15pt; text-decoration: underline; margin: 0 0 1.6em; }
-        .art { font-weight: bold; text-decoration: underline; margin: 1.1em 0 0.25em; }
-        .head { font-weight: bold; text-decoration: underline; text-align: center; margin: 0.4em 0; }
-        p { margin: 0 0 0.45em; text-align: justify; }
-        section { margin-bottom: 0.2em; }
-        table.kf { margin: 0.6em auto; border-collapse: collapse; width: 90%; }
-        table.kf th { text-decoration: underline; padding: 0.2em 0.8em; text-align: center; font-weight: bold; }
-        table.kf td { padding: 0.15em 0.8em; text-align: center; }
-        table.sigs { width: 100%; margin-top: 4em; border-collapse: collapse; }
-        table.sigs td { width: 50%; vertical-align: top; padding-right: 2em; font-size: 10.5pt; }
-        .line { border-top: 1px solid #000; margin-bottom: 0.3em; height: 2.5em; }
+        body { font-family: "Times New Roman", Georgia, serif; color: #1a1a1a; font-size: 11pt; line-height: 1.5; }
+        .lh { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2.5px solid #c01818; padding-bottom: 6px; margin-bottom: 1.5em; }
+        .brand { font-family: Arial, Helvetica, sans-serif; font-weight: 800; font-size: 22pt; letter-spacing: 4px; color: #c01818; line-height: 1; }
+        .lh-meta { font-family: Arial, Helvetica, sans-serif; font-size: 8.5pt; color: #555; text-align: right; line-height: 1.35; }
+        h1 { text-align: center; font-size: 14pt; letter-spacing: 1px; text-decoration: underline; margin: 0 0 1.4em; }
+        .lead { margin: 0.35em 0; }
+        table.party { border-collapse: collapse; margin: 0.1em 0 0.1em 0.4cm; }
+        table.party td { vertical-align: top; padding: 1px 0; }
+        table.party td.k { width: 5.4cm; padding-right: 0.5cm; }
+        .art { font-weight: bold; text-decoration: underline; margin: 1.15em 0 0.3em; }
+        .head { font-weight: bold; text-decoration: underline; text-align: center; margin: 0.5em 0; letter-spacing: 0.5px; }
+        p { margin: 0 0 0.5em; text-align: justify; }
+        section { margin-bottom: 0.15em; }
+        table.kf { margin: 0.7em auto; border-collapse: collapse; }
+        table.kf th { padding: 0.2em 1.3em; text-align: center; font-weight: bold; border-bottom: 1px solid #999; }
+        table.kf td { padding: 0.18em 1.3em; text-align: center; }
+        table.sigs { width: 100%; margin-top: 4.5em; border-collapse: collapse; }
+        table.sigs td { width: 50%; vertical-align: top; padding-right: 2.5em; font-size: 10pt; }
+        .line { border-top: 1px solid #000; margin-bottom: 0.3em; height: 3em; }
+        .who { font-weight: 600; }
+        .who-sub { color: #444; font-size: 9pt; }
+        section, table.kf, p { page-break-inside: avoid; }
       </style></head>
-      <body><h1>${esc(TITLE)}</h1>${body}${sigs}</body></html>`;
+      <body>${letterhead}<h1>${esc(TITLE)}</h1>${parties}${body}${sigs}</body></html>`;
     const w = window.open("", "_blank", "width=820,height=1040");
     if (!w) {
       alert("Bitte Pop-ups für diese Seite erlauben, um den Vertrag zu drucken.");
@@ -510,7 +574,38 @@ export default function ArbeitsvertragForm({ contracts }: { contracts: SavedCont
           className="mx-auto max-w-[800px] rounded-md bg-white px-8 py-10 text-[12.5px] leading-relaxed text-gray-900 shadow"
           style={{ fontFamily: '"Times New Roman", Georgia, serif' }}
         >
-          <h1 className="mb-6 text-center text-lg font-bold underline">{TITLE}</h1>
+          {/* Briefkopf */}
+          <div className="mb-5 flex items-end justify-between border-b-2 border-[#c01818] pb-1.5">
+            <span
+              className="text-2xl font-extrabold tracking-[0.25em] text-[#c01818]"
+              style={{ fontFamily: "Arial, Helvetica, sans-serif" }}
+            >
+              FLOORTEC
+            </span>
+            <span
+              className="text-right text-[9px] leading-tight text-gray-500"
+              style={{ fontFamily: "Arial, Helvetica, sans-serif" }}
+            >
+              {v(d.companyName, "")}
+              <br />
+              {v(d.companyStreet, "")} · {v(d.companyZipCity, "")}
+            </span>
+          </div>
+
+          <h1 className="mb-5 text-center text-base font-bold uppercase tracking-wide underline">{TITLE}</h1>
+
+          {/* Parteien */}
+          <p className="my-1.5">Zwischen</p>
+          <PartyTable rows={partyRows(d).employee} />
+          <p className="my-1.5">Arbeitnehmer einerseits,</p>
+          <p className="my-1.5">und</p>
+          <PartyTable rows={partyRows(d).employer} />
+          <p className="my-1.5">als Arbeitgeber andererseits,</p>
+          <p className="mb-3 text-justify">
+            wurde folgender Arbeitsvertrag auf unbestimmte Zeit, der den Bestimmungen des
+            Arbeitsgesetzbuches unterliegt, abgeschlossen.
+          </p>
+
           {blocks.map((b, i) => (
             <div key={i} className="mb-2">
               {b.article && <p className="mt-3 font-bold underline">{b.article}</p>}
@@ -547,9 +642,19 @@ export default function ArbeitsvertragForm({ contracts }: { contracts: SavedCont
               ))}
             </div>
           ))}
-          <div className="mt-12 grid grid-cols-2 gap-6 text-xs">
-            <div className="border-t border-black pt-1">Der Arbeitnehmer</div>
-            <div className="border-t border-black pt-1">Der Arbeitgeber</div>
+          <div className="mt-16 grid grid-cols-2 gap-8 text-xs">
+            <div className="border-t border-black pt-1">
+              <span className="font-semibold">Der Arbeitnehmer</span>
+              <div className="text-[10px] text-gray-500">{v(d.employeeName, "")}</div>
+            </div>
+            <div className="border-t border-black pt-1">
+              <span className="font-semibold">Der Arbeitgeber</span>
+              <div className="text-[10px] text-gray-500">
+                {v(d.companyName, "")}
+                <br />
+                {v(d.companyStreet, "")}, {v(d.companyZipCity, "")}
+              </div>
+            </div>
           </div>
         </div>
       </div>
