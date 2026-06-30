@@ -189,9 +189,10 @@ function TaskCard({
                 href={review.docUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-sm font-medium text-brand-red hover:underline"
+                title="Beleg-PDF in neuem Tab öffnen"
+                className="inline-flex items-center gap-1.5 rounded-md bg-brand-red px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90"
               >
-                Beleg (PDF) ansehen
+                📄 Beleg öffnen (PDF)
               </a>
             ) : (
               <span className="text-xs text-gray-400">Kein PDF hinterlegt</span>

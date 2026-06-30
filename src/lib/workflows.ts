@@ -38,6 +38,7 @@ export interface Workflow {
   config: WorkflowConfig;
   active: boolean;
   createdBy: number | null;
+  createdAt: string | null;
 }
 
 interface WorkflowRow extends RowDataPacket {
@@ -47,6 +48,7 @@ interface WorkflowRow extends RowDataPacket {
   config: unknown;
   active: number;
   created_by: number | null;
+  created_at: string | null;
 }
 
 function parseConfig(value: unknown): WorkflowConfig {
@@ -86,19 +88,20 @@ function mapRow(r: WorkflowRow): Workflow {
     config: parseConfig(r.config),
     active: r.active === 1,
     createdBy: r.created_by,
+    createdAt: r.created_at ? String(r.created_at) : null,
   };
 }
 
 export async function listWorkflows(): Promise<Workflow[]> {
   const [rows] = await getPool().query<WorkflowRow[]>(
-    "SELECT id, name, trigger_key, config, active, created_by FROM workflows ORDER BY id DESC"
+    "SELECT id, name, trigger_key, config, active, created_by, created_at FROM workflows ORDER BY id DESC"
   );
   return rows.map(mapRow);
 }
 
 export async function listActiveWorkflows(triggerKey: string): Promise<Workflow[]> {
   const [rows] = await getPool().query<WorkflowRow[]>(
-    "SELECT id, name, trigger_key, config, active, created_by FROM workflows WHERE trigger_key = ? AND active = 1",
+    "SELECT id, name, trigger_key, config, active, created_by, created_at FROM workflows WHERE trigger_key = ? AND active = 1",
     [triggerKey]
   );
   return rows.map(mapRow);
@@ -161,7 +164,24 @@ export async function setWorkflowSeeded(triggerKey: string): Promise<void> {
   );
 }
 
-// --- Gesehene Referenzen (bereits verarbeitete Belege) ---
+// --- Pro Regel bereits verarbeitete (getaskte) Referenzen ---
+
+export async function getRuleSeen(workflowId: number): Promise<Set<string>> {
+  const [rows] = await getPool().query<RowDataPacket[]>(
+    "SELECT ref FROM workflow_rule_seen WHERE workflow_id = ?",
+    [workflowId]
+  );
+  return new Set((rows as { ref: string }[]).map((r) => r.ref));
+}
+
+export async function markRuleSeen(workflowId: number, refs: string[]): Promise<void> {
+  if (refs.length === 0) return;
+  await getPool().query("INSERT IGNORE INTO workflow_rule_seen (workflow_id, ref) VALUES ?", [
+    refs.map((ref) => [workflowId, ref]),
+  ]);
+}
+
+// --- (alt) Gesehene Referenzen pro Trigger ---
 
 export async function getSeenRefs(triggerKey: string): Promise<Set<string>> {
   const [rows] = await getPool().query<RowDataPacket[]>(

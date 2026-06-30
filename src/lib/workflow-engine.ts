@@ -11,11 +11,11 @@ import {
   listActiveWorkflows,
   getWorkflowMeta,
   touchWorkflowLastRun,
-  setWorkflowSeeded,
-  getSeenRefs,
-  markSeen,
+  getRuleSeen,
+  markRuleSeen,
   addWorkflowLog,
   WORKFLOW_TRIGGER_KEYS,
+  type Workflow,
   type WorkflowConfig,
 } from "./workflows";
 
@@ -117,11 +117,15 @@ async function collectEvents(triggerKey: string): Promise<WfEvent[]> {
   return [];
 }
 
-function matchesConfig(triggerKey: string, ev: WfEvent, cfg: WorkflowConfig): boolean {
-  // „Gilt ab": nur Ereignisse ab dem Datum berücksichtigen.
-  if (cfg.validFrom) {
-    if (!ev.eventDate || ev.eventDate < cfg.validFrom) return false;
-  }
+/** Untergrenze für das Ereignis-Datum: „gilt ab" oder (bei Belegen) das Erstelldatum der Regel. */
+function effectiveValidFrom(triggerKey: string, wf: Workflow): string | null {
+  if (wf.config.validFrom) return wf.config.validFrom;
+  // Beleg-Regeln ohne „gilt ab" gelten ab Anlage der Regel (kein Altbestand-Schwall).
+  if (triggerKey === "new_beleg" && wf.createdAt) return wf.createdAt.slice(0, 10);
+  return null;
+}
+
+function matchesFilters(triggerKey: string, ev: WfEvent, cfg: WorkflowConfig): boolean {
   if (cfg.filterSupplier && !ev.supplier.toLowerCase().includes(cfg.filterSupplier.toLowerCase())) return false;
   if (cfg.filterMinAmount != null && ev.amount < cfg.filterMinAmount) return false;
   if (triggerKey === "angebot_alt_ohne_ab") {
@@ -129,6 +133,36 @@ function matchesConfig(triggerKey: string, ev: WfEvent, cfg: WorkflowConfig): bo
     if ((ev.ageDays ?? 0) < threshold) return false;
   }
   return true;
+}
+
+/** Führt die Aktion einer Regel für ein Ereignis aus (Aufgabe oder Rechnungsprüfung). */
+async function executeRule(wf: Workflow, ev: WfEvent): Promise<void> {
+  const c = wf.config;
+  if (c.actionType === "review" && ev.review) {
+    const lbl = reviewLabel(ev.review);
+    await assignReviewer(ev.review.heroId, c.assigneeId, {
+      number: ev.review.number,
+      supplier: ev.review.supplier,
+      gross: ev.review.gross,
+      docUrl: ev.review.docUrl,
+    });
+    await createReviewTask(ev.review.heroId, lbl, wf.createdBy ?? c.assigneeId, c.assigneeId, c.description);
+    await notifyAssignee(c.assigneeId, `Rechnung prüfen: ${lbl}`);
+    await addWorkflowLog(wf.id, ev.ref, `Rechnungsprüfung gestartet: ${lbl}`);
+  } else {
+    const title = (ev.fill(c.title).trim() || "Aufgabe").slice(0, 255);
+    const dueDate = new Date(Date.now() + (c.dueOffsetDays || 0) * 24 * 3600 * 1000).toISOString().slice(0, 10);
+    await createTask({
+      title,
+      description: c.description,
+      createdBy: wf.createdBy ?? c.assigneeId,
+      assignedTo: [c.assigneeId],
+      dueDate,
+      actionButtons: c.buttons,
+    });
+    await notifyAssignee(c.assigneeId, title);
+    await addWorkflowLog(wf.id, ev.ref, `Aufgabe erstellt: ${title}`);
+  }
 }
 
 /** Benachrichtigt den Zugewiesenen (In-App + Push + E-Mail) über eine neue Aufgabe. */
@@ -178,74 +212,31 @@ async function runTrigger(triggerKey: string): Promise<void> {
   } catch {
     return;
   }
-
-  const seen = await getSeenRefs(triggerKey);
-
-  // „new_beleg" ist ein Einmal-Ereignis → Altbestand beim ersten Lauf nur markieren.
-  // „angebot_alt_ohne_ab" ist eine fortlaufende Bedingung → bestehende alte Angebote
-  // sollen sofort eine Aufgabe erzeugen (kein Baseline).
-  const doBaseline = triggerKey === "new_beleg";
-  const markAllSeen = triggerKey === "new_beleg";
-
-  if (doBaseline && !meta.seeded) {
-    await markSeen(triggerKey, events.map((e) => e.ref));
-    await setWorkflowSeeded(triggerKey);
-    return;
-  }
+  if (events.length === 0) return;
 
   let created = 0;
-  for (const ev of events) {
-    if (seen.has(ev.ref)) continue;
+  // Je Regel: Ereignisse ab dem „gilt ab"-Datum, die diese Regel noch nicht getaskt hat.
+  for (const wf of workflows) {
     if (created >= MAX_PER_RUN) break;
+    if (!wf.config.assigneeId) continue;
+    const seen = await getRuleSeen(wf.id);
+    const effFrom = effectiveValidFrom(triggerKey, wf);
 
-    let didCreate = false;
-    for (const wf of workflows) {
-      const c = wf.config;
-      if (!c.assigneeId) continue;
-      if (!matchesConfig(triggerKey, ev, c)) continue;
+    for (const ev of events) {
+      if (created >= MAX_PER_RUN) break;
+      if (seen.has(ev.ref)) continue;
+      if (effFrom && (!ev.eventDate || ev.eventDate < effFrom)) continue;
+      if (!matchesFilters(triggerKey, ev, wf.config)) continue;
 
       try {
-        if (c.actionType === "review" && ev.review) {
-          // Rechnungsprüfung: Beleg auf „in Prüfung" setzen + Prüf-Aufgabe (PDF, Freigeben/Ablehnen).
-          const lbl = reviewLabel(ev.review);
-          await assignReviewer(ev.review.heroId, c.assigneeId, {
-            number: ev.review.number,
-            supplier: ev.review.supplier,
-            gross: ev.review.gross,
-            docUrl: ev.review.docUrl,
-          });
-          await createReviewTask(ev.review.heroId, lbl, wf.createdBy ?? c.assigneeId, c.assigneeId, c.description);
-          await notifyAssignee(c.assigneeId, `Rechnung prüfen: ${lbl}`);
-          await addWorkflowLog(wf.id, ev.ref, `Rechnungsprüfung gestartet: ${lbl}`);
-          didCreate = true;
-        } else {
-          const title = (ev.fill(c.title).trim() || "Aufgabe").slice(0, 255);
-          const dueDate = new Date(Date.now() + (c.dueOffsetDays || 0) * 24 * 3600 * 1000)
-            .toISOString()
-            .slice(0, 10);
-          await createTask({
-            title,
-            description: c.description,
-            createdBy: wf.createdBy ?? c.assigneeId,
-            assignedTo: [c.assigneeId],
-            dueDate,
-            actionButtons: c.buttons,
-          });
-          await notifyAssignee(c.assigneeId, title);
-          await addWorkflowLog(wf.id, ev.ref, `Aufgabe erstellt: ${title}`);
-          didCreate = true;
-        }
+        await executeRule(wf, ev);
+        await markRuleSeen(wf.id, [ev.ref]);
+        seen.add(ev.ref);
+        created++;
       } catch (e) {
         await addWorkflowLog(wf.id, ev.ref, `Fehler: ${e instanceof Error ? e.message : "unbekannt"}`);
       }
     }
-
-    // Einmal-Ereignisse immer als gesehen markieren; fortlaufende Bedingungen nur,
-    // wenn tatsächlich eine Aufgabe erstellt wurde (sonst später erneut prüfen).
-    if (markAllSeen || didCreate) {
-      await markSeen(triggerKey, [ev.ref]);
-    }
-    if (didCreate) created++;
   }
 }
 
