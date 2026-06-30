@@ -136,6 +136,80 @@ function WorkflowRow({ wf, users }: { wf: Workflow; users: UserOption[] }) {
   );
 }
 
+/** Ein Knoten im Ablauf-Diagramm. */
+function FlowNode({
+  kind,
+  title,
+  lines,
+}: {
+  kind: "trigger" | "condition" | "action";
+  title: string;
+  lines: string[];
+}) {
+  const box =
+    kind === "trigger"
+      ? "border-sky-500/30 bg-sky-500/10"
+      : kind === "condition"
+        ? "border-amber-500/30 bg-amber-500/10"
+        : "border-emerald-500/30 bg-emerald-500/10";
+  const titleColor =
+    kind === "trigger" ? "text-sky-300" : kind === "condition" ? "text-amber-300" : "text-emerald-300";
+  const icon = kind === "trigger" ? "🧾" : kind === "condition" ? "⚙️" : "✅";
+  return (
+    <div className={`w-44 shrink-0 rounded-lg border px-3 py-2 ${box}`}>
+      <div className={`flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide ${titleColor}`}>
+        <span aria-hidden>{icon}</span>
+        {title}
+      </div>
+      {lines.map((l, i) => (
+        <div key={i} className={i === 0 ? "mt-1 font-medium text-gray-100" : "text-xs text-gray-400"}>
+          {l}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function FlowArrow() {
+  return (
+    <div className="flex shrink-0 items-center self-center px-1 text-2xl leading-none text-gray-400" aria-hidden>
+      →
+    </div>
+  );
+}
+
+/** Ablauf-Diagramm einer Regel: Auslöser → (Bedingung) → Aktion. */
+function WorkflowFlow({ wf, users }: { wf: Workflow; users: UserOption[] }) {
+  const assignee = users.find((u) => u.id === wf.config.assigneeId)?.name ?? `#${wf.config.assigneeId}`;
+  const conditions: string[] = [];
+  if (wf.config.filterSupplier) conditions.push(`Lieferant „${wf.config.filterSupplier}"`);
+  if (wf.config.filterMinAmount != null) conditions.push(`ab ${wf.config.filterMinAmount} €`);
+  return (
+    <div className={`rounded-lg border px-4 py-3 ${wf.active ? "border-gray-200 bg-white" : "border-gray-200 bg-gray-50 opacity-70"}`}>
+      <div className="mb-2 flex items-center gap-2">
+        <span className={`h-2.5 w-2.5 rounded-full ${wf.active ? "bg-emerald-500" : "bg-gray-300"}`} />
+        <span className="text-sm font-medium text-gray-900">{wf.name}</span>
+        {!wf.active && <span className="text-xs text-gray-400">(inaktiv)</span>}
+      </div>
+      <div className="flex flex-wrap items-stretch gap-1 overflow-x-auto">
+        <FlowNode kind="trigger" title="Auslöser" lines={["Neuer Beleg", "Eingangsrechnung"]} />
+        <FlowArrow />
+        {conditions.length > 0 && (
+          <>
+            <FlowNode kind="condition" title="Bedingung" lines={conditions} />
+            <FlowArrow />
+          </>
+        )}
+        <FlowNode
+          kind="action"
+          title="Aktion"
+          lines={[`Aufgabe an ${assignee}`, `fällig in ${wf.config.dueOffsetDays} Tagen`]}
+        />
+      </div>
+    </div>
+  );
+}
+
 export default function WorkflowsManager({
   workflows,
   users,
@@ -146,21 +220,38 @@ export default function WorkflowsManager({
   log: WorkflowLogItem[];
 }) {
   const [open, setOpen] = useState(false);
+  const [view, setView] = useState<"liste" | "diagramm">("liste");
   const [state, formAction, pending] = useActionState<WorkflowFormState, FormData>(createWorkflowAction, {});
 
   return (
     <div className="flex flex-col gap-6">
       {/* Neue Regel */}
       <div className="rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
-        <div className="flex items-center justify-between gap-2 border-b border-gray-200 px-5 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-5 py-4">
           <h2 className="text-lg font-medium text-gray-900">Regeln</h2>
-          <button
-            type="button"
-            onClick={() => setOpen((o) => !o)}
-            className="rounded-md bg-brand-red px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90"
-          >
-            {open ? "Schließen" : "+ Neue Regel"}
-          </button>
+          <div className="flex items-center gap-2">
+            <div className="flex overflow-hidden rounded-md border border-gray-300 text-xs">
+              {(["liste", "diagramm"] as const).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setView(v)}
+                  className={`px-3 py-1.5 font-medium ${
+                    view === v ? "bg-brand-red text-white" : "text-gray-600 hover:bg-gray-100"
+                  }`}
+                >
+                  {v === "liste" ? "Liste" : "Diagramm"}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setOpen((o) => !o)}
+              className="rounded-md bg-brand-red px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90"
+            >
+              {open ? "Schließen" : "+ Neue Regel"}
+            </button>
+          </div>
         </div>
 
         {open && (
@@ -178,12 +269,18 @@ export default function WorkflowsManager({
 
         {workflows.length === 0 ? (
           <p className="px-5 py-6 text-center text-sm text-gray-500">Noch keine Regeln angelegt.</p>
-        ) : (
+        ) : view === "liste" ? (
           <ul className="divide-y divide-gray-200">
             {workflows.map((wf) => (
               <WorkflowRow key={wf.id} wf={wf} users={users} />
             ))}
           </ul>
+        ) : (
+          <div className="flex flex-col gap-3 px-5 py-4">
+            {workflows.map((wf) => (
+              <WorkflowFlow key={wf.id} wf={wf} users={users} />
+            ))}
+          </div>
         )}
       </div>
 
