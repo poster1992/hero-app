@@ -1,7 +1,8 @@
 import "server-only";
 import { getReceiptsInRange, getProjectPipeline, type Receipt } from "./hero-api";
-import { getCustomerName } from "./invoices";
-import { createTask } from "./tasks";
+import { getCustomerName, getDocumentUrl } from "./invoices";
+import { createTask, createReviewTask } from "./tasks";
+import { assignReviewer } from "./receipt-reviews";
 import { sendPushToUsers } from "./push";
 import { createTaskNotification } from "./task-notifications";
 import { getUsersForNotification } from "./users";
@@ -30,6 +31,13 @@ interface WfEvent {
   amount: number; // für filterMinAmount
   ageDays?: number; // für Altersfilter
   fill: (tpl: string) => string; // Titel-Vorlage füllen
+  /** Beleg-Daten für die Aktion „Rechnungsprüfung" (nur new_beleg). */
+  review?: { heroId: string; number: string; supplier: string; gross: number; docUrl: string | null };
+}
+
+function reviewLabel(rv: { number: string; supplier: string; gross: number }): string {
+  const base = [rv.number, rv.supplier].filter(Boolean).join(" · ") || "Beleg";
+  return rv.gross ? `${base} · ${euro.format(rv.gross)}` : base;
 }
 
 function fillBeleg(tpl: string, r: Receipt, supplier: string): string {
@@ -62,7 +70,19 @@ async function collectEvents(triggerKey: string): Promise<WfEvent[]> {
     const receipts = (await getReceiptsInRange(from, to)).filter((r) => r.type === "output");
     return receipts.map((r) => {
       const supplier = getCustomerName(r);
-      return { ref: r.id, supplier, amount: r.value || 0, fill: (tpl: string) => fillBeleg(tpl, r, supplier) };
+      return {
+        ref: r.id,
+        supplier,
+        amount: r.value || 0,
+        fill: (tpl: string) => fillBeleg(tpl, r, supplier),
+        review: {
+          heroId: r.id,
+          number: r.number,
+          supplier,
+          gross: r.value || 0,
+          docUrl: r.fileUpload?.src ? getDocumentUrl(r.fileUpload.src) : null,
+        },
+      };
     });
   }
 
@@ -177,20 +197,37 @@ async function runTrigger(triggerKey: string): Promise<void> {
       if (!c.assigneeId) continue;
       if (!matchesConfig(triggerKey, ev, c)) continue;
 
-      const title = (ev.fill(c.title).trim() || "Aufgabe").slice(0, 255);
-      const dueDate = new Date(Date.now() + (c.dueOffsetDays || 0) * 24 * 3600 * 1000).toISOString().slice(0, 10);
       try {
-        await createTask({
-          title,
-          description: c.description,
-          createdBy: wf.createdBy ?? c.assigneeId,
-          assignedTo: [c.assigneeId],
-          dueDate,
-          actionButtons: c.buttons,
-        });
-        await notifyAssignee(c.assigneeId, title);
-        await addWorkflowLog(wf.id, ev.ref, `Aufgabe erstellt: ${title}`);
-        didCreate = true;
+        if (c.actionType === "review" && ev.review) {
+          // Rechnungsprüfung: Beleg auf „in Prüfung" setzen + Prüf-Aufgabe (PDF, Freigeben/Ablehnen).
+          const lbl = reviewLabel(ev.review);
+          await assignReviewer(ev.review.heroId, c.assigneeId, {
+            number: ev.review.number,
+            supplier: ev.review.supplier,
+            gross: ev.review.gross,
+            docUrl: ev.review.docUrl,
+          });
+          await createReviewTask(ev.review.heroId, lbl, wf.createdBy ?? c.assigneeId, c.assigneeId, c.description);
+          await notifyAssignee(c.assigneeId, `Rechnung prüfen: ${lbl}`);
+          await addWorkflowLog(wf.id, ev.ref, `Rechnungsprüfung gestartet: ${lbl}`);
+          didCreate = true;
+        } else {
+          const title = (ev.fill(c.title).trim() || "Aufgabe").slice(0, 255);
+          const dueDate = new Date(Date.now() + (c.dueOffsetDays || 0) * 24 * 3600 * 1000)
+            .toISOString()
+            .slice(0, 10);
+          await createTask({
+            title,
+            description: c.description,
+            createdBy: wf.createdBy ?? c.assigneeId,
+            assignedTo: [c.assigneeId],
+            dueDate,
+            actionButtons: c.buttons,
+          });
+          await notifyAssignee(c.assigneeId, title);
+          await addWorkflowLog(wf.id, ev.ref, `Aufgabe erstellt: ${title}`);
+          didCreate = true;
+        }
       } catch (e) {
         await addWorkflowLog(wf.id, ev.ref, `Fehler: ${e instanceof Error ? e.message : "unbekannt"}`);
       }

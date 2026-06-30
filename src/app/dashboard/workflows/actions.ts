@@ -41,6 +41,7 @@ function readConfig(formData: FormData): WorkflowConfig {
     return s !== "" && Number.isFinite(Number(s)) ? Number(s) : null;
   };
   return {
+    actionType: String(formData.get("actionType")) === "review" ? "review" : "task",
     assigneeId: Number(formData.get("assigneeId")) || 0,
     title: String(formData.get("title") ?? "").trim() || "Beleg prüfen: {nr} – {lieferant}",
     description: String(formData.get("description") ?? "").trim() || null,

@@ -60,11 +60,14 @@ function RuleFields({
 }) {
   const [trigger, setTrigger] = useState(triggerKey);
   const [title, setTitle] = useState(cfg?.title ?? defaultTitleFor(triggerKey));
+  const [actionType, setActionType] = useState<"task" | "review">(cfg?.actionType === "review" ? "review" : "task");
   const isAngebot = trigger === "angebot_alt_ohne_ab";
+  const isReview = trigger === "new_beleg" && actionType === "review";
 
   const onTriggerChange = (key: string) => {
     // Standardtitel mitwechseln, solange der Nutzer ihn nicht angepasst hat.
     if (title === defaultTitleFor(trigger)) setTitle(defaultTitleFor(key));
+    if (key !== "new_beleg") setActionType("task"); // Rechnungsprüfung nur bei Belegen
     setTrigger(key);
   };
 
@@ -92,6 +95,22 @@ function RuleFields({
         )}
       </div>
 
+      {/* Aktionstyp – Rechnungsprüfung nur beim Beleg-Auslöser */}
+      <input type="hidden" name="actionType" value={isReview ? "review" : "task"} />
+      {trigger === "new_beleg" && (
+        <div className="sm:col-span-2">
+          <label className="mb-1 block text-sm text-gray-600">Aktion</label>
+          <select
+            value={actionType}
+            onChange={(e) => setActionType(e.target.value === "review" ? "review" : "task")}
+            className={inputClass}
+          >
+            <option value="task">Aufgabe erstellen</option>
+            <option value="review">Rechnungsprüfung (Beleg → Prüfung, PDF + Freigeben/Ablehnen)</option>
+          </select>
+        </div>
+      )}
+
       {isAngebot && (
         <div>
           <label className="mb-1 block text-sm text-gray-600">Angebot älter als (Tage) *</label>
@@ -99,7 +118,7 @@ function RuleFields({
         </div>
       )}
       <div>
-        <label className="mb-1 block text-sm text-gray-600">Aufgabe an *</label>
+        <label className="mb-1 block text-sm text-gray-600">{isReview ? "Prüfer *" : "Aufgabe an *"}</label>
         <select name="assigneeId" defaultValue={cfg?.assigneeId ?? ""} required className={inputClass}>
           <option value="">Mitarbeiter wählen …</option>
           {users.map((u) => (
@@ -110,35 +129,49 @@ function RuleFields({
         </select>
       </div>
 
-      <div className="sm:col-span-2">
-        <label className="mb-1 block text-sm text-gray-600">
-          Aufgaben-Titel <span className="text-gray-400">(Platzhalter: {placeholdersFor(trigger)})</span>
-        </label>
-        <input name="title" value={title} onChange={(e) => setTitle(e.target.value)} className={inputClass} />
-      </div>
+      {isReview ? (
+        <div className="sm:col-span-2 rounded-md border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-xs text-gray-300">
+          Aktion „Rechnungsprüfung": Der Beleg wird auf <strong>„in Prüfung"</strong> gesetzt und der Prüfer
+          erhält eine Aufgabe mit <strong>PDF + Freigeben/Ablehnen</strong>. Titel/Buttons/Fälligkeit entfallen
+          (die Prüf-Aufgabe hat ihre eigenen Schaltflächen). Beschreibung wird als Notiz übernommen.
+        </div>
+      ) : (
+        <>
+          <div className="sm:col-span-2">
+            <label className="mb-1 block text-sm text-gray-600">
+              Aufgaben-Titel <span className="text-gray-400">(Platzhalter: {placeholdersFor(trigger)})</span>
+            </label>
+            <input name="title" value={title} onChange={(e) => setTitle(e.target.value)} className={inputClass} />
+          </div>
+        </>
+      )}
       <div className="sm:col-span-2">
         <label className="mb-1 block text-sm text-gray-600">Beschreibung (optional)</label>
         <textarea name="description" defaultValue={cfg?.description ?? ""} rows={2} className={inputClass} />
       </div>
-      <div className="sm:col-span-2">
-        <label className="mb-1 block text-sm text-gray-600">
-          Antwort-Buttons <span className="text-gray-400">(Komma- oder zeilengetrennt, max. 8)</span>
-        </label>
-        <input
-          name="buttons"
-          defaultValue={(cfg?.buttons ?? []).join(", ")}
-          placeholder="z.B. Erledigt, Nachfassen nötig, Kein Interesse"
-          className={inputClass}
-        />
-        <p className="mt-1 text-xs text-gray-400">
-          Erscheinen an der Aufgabe; ein Klick protokolliert die Antwort, meldet sie dem Ersteller und
-          erledigt die Aufgabe.
-        </p>
-      </div>
-      <div>
-        <label className="mb-1 block text-sm text-gray-600">Fällig in (Tagen)</label>
-        <input name="dueOffsetDays" type="number" min={0} defaultValue={cfg?.dueOffsetDays ?? 7} className={inputClass} />
-      </div>
+      {!isReview && (
+        <>
+          <div className="sm:col-span-2">
+            <label className="mb-1 block text-sm text-gray-600">
+              Antwort-Buttons <span className="text-gray-400">(Komma- oder zeilengetrennt, max. 8)</span>
+            </label>
+            <input
+              name="buttons"
+              defaultValue={(cfg?.buttons ?? []).join(", ")}
+              placeholder="z.B. Erledigt, Nachfassen nötig, Kein Interesse"
+              className={inputClass}
+            />
+            <p className="mt-1 text-xs text-gray-400">
+              Erscheinen an der Aufgabe; ein Klick protokolliert die Antwort, meldet sie dem Ersteller und
+              erledigt die Aufgabe.
+            </p>
+          </div>
+          <div>
+            <label className="mb-1 block text-sm text-gray-600">Fällig in (Tagen)</label>
+            <input name="dueOffsetDays" type="number" min={0} defaultValue={cfg?.dueOffsetDays ?? 7} className={inputClass} />
+          </div>
+        </>
+      )}
       <div className="grid grid-cols-2 gap-2">
         <div>
           <label className="mb-1 block text-sm text-gray-600">Filter: {isAngebot ? "Kunde" : "Lieferant"}</label>
@@ -185,8 +218,9 @@ function WorkflowRow({ wf, users }: { wf: Workflow; users: UserOption[] }) {
           {wf.triggerKey === "angebot_alt_ohne_ab"
             ? `Angebot offen > ${wf.config.minAgeDays ?? 21} Tage ohne AB`
             : "Neuer Beleg"}{" "}
-          → Aufgabe an <span className="text-gray-700">{assignee}</span> · fällig in{" "}
-          {wf.config.dueOffsetDays} Tagen
+          → {wf.config.actionType === "review" ? "Rechnungsprüfung" : "Aufgabe"} an{" "}
+          <span className="text-gray-700">{assignee}</span>
+          {wf.config.actionType === "review" ? "" : ` · fällig in ${wf.config.dueOffsetDays} Tagen`}
           {wf.config.filterSupplier
             ? ` · ${wf.triggerKey === "angebot_alt_ohne_ab" ? "Kunde" : "Lieferant"} „${wf.config.filterSupplier}"`
             : ""}
@@ -290,7 +324,11 @@ function WorkflowFlow({ wf, users }: { wf: Workflow; users: UserOption[] }) {
         <FlowNode
           kind="action"
           title="Aktion"
-          lines={[`Aufgabe an ${assignee}`, `fällig in ${wf.config.dueOffsetDays} Tagen`]}
+          lines={
+            wf.config.actionType === "review"
+              ? ["Rechnungsprüfung", `Beleg → Prüfung`, `Prüfer ${assignee}`]
+              : [`Aufgabe an ${assignee}`, `fällig in ${wf.config.dueOffsetDays} Tagen`]
+          }
         />
       </div>
     </div>

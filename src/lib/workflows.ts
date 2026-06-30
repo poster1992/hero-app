@@ -9,8 +9,10 @@ export const WORKFLOW_TRIGGERS = [
 
 export const WORKFLOW_TRIGGER_KEYS = WORKFLOW_TRIGGERS.map((t) => t.key);
 
-/** Aktion „Aufgabe erstellen" – Konfiguration einer Regel. */
+/** Konfiguration einer Regel (Aktion „Aufgabe" oder „Rechnungsprüfung"). */
 export interface WorkflowConfig {
+  /** "task" = normale Aufgabe; "review" = Rechnungsprüfung am Beleg (nur Auslöser „new_beleg"). */
+  actionType: "task" | "review";
   assigneeId: number;
   /** Titel-Vorlage, Platzhalter je Auslöser ({nr} {lieferant} {betrag} {datum} bzw. {projekt} {kunde} {tage} {angebotsdatum}). */
   title: string;
@@ -56,6 +58,7 @@ function parseConfig(value: unknown): WorkflowConfig {
   }
   const o = (raw ?? {}) as Partial<WorkflowConfig>;
   return {
+    actionType: o.actionType === "review" ? "review" : "task",
     assigneeId: Number(o.assigneeId ?? 0),
     title: String(o.title ?? "Beleg prüfen: {nr} – {lieferant}"),
     description: o.description != null ? String(o.description) : null,
