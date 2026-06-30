@@ -350,7 +350,7 @@ function FlowNode({
   title,
   lines,
 }: {
-  kind: "trigger" | "condition" | "action";
+  kind: "trigger" | "condition" | "action" | "followup";
   title: string;
   lines: string[];
 }) {
@@ -359,10 +359,18 @@ function FlowNode({
       ? "border-sky-500/30 bg-sky-500/10"
       : kind === "condition"
         ? "border-amber-500/30 bg-amber-500/10"
-        : "border-emerald-500/30 bg-emerald-500/10";
+        : kind === "followup"
+          ? "border-indigo-500/30 bg-indigo-500/10"
+          : "border-emerald-500/30 bg-emerald-500/10";
   const titleColor =
-    kind === "trigger" ? "text-sky-300" : kind === "condition" ? "text-amber-300" : "text-emerald-300";
-  const icon = kind === "trigger" ? "🧾" : kind === "condition" ? "⚙️" : "✅";
+    kind === "trigger"
+      ? "text-sky-300"
+      : kind === "condition"
+        ? "text-amber-300"
+        : kind === "followup"
+          ? "text-indigo-300"
+          : "text-emerald-300";
+  const icon = kind === "trigger" ? "🧾" : kind === "condition" ? "⚙️" : kind === "followup" ? "📦" : "✅";
   return (
     <div className={`w-44 shrink-0 rounded-lg border px-3 py-2 ${box}`}>
       <div className={`flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide ${titleColor}`}>
@@ -445,6 +453,16 @@ function WorkflowFlow({ wf, users }: { wf: Workflow; users: UserOption[] }) {
           </>
         ) : (
           <FlowNode kind="action" title="Aktion" lines={mainAction} />
+        )}
+        {isReview && (
+          <>
+            <FlowArrow />
+            <FlowNode
+              kind="followup"
+              title="Nach Freigabe"
+              lines={["Beleg-Artikel →", "Soll-Kalkulation zuordnen"]}
+            />
+          </>
         )}
       </div>
     </div>
