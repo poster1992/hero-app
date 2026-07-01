@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
 import { listAllBelegArticles } from "@/lib/beleg-articles";
 import { getReceiptsInRange } from "@/lib/hero-api";
-import { getCustomerName } from "@/lib/invoices";
+import { getCustomerName, getDocumentUrl } from "@/lib/invoices";
 import PriceComparison, { type PriceRow } from "@/components/PriceComparison";
 
 export default async function PreisvergleichPage() {
@@ -22,6 +22,7 @@ export default async function PreisvergleichPage() {
       const supplier = r ? getCustomerName(r) : "—";
       const date = r?.receiptDate ? r.receiptDate.slice(0, 10) : null;
       const number = r?.number ?? "";
+      const docUrl = r?.fileUpload?.src ? getDocumentUrl(r.fileUpload.src) : null;
       for (const it of e.items) {
         if (!it.name.trim()) continue;
         rows.push({
@@ -30,6 +31,7 @@ export default async function PreisvergleichPage() {
           date,
           number,
           heroReceiptId: e.heroReceiptId,
+          docUrl,
           quantity: it.quantity,
           unit: it.unit,
           unitPrice: it.unitPrice,

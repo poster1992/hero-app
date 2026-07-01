@@ -8,10 +8,28 @@ export interface PriceRow {
   date: string | null;
   number: string;
   heroReceiptId: string;
+  docUrl: string | null;
   quantity: number;
   unit: string | null;
   unitPrice: number;
   lineTotal: number;
+}
+
+/** 📄-Link zum Beleg-PDF (öffnet neuen Tab). */
+function BelegLink({ url }: { url: string | null }) {
+  if (!url) return null;
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      title="Beleg (PDF) öffnen"
+      onClick={(e) => e.stopPropagation()}
+      className="ml-1.5 inline-block align-middle text-brand-red hover:opacity-80"
+    >
+      📄
+    </a>
+  );
 }
 
 const eur = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
@@ -283,7 +301,10 @@ export default function PriceComparison({ rows }: { rows: PriceRow[] }) {
                           .sort((a, b) => a.unitPrice - b.unitPrice)
                           .map((r, i) => (
                             <tr key={`${g.key}-${i}`} className="border-b border-gray-100 bg-gray-50/60 text-[11px]">
-                              <td className="px-3 py-1.5 pl-8 align-top text-gray-700">{r.article}</td>
+                              <td className="px-3 py-1.5 pl-8 align-top text-gray-700">
+                                {r.article}
+                                <BelegLink url={r.docUrl} />
+                              </td>
                               <td className="px-3 py-1.5 text-center align-top text-gray-600">{r.supplier}</td>
                               <td className="px-3 py-1.5 text-right align-top whitespace-nowrap">
                                 {deltaCell(r, g.min, g.rows.length > 1)}
@@ -325,7 +346,10 @@ export default function PriceComparison({ rows }: { rows: PriceRow[] }) {
                   const comparable = (exact.count.get(k) ?? 0) > 1;
                   return (
                     <tr key={`${r.heroReceiptId}-${i}`} className="border-b border-gray-200 last:border-0 hover:bg-gray-100">
-                      <td className="px-3 py-2 align-top font-medium text-gray-800">{r.article}</td>
+                      <td className="px-3 py-2 align-top font-medium text-gray-800">
+                        {r.article}
+                        <BelegLink url={r.docUrl} />
+                      </td>
                       <td className="px-3 py-2 align-top text-gray-700">{r.supplier}</td>
                       <td className="px-3 py-2 align-top whitespace-nowrap text-gray-600">
                         {r.date ? dateFmt.format(new Date(r.date)) : "—"}
