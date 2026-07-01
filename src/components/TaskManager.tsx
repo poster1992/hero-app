@@ -135,8 +135,15 @@ function TaskCard({
     if (!to) return;
     const name = bewertung?.name ?? "";
     const anrede = name ? `Hallo ${name},` : "Guten Tag,";
-    const linkLine = googleReviewUrl
-      ? `Über eine kurze Google-Bewertung würden wir uns sehr freuen:\n${googleReviewUrl}\n\n`
+    // URL vollständig (https://) und allein auf einer Zeile – so wandeln Mailprogramme
+    // sie automatisch in einen anklickbaren Hyperlink um (mailto unterstützt kein HTML).
+    const url = googleReviewUrl
+      ? /^https?:\/\//i.test(googleReviewUrl)
+        ? googleReviewUrl
+        : `https://${googleReviewUrl}`
+      : "";
+    const linkLine = url
+      ? `Über eine kurze Google-Bewertung würden wir uns sehr freuen. Einfach hier klicken:\n\n${url}\n\n`
       : "";
     const subject = "Ihre Meinung ist uns wichtig – FLOORTEC";
     const body =
