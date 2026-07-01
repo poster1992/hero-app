@@ -1,6 +1,15 @@
 import type { RowDataPacket } from "mysql2";
 import { getPool } from "./db";
 
+/** Anzahl versendeter Kundenzufriedenheitsumfragen (gesamt bzw. optional ab Jahr). */
+export async function countReviewEmailsSent(year?: number): Promise<number> {
+  const sql = year
+    ? "SELECT COUNT(*) AS n FROM review_emails WHERE YEAR(sent_at) = ?"
+    : "SELECT COUNT(*) AS n FROM review_emails";
+  const [rows] = await getPool().query<RowDataPacket[]>(sql, year ? [year] : []);
+  return Number((rows[0] as { n: number })?.n ?? 0);
+}
+
 /** Wurde für dieses Projekt/diesen Kunden bereits eine Bewertungsmail versendet? */
 export async function wasReviewEmailSent(projectKey: string): Promise<boolean> {
   const [rows] = await getPool().query<RowDataPacket[]>(

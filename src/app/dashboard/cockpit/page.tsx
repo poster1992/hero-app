@@ -19,6 +19,7 @@ import YearSelector from "@/components/YearSelector";
 import TaxLiabilityTable from "@/components/TaxLiabilityTable";
 import GuvTable from "@/components/GuvTable";
 import ProjectPipelines from "@/components/ProjectPipelines";
+import { countReviewEmailsSent } from "@/lib/review-emails";
 
 const currencyFormatter = new Intl.NumberFormat("de-DE", {
   style: "currency",
@@ -53,6 +54,17 @@ export default async function DashboardPage({
     projectPipeline = await getProjectPipeline();
   } catch {
     // Pipeline ist optional – Fehler hier blockiert das Dashboard nicht.
+  }
+
+  let reviewsSentTotal = 0;
+  let reviewsSentYear = 0;
+  try {
+    [reviewsSentTotal, reviewsSentYear] = await Promise.all([
+      countReviewEmailsSent(),
+      countReviewEmailsSent(year),
+    ]);
+  } catch {
+    // Zähler optional
   }
 
   let volume: Awaited<ReturnType<typeof getOfferConfirmationVolume>> | null = null;
@@ -138,6 +150,21 @@ export default async function DashboardPage({
           Fehler beim Laden der Daten von HERO: {error}
         </div>
       )}
+
+      {/* Kennzahl: versendete Kundenzufriedenheitsumfragen */}
+      <div className="flex flex-wrap gap-4">
+        <div className="flex min-w-[220px] items-center gap-4 rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
+          <span className="text-3xl" aria-hidden>⭐</span>
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Zufriedenheitsumfragen versendet</p>
+            <p className="text-2xl font-semibold text-gray-900">
+              {reviewsSentTotal}
+              <span className="ml-2 text-sm font-normal text-gray-500">gesamt</span>
+            </p>
+            <p className="text-xs text-gray-500">davon {reviewsSentYear} in {year}</p>
+          </div>
+        </div>
+      </div>
 
       {data && (
         <>
