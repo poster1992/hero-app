@@ -1,51 +1,57 @@
 import nodemailer from "nodemailer";
+import { getSmtpConfig } from "./settings";
 
-let cached: nodemailer.Transporter | null | undefined;
-
-function getTransporter(): nodemailer.Transporter | null {
-  if (cached !== undefined) return cached;
-  const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS } = process.env;
-  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) {
-    cached = null;
-    return null;
-  }
-  const port = SMTP_PORT ? parseInt(SMTP_PORT, 10) : 587;
-  const secure = port === 465; // 465 = SSL, 587 = STARTTLS
-  cached = nodemailer.createTransport({
-    host: SMTP_HOST,
-    port,
+/** Baut aus der aktuellen Konfiguration einen Transporter (oder null, wenn unvollständig). */
+async function buildTransport(): Promise<{ t: nodemailer.Transporter; from: string } | null> {
+  const c = await getSmtpConfig();
+  if (!c.host || !c.user || !c.pass) return null;
+  const secure = c.port === 465; // 465 = SSL, 587 = STARTTLS (z.B. Microsoft 365)
+  const t = nodemailer.createTransport({
+    host: c.host,
+    port: c.port,
     secure,
-    // Microsoft 365 (smtp.office365.com:587) verlangt STARTTLS + TLS 1.2.
     requireTLS: !secure,
-    auth: { user: SMTP_USER, pass: SMTP_PASS },
+    auth: { user: c.user, pass: c.pass },
     tls: { minVersion: "TLSv1.2" },
   });
-  return cached;
+  return { t, from: c.from || c.user };
 }
 
-/** True if SMTP is configured. */
-export function mailConfigured(): boolean {
-  return getTransporter() !== null;
+export interface MailResult {
+  ok: boolean;
+  error?: string;
+}
+
+/** Sendet eine E-Mail und liefert eine Fehlermeldung zurück (für Setup/Tests). */
+export async function sendMailResult(to: string, subject: string, text: string, html?: string): Promise<MailResult> {
+  const b = await buildTransport();
+  if (!b) return { ok: false, error: "SMTP ist nicht konfiguriert (Host, Benutzer oder Passwort fehlt)." };
+  try {
+    await b.t.sendMail({ from: b.from, to, subject, text, html });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sendefehler." };
+  }
 }
 
 /**
- * Sends an email. Returns true on success, false if SMTP is not configured or
- * sending failed (never throws — notifications must not break the main action).
+ * Sendet eine E-Mail. Returns true on success, false if SMTP is not configured or
+ * sending failed (never throws – notifications must not break the main action).
  */
-export async function sendMail(
-  to: string,
-  subject: string,
-  text: string,
-  html?: string
-): Promise<boolean> {
-  const t = getTransporter();
-  if (!t) return false;
-  const from = process.env.SMTP_FROM || process.env.SMTP_USER || "";
+export async function sendMail(to: string, subject: string, text: string, html?: string): Promise<boolean> {
+  const r = await sendMailResult(to, subject, text, html);
+  if (!r.ok && r.error) console.error("[mail] Versand fehlgeschlagen:", r.error);
+  return r.ok;
+}
+
+/** Prüft die SMTP-Verbindung/Anmeldung (für den Test-Button). */
+export async function verifySmtp(): Promise<MailResult> {
+  const b = await buildTransport();
+  if (!b) return { ok: false, error: "SMTP ist nicht konfiguriert (Host, Benutzer oder Passwort fehlt)." };
   try {
-    await t.sendMail({ from, to, subject, text, html });
-    return true;
+    await b.t.verify();
+    return { ok: true };
   } catch (e) {
-    console.error("[mail] Versand fehlgeschlagen:", e instanceof Error ? e.message : e);
-    return false;
+    return { ok: false, error: e instanceof Error ? e.message : "Verbindungsfehler." };
   }
 }

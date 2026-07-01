@@ -1,6 +1,14 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
-import { getSetting, GOOGLE_REVIEW_URL_KEY } from "@/lib/settings";
+import {
+  getSetting,
+  GOOGLE_REVIEW_URL_KEY,
+  SMTP_HOST_KEY,
+  SMTP_PORT_KEY,
+  SMTP_USER_KEY,
+  SMTP_PASS_KEY,
+  SMTP_FROM_KEY,
+} from "@/lib/settings";
 import SettingsForm from "@/components/SettingsForm";
 
 export default async function EinstellungenPage() {
@@ -16,10 +24,24 @@ export default async function EinstellungenPage() {
   }
 
   let googleReviewUrl = "";
+  const smtp = { host: "", port: "587", user: "", from: "", passSet: false };
   try {
-    googleReviewUrl = (await getSetting(GOOGLE_REVIEW_URL_KEY)) ?? "";
+    const [g, host, port, user, from, pass] = await Promise.all([
+      getSetting(GOOGLE_REVIEW_URL_KEY),
+      getSetting(SMTP_HOST_KEY),
+      getSetting(SMTP_PORT_KEY),
+      getSetting(SMTP_USER_KEY),
+      getSetting(SMTP_FROM_KEY),
+      getSetting(SMTP_PASS_KEY),
+    ]);
+    googleReviewUrl = g ?? "";
+    smtp.host = host ?? "";
+    smtp.port = port ?? "587";
+    smtp.user = user ?? "";
+    smtp.from = from ?? "";
+    smtp.passSet = !!(pass && pass.length);
   } catch {
-    googleReviewUrl = "";
+    /* leer lassen */
   }
 
   return (
@@ -28,7 +50,7 @@ export default async function EinstellungenPage() {
         <h1 className="text-2xl font-semibold text-gray-900">Einstellungen</h1>
         <p className="mt-1 text-sm text-gray-600">Allgemeine Konfiguration des Dashboards.</p>
       </header>
-      <SettingsForm googleReviewUrl={googleReviewUrl} />
+      <SettingsForm googleReviewUrl={googleReviewUrl} smtp={smtp} />
     </div>
   );
 }
