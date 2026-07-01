@@ -5,6 +5,7 @@ import { getSession } from "@/lib/session";
 import { getUserByUsername, getUsersForNotification, type AppUser } from "@/lib/users";
 import { sendMail } from "@/lib/mailer";
 import { sendPushToUsers } from "@/lib/push";
+import { getGoogleReviewUrl } from "@/lib/settings";
 import {
   createTaskNotification,
   acknowledgeNotification,
@@ -384,9 +385,9 @@ export async function sendReviewEmailAction(formData: FormData): Promise<SendRev
   const name = String(formData.get("name") ?? "").trim();
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return { ok: false, error: "Ungültige E-Mail-Adresse." };
 
-  const url = process.env.GOOGLE_REVIEW_URL?.trim();
+  const url = await getGoogleReviewUrl();
   if (!url) {
-    return { ok: false, error: "Google-Bewertungslink ist nicht konfiguriert (GOOGLE_REVIEW_URL im Server-.env)." };
+    return { ok: false, error: "Google-Bewertungslink ist nicht konfiguriert (unter Konfiguration → Einstellungen eintragen)." };
   }
 
   const anrede = name ? `Hallo ${name},` : "Guten Tag,";

@@ -59,6 +59,7 @@ const NAV_ITEMS: NavItem[] = [
       { href: "/dashboard/benutzer", label: "Benutzer anlegen" },
       { href: "/dashboard/gruppen", label: "Benutzergruppen" },
       { href: "/dashboard/workflows", label: "Workflows" },
+      { href: "/dashboard/einstellungen", label: "Einstellungen" },
     ],
   },
   { href: "/dashboard/hilfe", label: "Hilfe", icon: "hilfe", module: "hilfe" },
