@@ -8,6 +8,8 @@ import {
   SMTP_USER_KEY,
   SMTP_PASS_KEY,
   SMTP_FROM_KEY,
+  GOOGLE_PLACES_API_KEY_KEY,
+  GOOGLE_PLACE_ID_KEY,
 } from "@/lib/settings";
 import SettingsForm from "@/components/SettingsForm";
 
@@ -25,14 +27,17 @@ export default async function EinstellungenPage() {
 
   let googleReviewUrl = "";
   const smtp = { host: "", port: "587", user: "", from: "", passSet: false };
+  const places = { placeId: "", apiKeySet: false };
   try {
-    const [g, host, port, user, from, pass] = await Promise.all([
+    const [g, host, port, user, from, pass, placeId, apiKey] = await Promise.all([
       getSetting(GOOGLE_REVIEW_URL_KEY),
       getSetting(SMTP_HOST_KEY),
       getSetting(SMTP_PORT_KEY),
       getSetting(SMTP_USER_KEY),
       getSetting(SMTP_FROM_KEY),
       getSetting(SMTP_PASS_KEY),
+      getSetting(GOOGLE_PLACE_ID_KEY),
+      getSetting(GOOGLE_PLACES_API_KEY_KEY),
     ]);
     googleReviewUrl = g ?? "";
     smtp.host = host ?? "";
@@ -40,6 +45,8 @@ export default async function EinstellungenPage() {
     smtp.user = user ?? "";
     smtp.from = from ?? "";
     smtp.passSet = !!(pass && pass.length);
+    places.placeId = placeId ?? "";
+    places.apiKeySet = !!(apiKey && apiKey.length);
   } catch {
     /* leer lassen */
   }
@@ -50,7 +57,7 @@ export default async function EinstellungenPage() {
         <h1 className="text-2xl font-semibold text-gray-900">Einstellungen</h1>
         <p className="mt-1 text-sm text-gray-600">Allgemeine Konfiguration des Dashboards.</p>
       </header>
-      <SettingsForm googleReviewUrl={googleReviewUrl} smtp={smtp} />
+      <SettingsForm googleReviewUrl={googleReviewUrl} smtp={smtp} places={places} />
     </div>
   );
 }

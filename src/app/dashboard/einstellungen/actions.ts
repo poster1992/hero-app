@@ -10,9 +10,12 @@ import {
   SMTP_USER_KEY,
   SMTP_PASS_KEY,
   SMTP_FROM_KEY,
+  GOOGLE_PLACES_API_KEY_KEY,
+  GOOGLE_PLACE_ID_KEY,
 } from "@/lib/settings";
 import { getUserByUsername } from "@/lib/users";
 import { sendMailResult, verifySmtp } from "@/lib/mailer";
+import { getGoogleReviewStats } from "@/lib/google-reviews";
 
 const PATH = "/dashboard/einstellungen";
 
@@ -69,6 +72,36 @@ export async function saveSmtpAction(_prev: SettingsState, formData: FormData): 
   }
   revalidatePath(PATH);
   return { success: "SMTP-Einstellungen gespeichert." };
+}
+
+/** Speichert Google-Places-API-Key (nur bei Neueingabe) + Place-ID. */
+export async function saveGooglePlacesAction(_prev: SettingsState, formData: FormData): Promise<SettingsState> {
+  if (!(await isAdmin())) return { error: "Kein Zugriff." };
+  const placeId = String(formData.get("placeId") ?? "").trim();
+  const apiKey = String(formData.get("apiKey") ?? "");
+  try {
+    await setSetting(GOOGLE_PLACE_ID_KEY, placeId || null);
+    if (apiKey.trim().length > 0) await setSetting(GOOGLE_PLACES_API_KEY_KEY, apiKey.trim());
+  } catch {
+    return { error: "Speichern fehlgeschlagen." };
+  }
+  revalidatePath(PATH);
+  return { success: "Google-Bewertungen-Einstellungen gespeichert." };
+}
+
+export interface CheckReviewsResult {
+  ok: boolean;
+  message: string;
+}
+
+/** Prüft die Google-Places-Konfiguration und zeigt Anzahl/Ø der Rezensionen. */
+export async function checkGoogleReviewsAction(): Promise<CheckReviewsResult> {
+  if (!(await isAdmin())) return { ok: false, message: "Kein Zugriff." };
+  const s = await getGoogleReviewStats();
+  if (!s.configured) return { ok: false, message: "Nicht konfiguriert (API-Key oder Place-ID fehlt)." };
+  if (s.error) return { ok: false, message: s.error };
+  if (s.count == null) return { ok: false, message: "Keine Daten – Place-ID prüfen." };
+  return { ok: true, message: `${s.count} Rezensionen · Ø ${s.rating ?? "–"} ★` };
 }
 
 export interface TestMailResult {

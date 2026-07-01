@@ -21,6 +21,10 @@ export async function setSetting(key: string, value: string | null): Promise<voi
   );
 }
 
+// --- Google Places (Rezensionen abrufen) ---
+export const GOOGLE_PLACES_API_KEY_KEY = "google_places_api_key";
+export const GOOGLE_PLACE_ID_KEY = "google_place_id";
+
 // --- SMTP (E-Mail-Versand), pflegbar über die Konfiguration ---
 export const SMTP_HOST_KEY = "smtp_host";
 export const SMTP_PORT_KEY = "smtp_port";

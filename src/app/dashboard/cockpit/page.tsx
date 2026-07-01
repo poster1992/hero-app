@@ -20,6 +20,7 @@ import TaxLiabilityTable from "@/components/TaxLiabilityTable";
 import GuvTable from "@/components/GuvTable";
 import ProjectPipelines from "@/components/ProjectPipelines";
 import { countReviewEmailsSent } from "@/lib/review-emails";
+import { getGoogleReviewStats } from "@/lib/google-reviews";
 
 const currencyFormatter = new Intl.NumberFormat("de-DE", {
   style: "currency",
@@ -66,6 +67,8 @@ export default async function DashboardPage({
   } catch {
     // Zähler optional
   }
+
+  const googleStats = await getGoogleReviewStats().catch(() => ({ rating: null, count: null, configured: false }));
 
   let volume: Awaited<ReturnType<typeof getOfferConfirmationVolume>> | null = null;
   try {
@@ -151,10 +154,10 @@ export default async function DashboardPage({
         </div>
       )}
 
-      {/* Kennzahl: versendete Kundenzufriedenheitsumfragen */}
+      {/* Kennzahlen: versendete Umfragen + erhaltene Google-Rezensionen */}
       <div className="flex flex-wrap gap-4">
         <div className="flex min-w-[220px] items-center gap-4 rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
-          <span className="text-3xl" aria-hidden>⭐</span>
+          <span className="text-3xl" aria-hidden>✉️</span>
           <div>
             <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Zufriedenheitsumfragen versendet</p>
             <p className="text-2xl font-semibold text-gray-900">
@@ -162,6 +165,28 @@ export default async function DashboardPage({
               <span className="ml-2 text-sm font-normal text-gray-500">gesamt</span>
             </p>
             <p className="text-xs text-gray-500">davon {reviewsSentYear} in {year}</p>
+          </div>
+        </div>
+        <div className="flex min-w-[220px] items-center gap-4 rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
+          <span className="text-3xl" aria-hidden>⭐</span>
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Google-Rezensionen</p>
+            {googleStats.configured && googleStats.count != null ? (
+              <>
+                <p className="text-2xl font-semibold text-gray-900">
+                  {googleStats.count}
+                  <span className="ml-2 text-sm font-normal text-gray-500">Rezensionen</span>
+                </p>
+                <p className="text-xs text-gray-500">
+                  {googleStats.rating != null ? `Ø ${googleStats.rating.toLocaleString("de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} ★` : "—"}
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-2xl font-semibold text-gray-400">—</p>
+                <p className="text-xs text-gray-400">unter Einstellungen konfigurieren</p>
+              </>
+            )}
           </div>
         </div>
       </div>

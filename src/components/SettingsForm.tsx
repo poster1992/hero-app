@@ -5,6 +5,8 @@ import {
   saveGoogleReviewUrlAction,
   saveSmtpAction,
   sendTestMailAction,
+  saveGooglePlacesAction,
+  checkGoogleReviewsAction,
   type SettingsState,
 } from "@/app/dashboard/einstellungen/actions";
 
@@ -16,21 +18,45 @@ interface SmtpProps {
   passSet: boolean;
 }
 
+interface PlacesProps {
+  placeId: string;
+  apiKeySet: boolean;
+}
+
 const inputClass =
   "w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-brand-red/60";
 
-export default function SettingsForm({ googleReviewUrl, smtp }: { googleReviewUrl: string; smtp: SmtpProps }) {
+export default function SettingsForm({
+  googleReviewUrl,
+  smtp,
+  places,
+}: {
+  googleReviewUrl: string;
+  smtp: SmtpProps;
+  places: PlacesProps;
+}) {
   const [gState, gAction, gPending] = useActionState<SettingsState, FormData>(saveGoogleReviewUrlAction, {});
   const [sState, sAction, sPending] = useActionState<SettingsState, FormData>(saveSmtpAction, {});
+  const [pState, pAction, pPending] = useActionState<SettingsState, FormData>(saveGooglePlacesAction, {});
   const [testTo, setTestTo] = useState("");
   const [testing, startTest] = useTransition();
   const [testMsg, setTestMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [checking, startCheck] = useTransition();
+  const [checkMsg, setCheckMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   const runTest = () => {
     setTestMsg(null);
     startTest(async () => {
       const r = await sendTestMailAction(testTo);
       setTestMsg({ ok: r.ok, text: r.message });
+    });
+  };
+
+  const runCheck = () => {
+    setCheckMsg(null);
+    startCheck(async () => {
+      const r = await checkGoogleReviewsAction();
+      setCheckMsg({ ok: r.ok, text: r.message });
     });
   };
 
@@ -133,6 +159,46 @@ export default function SettingsForm({ googleReviewUrl, smtp }: { googleReviewUr
             </button>
             {gState.error && <span className="text-sm text-rose-600">{gState.error}</span>}
             {gState.success && <span className="text-sm text-emerald-600">{gState.success}</span>}
+          </div>
+        </form>
+      </div>
+
+      {/* Google-Rezensionen abrufen (Places API) */}
+      <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
+        <h2 className="text-lg font-medium text-gray-900">Google-Rezensionen (Zähler)</h2>
+        <p className="mt-1 text-sm text-gray-600">
+          Zeigt in der Unternehmensübersicht die Anzahl + Ø-Bewertung eurer Google-Rezensionen.
+          Benötigt einen <strong>Google-API-Key</strong> (Places API aktiviert, Billing an) und die
+          <strong> Place-ID</strong> eures Eintrags (zu finden über den{" "}
+          <a href="https://developers.google.com/maps/documentation/places/web-service/place-id" target="_blank" rel="noopener noreferrer" className="text-brand-red hover:underline">Place ID Finder</a>).
+        </p>
+        <form action={pAction} className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <label className="mb-1 block text-sm text-gray-600">Place-ID</label>
+            <input name="placeId" defaultValue={places.placeId} placeholder="ChIJ..." className={inputClass} />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm text-gray-600">
+              Google-API-Key {places.apiKeySet && <span className="text-emerald-600">(gesetzt)</span>}
+            </label>
+            <input
+              name="apiKey"
+              type="password"
+              autoComplete="new-password"
+              placeholder={places.apiKeySet ? "•••••••• (leer lassen = unverändert)" : "AIza…"}
+              className={inputClass}
+            />
+          </div>
+          <div className="sm:col-span-2 flex flex-wrap items-center gap-3">
+            <button type="submit" disabled={pPending} className="rounded-md bg-brand-red px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
+              {pPending ? "Speichert …" : "Speichern"}
+            </button>
+            <button type="button" onClick={runCheck} disabled={checking} className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:border-brand-red/50 disabled:opacity-50">
+              {checking ? "Prüfe …" : "Jetzt prüfen"}
+            </button>
+            {pState.error && <span className="text-sm text-rose-600">{pState.error}</span>}
+            {pState.success && <span className="text-sm text-emerald-600">{pState.success}</span>}
+            {checkMsg && <span className={`text-sm ${checkMsg.ok ? "text-emerald-600" : "text-rose-600"}`}>{checkMsg.text}</span>}
           </div>
         </form>
       </div>
