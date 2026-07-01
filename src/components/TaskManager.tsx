@@ -9,6 +9,7 @@ import {
   addNoteAction,
   taskButtonAction,
   loadPersonTasksAction,
+  sendReviewEmailAction,
   type CreateTaskState,
 } from "@/app/dashboard/aufgaben/actions";
 
@@ -129,27 +130,23 @@ function TaskCard({
   const bewertung = reviewEmailInfo(task.description);
   const [bewMail, setBewMail] = useState(bewertung?.email ?? "");
   const googleReviewUrl = useContext(ReviewUrlContext);
+  const [bewSending, setBewSending] = useState(false);
+  const [bewMsg, setBewMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
-  const openReviewMail = () => {
-    const to = bewMail.trim();
-    if (!to) return;
-    const name = bewertung?.name ?? "";
-    const anrede = name ? `Hallo ${name},` : "Guten Tag,";
-    // URL vollständig (https://) und allein auf einer Zeile – so wandeln Mailprogramme
-    // sie automatisch in einen anklickbaren Hyperlink um (mailto unterstützt kein HTML).
-    const url = googleReviewUrl
-      ? /^https?:\/\//i.test(googleReviewUrl)
-        ? googleReviewUrl
-        : `https://${googleReviewUrl}`
-      : "";
-    const linkLine = url
-      ? `Über eine kurze Google-Bewertung würden wir uns sehr freuen. Einfach hier klicken:\n\n${url}\n\n`
-      : "";
-    const subject = "Ihre Meinung ist uns wichtig – FLOORTEC";
-    const body =
-      `${anrede}\n\nvielen Dank, dass wir für Sie tätig sein durften. Wir hoffen, Sie sind mit unserer Arbeit zufrieden.\n\n` +
-      `${linkLine}Herzlichen Dank und beste Grüße\nIhr FLOORTEC-Team`;
-    window.location.href = `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  const sendReviewMail = async () => {
+    if (!bewMail.trim()) return;
+    setBewSending(true);
+    setBewMsg(null);
+    try {
+      const fd = new FormData();
+      fd.set("taskId", String(task.id));
+      fd.set("email", bewMail.trim());
+      fd.set("name", bewertung?.name ?? "");
+      const res = await sendReviewEmailAction(fd);
+      setBewMsg(res.ok ? { ok: true, text: "Bewertungsmail gesendet." } : { ok: false, text: res.error ?? "Fehler beim Senden." });
+    } finally {
+      setBewSending(false);
+    }
   };
 
   const decideReview = async (decision: "freigegeben" | "abgelehnt") => {
@@ -255,11 +252,11 @@ function TaskCard({
             />
             <button
               type="button"
-              disabled={!bewMail.trim()}
-              onClick={openReviewMail}
+              disabled={bewSending || !bewMail.trim()}
+              onClick={sendReviewMail}
               className="shrink-0 rounded-md bg-brand-red px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
             >
-              📧 E-Mail an Kunde öffnen
+              {bewSending ? "Sendet …" : "📧 Bewertungsmail senden"}
             </button>
           </div>
           {!bewertung.email && (
@@ -270,7 +267,11 @@ function TaskCard({
               Kein Bewertungslink hinterlegt – unter Konfiguration → Einstellungen eintragen.
             </p>
           )}
-          <p className="mt-1 text-xs text-gray-500">Öffnet dein Standard-Mailprogramm mit vorbefülltem Text und Link.</p>
+          {bewMsg ? (
+            <p className={`mt-1 text-xs ${bewMsg.ok ? "text-emerald-600" : "text-brand-red"}`}>{bewMsg.text}</p>
+          ) : (
+            <p className="mt-1 text-xs text-gray-500">Sendet dem Kunden direkt eine HTML-Mail mit Bewertungs-Button (über SMTP).</p>
+          )}
         </div>
       )}
 
