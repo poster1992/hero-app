@@ -374,9 +374,8 @@ export interface SendReviewResult {
 }
 
 /** Ansprechende, mail-client-kompatible HTML-Vorlage für die Zufriedenheits-Mail. */
-function buildReviewEmailHtml(anrede: string, url: string): string {
+function buildReviewEmailHtml(anrede: string, url: string, logoUrl: string): string {
   const RED = "#e8392a";
-  const DARK = "#111417";
   const stars = "★★★★★";
   return `<!doctype html>
 <html lang="de"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
@@ -385,9 +384,9 @@ function buildReviewEmailHtml(anrede: string, url: string): string {
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f2f3f5;padding:24px 12px;">
     <tr><td align="center">
       <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 6px 24px rgba(0,0,0,0.08);font-family:Arial,Helvetica,sans-serif;">
-        <!-- Kopf -->
-        <tr><td style="background:${DARK};padding:26px 32px;">
-          <span style="font-size:26px;font-weight:800;letter-spacing:4px;color:#ffffff;">FLOOR<span style="color:${RED};">TEC</span></span>
+        <!-- Kopf mit Logo -->
+        <tr><td align="center" style="background:#ffffff;padding:26px 32px 18px;">
+          <img src="${logoUrl}" alt="FLOORTEC" width="210" style="display:block;border:0;outline:none;text-decoration:none;height:auto;width:210px;max-width:66%;" />
         </td></tr>
         <!-- Akzentlinie -->
         <tr><td style="height:4px;background:${RED};line-height:4px;font-size:0;">&nbsp;</td></tr>
@@ -452,7 +451,8 @@ export async function sendReviewEmailAction(formData: FormData): Promise<SendRev
     `${anrede}\n\nvielen Dank, dass wir für Sie tätig sein durften. Wir hoffen, Sie sind mit unserer Arbeit rundum zufrieden.\n\n` +
     `Über eine kurze Google-Bewertung würden wir uns sehr freuen – das dauert nur eine Minute:\n${url}\n\n` +
     `Herzlichen Dank und beste Grüße\nIhr FLOORTEC-Team`;
-  const html = buildReviewEmailHtml(anrede, url);
+  const base = process.env.APP_URL?.replace(/\/$/, "") || "https://floortec.pascaloster.de";
+  const html = buildReviewEmailHtml(anrede, url, `${base}/logo.png`);
 
   try {
     const ok = await sendMail(email, subject, text, html);
