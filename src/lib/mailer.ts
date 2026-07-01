@@ -10,11 +10,15 @@ function getTransporter(): nodemailer.Transporter | null {
     return null;
   }
   const port = SMTP_PORT ? parseInt(SMTP_PORT, 10) : 587;
+  const secure = port === 465; // 465 = SSL, 587 = STARTTLS
   cached = nodemailer.createTransport({
     host: SMTP_HOST,
     port,
-    secure: port === 465, // 465 = SSL, 587 = STARTTLS
+    secure,
+    // Microsoft 365 (smtp.office365.com:587) verlangt STARTTLS + TLS 1.2.
+    requireTLS: !secure,
     auth: { user: SMTP_USER, pass: SMTP_PASS },
+    tls: { minVersion: "TLSv1.2" },
   });
   return cached;
 }
