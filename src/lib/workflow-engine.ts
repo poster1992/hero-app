@@ -5,9 +5,11 @@ import {
   getProjects,
   getProjectHourDetails,
   getInvoiceNetByProject,
+  getCustomerInvoices,
   type Receipt,
   type ProjectSummary,
   type ProjectHourDetail,
+  type CustomerInvoice,
 } from "./hero-api";
 import { getCustomerName, getDocumentUrl, getReceiptProjects } from "./invoices";
 import { createTask, createReviewTask } from "./tasks";
@@ -101,6 +103,17 @@ function zeitraumText(d: ProjectHourDetail): string {
   return `${fmtDay(d.firstDate)} – ${fmtDay(d.lastDate)}`;
 }
 
+const RECHNUNG_DOCUMENT_TYPE_ID = 1057585; // echte Kundenrechnung (nicht Gutschrift/Storno)
+
+function fillEndrechnung(tpl: string, inv: CustomerInvoice): string {
+  return tpl
+    .replace(/\{kunde\}/g, inv.customerName || "")
+    .replace(/\{nr\}/g, inv.number || "")
+    .replace(/\{projekt\}/g, inv.project?.name || "")
+    .replace(/\{betrag\}/g, euro.format(inv.net || inv.gross || 0))
+    .replace(/\{datum\}/g, inv.date ? inv.date.slice(0, 10) : "");
+}
+
 function fillStunden(tpl: string, p: ProjectSummary, det: ProjectHourDetail): string {
   return tpl
     .replace(/\{projekt\}/g, p.name || "")
@@ -167,6 +180,23 @@ async function collectEvents(triggerKey: string): Promise<WfEvent[]> {
     return events;
   }
 
+  if (triggerKey === "endrechnung") {
+    // Kundenrechnungen (Endrechnungen) – je Rechnung ein Ereignis.
+    const invoices = await getCustomerInvoices();
+    const events: WfEvent[] = [];
+    for (const inv of invoices) {
+      if (inv.documentTypeId !== RECHNUNG_DOCUMENT_TYPE_ID) continue; // keine Gutschrift/Storno
+      events.push({
+        ref: `re-${inv.id}`,
+        supplier: inv.customerName ?? "",
+        amount: inv.net || inv.gross || 0,
+        eventDate: inv.date ? inv.date.slice(0, 10) : null,
+        fill: (tpl: string) => fillEndrechnung(tpl, inv),
+      });
+    }
+    return events;
+  }
+
   if (triggerKey === "stunden_ohne_abschlag") {
     // Projekte mit gebuchten Stunden, aber (noch) ohne Rechnung/Abschlagsrechnung.
     const [projects, hourDetails, invoice] = await Promise.all([
@@ -204,8 +234,8 @@ async function collectEvents(triggerKey: string): Promise<WfEvent[]> {
 /** Untergrenze für das Ereignis-Datum: „gilt ab" oder (bei Belegen) das Erstelldatum der Regel. */
 function effectiveValidFrom(triggerKey: string, wf: Workflow): string | null {
   if (wf.config.validFrom) return wf.config.validFrom;
-  // Beleg-Regeln ohne „gilt ab" gelten ab Anlage der Regel (kein Altbestand-Schwall).
-  if (triggerKey === "new_beleg" && wf.createdAt) return wf.createdAt.slice(0, 10);
+  // Beleg-/Rechnungs-Regeln ohne „gilt ab" gelten ab Anlage der Regel (kein Altbestand-Schwall).
+  if ((triggerKey === "new_beleg" || triggerKey === "endrechnung") && wf.createdAt) return wf.createdAt.slice(0, 10);
   return null;
 }
 

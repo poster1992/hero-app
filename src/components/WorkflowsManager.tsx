@@ -24,6 +24,7 @@ const TRIGGER_OPTIONS = [
   { key: "new_beleg", label: "Neuer Beleg (Eingangsrechnung)" },
   { key: "angebot_alt_ohne_ab", label: "Angebot zu alt ohne AB (Pipeline 'Angebot offen')" },
   { key: "stunden_ohne_abschlag", label: "Stunden gebucht, aber keine Abschlagsrechnung" },
+  { key: "endrechnung", label: "Endrechnung erstellt (Kundenrechnung)" },
 ] as const;
 
 function triggerLabel(key: string): string {
@@ -32,11 +33,13 @@ function triggerLabel(key: string): string {
 function placeholdersFor(key: string): string {
   if (key === "angebot_alt_ohne_ab") return "{projekt} {nr} {kunde} {betrag} {tage} {angebotsdatum}";
   if (key === "stunden_ohne_abschlag") return "{projekt} {nr} {kunde} {stunden} {mitarbeiter} {zeitraum}";
+  if (key === "endrechnung") return "{kunde} {nr} {projekt} {betrag} {datum}";
   return "{nr} {lieferant} {betrag} {datum}";
 }
 function defaultTitleFor(key: string): string {
   if (key === "angebot_alt_ohne_ab") return "Angebot nachfassen: {projekt} ({tage} Tage alt)";
   if (key === "stunden_ohne_abschlag") return "Abschlagsrechnung erstellen: {projekt} {nr} ({stunden} h)";
+  if (key === "endrechnung") return "Kunde anrufen – Zufriedenheit erfragen: {kunde} ({projekt})";
   return "Beleg prüfen: {nr} – {lieferant}";
 }
 
@@ -102,8 +105,9 @@ function RuleFields({
   const [actionType, setActionType] = useState<"task" | "review">(cfg?.actionType === "review" ? "review" : "task");
   const isAngebot = trigger === "angebot_alt_ohne_ab";
   const isStunden = trigger === "stunden_ohne_abschlag";
+  const isEndrechnung = trigger === "endrechnung";
   const isReview = trigger === "new_beleg" && actionType === "review";
-  const kundeLabel = isAngebot || isStunden ? "Kunde" : "Lieferant";
+  const kundeLabel = isAngebot || isStunden || isEndrechnung ? "Kunde" : "Lieferant";
 
   const onTriggerChange = (key: string) => {
     // Standardtitel mitwechseln, solange der Nutzer ihn nicht angepasst hat.
@@ -319,7 +323,9 @@ function WorkflowRow({ wf, users, suppliers }: { wf: Workflow; users: UserOption
             ? `Angebot offen > ${wf.config.minAgeDays ?? 21} Tage ohne AB`
             : wf.triggerKey === "stunden_ohne_abschlag"
               ? "Stunden gebucht, keine Abschlagsrechnung"
-              : "Neuer Beleg"}{" "}
+              : wf.triggerKey === "endrechnung"
+                ? "Endrechnung erstellt"
+                : "Neuer Beleg"}{" "}
           → {wf.config.actionType === "review" ? "Rechnungsprüfung" : "Aufgabe"} an{" "}
           <span className="text-gray-700">{assignee}</span>
           {wf.config.actionType === "review" ? "" : ` · fällig in ${wf.config.dueOffsetDays} Tagen`}
@@ -414,15 +420,18 @@ function WorkflowFlow({ wf, users }: { wf: Workflow; users: UserOption[] }) {
   const assignee = users.find((u) => u.id === wf.config.assigneeId)?.name ?? `#${wf.config.assigneeId}`;
   const isAngebot = wf.triggerKey === "angebot_alt_ohne_ab";
   const isStunden = wf.triggerKey === "stunden_ohne_abschlag";
+  const isEndrechnung = wf.triggerKey === "endrechnung";
   const isReview = wf.config.actionType === "review";
   const triggerLines = isAngebot
     ? ["Angebot offen", `älter ${wf.config.minAgeDays ?? 21} Tage`, "kein AB"]
     : isStunden
       ? ["Stunden gebucht", "keine Abschlags-", "rechnung"]
-      : ["Neuer Beleg", "Eingangsrechnung"];
+      : isEndrechnung
+        ? ["Endrechnung", "Kundenrechnung"]
+        : ["Neuer Beleg", "Eingangsrechnung"];
   const conditions: string[] = [];
   if (wf.config.filterSupplier)
-    conditions.push(`${isAngebot || isStunden ? "Kunde" : "Lieferant"} „${wf.config.filterSupplier}"`);
+    conditions.push(`${isAngebot || isStunden || isEndrechnung ? "Kunde" : "Lieferant"} „${wf.config.filterSupplier}"`);
   if (wf.config.filterMinAmount != null)
     conditions.push(isStunden ? `ab ${wf.config.filterMinAmount} h` : `ab ${wf.config.filterMinAmount} €`);
   if (wf.config.excludeManual) conditions.push("ohne manuelle Belege");
