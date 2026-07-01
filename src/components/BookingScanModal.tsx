@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { submitBooking } from "@/app/dashboard/lager/actions";
+import CameraScanner from "@/components/CameraScanner";
 
 export interface ScanArticle {
   id: number;
@@ -40,6 +41,8 @@ export default function BookingScanModal({
   const [project, setProject] = useState<ProjectOption | null>(null);
   const [scan, setScan] = useState("");
   const [scanError, setScanError] = useState<string | null>(null);
+  const [cameraOn, setCameraOn] = useState(false);
+  const [camFeedback, setCamFeedback] = useState<{ ok: boolean; text: string } | null>(null);
   const [manualQuery, setManualQuery] = useState("");
   const [cart, setCart] = useState<CartRow[]>([]);
   const [employee, setEmployee] = useState("");
@@ -53,6 +56,8 @@ export default function BookingScanModal({
     setProject(null);
     setScan("");
     setScanError(null);
+    setCameraOn(false);
+    setCamFeedback(null);
     setCart([]);
     setEmployee("");
     setError(null);
@@ -85,9 +90,9 @@ export default function BookingScanModal({
     });
   }
 
-  function addByCode(raw: string) {
+  function addByCode(raw: string): ScanArticle | null {
     const code = raw.trim().toLowerCase();
-    if (!code) return;
+    if (!code) return null;
     const found = articles.find(
       (a) =>
         a.itemNumber.toLowerCase() === code ||
@@ -96,10 +101,11 @@ export default function BookingScanModal({
     );
     if (!found) {
       setScanError(`Nicht gefunden: ${raw.trim()}`);
-      return;
+      return null;
     }
     setScanError(null);
     addArticle(found);
+    return found;
   }
 
   const manualMatches = (() => {
@@ -259,6 +265,34 @@ export default function BookingScanModal({
             className={`${inputClass} disabled:bg-gray-100`}
           />
           {scanError && <p className="mt-1 text-xs text-rose-600">{scanError}</p>}
+
+          {/* Kamera-Scan */}
+          <button
+            type="button"
+            disabled={!direction || !project}
+            onClick={() => {
+              setCamFeedback(null);
+              setCameraOn((v) => !v);
+            }}
+            className="mt-2 flex w-full items-center justify-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:border-brand-red/50 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
+          >
+            <span aria-hidden>📷</span>
+            {cameraOn ? "Kamera schließen" : "Mit Kamera scannen"}
+          </button>
+          {cameraOn && (
+            <CameraScanner
+              feedback={camFeedback}
+              onClose={() => setCameraOn(false)}
+              onDetect={(code) => {
+                const found = addByCode(code);
+                setCamFeedback(
+                  found
+                    ? { ok: true, text: `✓ hinzugefügt: ${found.name}` }
+                    : { ok: false, text: `Nicht gefunden: ${code}` }
+                );
+              }}
+            />
+          )}
 
           {/* Manuell hinzufügen */}
           <div className="relative mt-2">
