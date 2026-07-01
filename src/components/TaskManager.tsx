@@ -131,6 +131,7 @@ function TaskCard({
   const [bewMail, setBewMail] = useState(bewertung?.email ?? "");
   const googleReviewUrl = useContext(ReviewUrlContext);
   const [bewSending, setBewSending] = useState(false);
+  const [bewSent, setBewSent] = useState(false);
   const [bewMsg, setBewMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   const sendReviewMail = async () => {
@@ -143,7 +144,15 @@ function TaskCard({
       fd.set("email", bewMail.trim());
       fd.set("name", bewertung?.name ?? "");
       const res = await sendReviewEmailAction(fd);
-      setBewMsg(res.ok ? { ok: true, text: "Bewertungsmail gesendet." } : { ok: false, text: res.error ?? "Fehler beim Senden." });
+      if (res.ok) {
+        setBewSent(true);
+        setBewMsg({ ok: true, text: "Bewertungsmail gesendet." });
+      } else if (res.alreadySent) {
+        setBewSent(true);
+        setBewMsg({ ok: false, text: res.error ?? "Bereits versendet." });
+      } else {
+        setBewMsg({ ok: false, text: res.error ?? "Fehler beim Senden." });
+      }
     } finally {
       setBewSending(false);
     }
@@ -252,11 +261,11 @@ function TaskCard({
             />
             <button
               type="button"
-              disabled={bewSending || !bewMail.trim()}
+              disabled={bewSending || bewSent || !bewMail.trim()}
               onClick={sendReviewMail}
               className="shrink-0 rounded-md bg-brand-red px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
             >
-              {bewSending ? "Sendet …" : "📧 Bewertungsmail senden"}
+              {bewSent ? "✓ Versendet" : bewSending ? "Sendet …" : "📧 Bewertungsmail senden"}
             </button>
           </div>
           {!bewertung.email && (
@@ -270,7 +279,7 @@ function TaskCard({
           {bewMsg ? (
             <p className={`mt-1 text-xs ${bewMsg.ok ? "text-emerald-600" : "text-brand-red"}`}>{bewMsg.text}</p>
           ) : (
-            <p className="mt-1 text-xs text-gray-500">Sendet dem Kunden direkt eine HTML-Mail mit Bewertungs-Button (über SMTP).</p>
+            <p className="mt-1 text-xs text-gray-500">HTML-Mail mit Bewertungs-Button (über SMTP) – nur einmal pro Kunde/Projekt möglich.</p>
           )}
         </div>
       )}

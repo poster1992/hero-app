@@ -6,6 +6,7 @@ import { getUserByUsername, getUsersForNotification, type AppUser } from "@/lib/
 import { sendMail } from "@/lib/mailer";
 import { sendPushToUsers } from "@/lib/push";
 import { getGoogleReviewUrl } from "@/lib/settings";
+import { wasReviewEmailSent, markReviewEmailSent } from "@/lib/review-emails";
 import {
   createTaskNotification,
   acknowledgeNotification,
@@ -371,6 +372,8 @@ export async function taskButtonAction(formData: FormData): Promise<void> {
 export interface SendReviewResult {
   ok: boolean;
   error?: string;
+  /** true, wenn für dieses Projekt bereits eine Bewertungsmail versendet wurde. */
+  alreadySent?: boolean;
 }
 
 /** Ansprechende, mail-client-kompatible HTML-Vorlage für die Zufriedenheits-Mail. */
@@ -438,7 +441,27 @@ export async function sendReviewEmailAction(formData: FormData): Promise<SendRev
   const taskId = Number(formData.get("taskId"));
   const email = String(formData.get("email") ?? "").trim();
   const name = String(formData.get("name") ?? "").trim();
+  // Nur über eine Aufgabe möglich.
+  if (!Number.isFinite(taskId) || taskId <= 0) return { ok: false, error: "Nur über eine Aufgabe möglich." };
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return { ok: false, error: "Ungültige E-Mail-Adresse." };
+
+  // Projekt-Schlüssel (aus dem Aufgaben-Marker, sonst aus Projekt-/Kundendaten).
+  const task = await getTaskById(taskId);
+  const marker = task?.description?.match(/\[BEWERTUNG:([^\]]*)\]/);
+  const parts = marker ? marker[1].split("|") : [];
+  const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
+  const projectKey =
+    (parts[2] ?? "").trim() ||
+    (task?.projectRelativeId != null
+      ? `r${task.projectRelativeId}`
+      : task?.projectName
+        ? `n:${norm(task.projectName)}`
+        : `k:${norm(name || email)}`);
+
+  // Nur einmal pro Kunde/Projekt.
+  if (await wasReviewEmailSent(projectKey)) {
+    return { ok: false, alreadySent: true, error: "Für dieses Projekt wurde bereits eine Bewertungsmail versendet." };
+  }
 
   const url = await getGoogleReviewUrl();
   if (!url) {
@@ -456,15 +479,19 @@ export async function sendReviewEmailAction(formData: FormData): Promise<SendRev
 
   try {
     const ok = await sendMail(email, subject, text, html);
-    if (!ok) return { ok: false, error: "E-Mail konnte nicht gesendet werden." };
+    if (!ok) return { ok: false, error: "E-Mail konnte nicht gesendet werden (SMTP prüfen)." };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Sendefehler." };
   }
 
+  // Versand pro Projekt sperren + protokollieren.
   try {
-    if (Number.isFinite(taskId) && taskId > 0) {
-      await addTaskNote(taskId, user.id, `Google-Bewertungslink gesendet an ${email}`);
-    }
+    await markReviewEmailSent({ projectKey, email, taskId, sentBy: user.id });
+  } catch {
+    /* best-effort */
+  }
+  try {
+    await addTaskNote(taskId, user.id, `Bewertungsmail gesendet an ${email}`);
   } catch {
     /* Protokoll ist best-effort */
   }

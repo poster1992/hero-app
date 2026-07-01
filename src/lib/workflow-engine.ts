@@ -193,13 +193,15 @@ async function collectEvents(triggerKey: string): Promise<WfEvent[]> {
       if (!ENDRECHNUNG_STYLES.has(inv.invoiceStyle ?? "")) continue; // nur Endrechnung, nicht Teil-/Abschlagsrechnung
       const kunde = inv.customerName ?? "";
       const email = inv.customerEmail ?? "";
-      // Notiz für den Anrufer + Marker (Kunden-E-Mail) für den „Bewertungslink senden"-Button.
+      // Projekt-Schlüssel: sperrt Zweitversand pro Projekt (bzw. Kunde, falls kein Projekt).
+      const projectKey = inv.project ? `p${inv.project.id}` : `k:${kunde.toLowerCase().trim()}`;
+      // Notiz für den Anrufer + Marker (Kunden-E-Mail + Projekt) für den „Bewertungslink senden"-Button.
       const note = [
         `Kunde: ${kunde || "—"}`,
         inv.project?.name ? `Projekt: ${inv.project.name}` : null,
         `Rechnung: ${inv.number}`,
         `E-Mail (Kundenstamm): ${email || "— keine hinterlegt —"}`,
-        `[BEWERTUNG:${email}|${kunde}]`,
+        `[BEWERTUNG:${email}|${kunde}|${projectKey}]`,
       ]
         .filter(Boolean)
         .join("\n");
