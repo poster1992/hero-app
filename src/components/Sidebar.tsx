@@ -221,8 +221,11 @@ export default function Sidebar({
 
   return (
     <>
-      {/* Mobile Topbar mit Hamburger (nur < md) */}
-      <div className="flex items-center gap-3 border-b border-neutral-800 bg-black px-4 py-3 md:hidden">
+      {/* Mobile Topbar mit Hamburger (nur < md) – Safe-Area oben (iOS Notch/Statusleiste) */}
+      <div
+        className="sticky top-0 z-30 flex items-center gap-3 border-b border-neutral-800 bg-black px-4 pb-3 md:hidden"
+        style={{ paddingTop: "calc(env(safe-area-inset-top) + 0.75rem)" }}
+      >
         <button
           type="button"
           onClick={() => setMobileOpen(true)}
@@ -252,11 +255,12 @@ export default function Sidebar({
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         } ${collapsed ? "md:w-16" : "md:w-72"}`}
       >
-        {/* Kopfzeile: Logo + Ein-/Ausklappen */}
+        {/* Kopfzeile: Logo + Ein-/Ausklappen (Safe-Area oben für iOS-Drawer) */}
         <div
-          className={`relative flex items-center px-3 py-5 ${
+          className={`relative flex items-center px-3 pb-5 pt-5 md:pt-5 ${
             collapsed ? "md:flex-col md:justify-center md:gap-2" : "justify-center"
           }`}
+          style={{ paddingTop: "calc(env(safe-area-inset-top) + 1.25rem)" }}
         >
           <Link href="/start" title="Zur Modulübersicht" className="flex items-center">
             {collapsed ? (
