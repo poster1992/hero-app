@@ -24,7 +24,7 @@ const TRIGGER_OPTIONS = [
   { key: "new_beleg", label: "Neuer Beleg (Eingangsrechnung)" },
   { key: "angebot_alt_ohne_ab", label: "Angebot zu alt ohne AB (Pipeline 'Angebot offen')" },
   { key: "stunden_ohne_abschlag", label: "Stunden gebucht, aber keine Abschlagsrechnung" },
-  { key: "endrechnung", label: "Endrechnung erstellt (Kundenrechnung)" },
+  { key: "endrechnung", label: "Endrechnung erstellt (Schluss-/Vollrechnung, keine Teil-/Abschlagsrechnung)" },
 ] as const;
 
 function triggerLabel(key: string): string {

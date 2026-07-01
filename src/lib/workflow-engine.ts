@@ -104,6 +104,10 @@ function zeitraumText(d: ProjectHourDetail): string {
 }
 
 const RECHNUNG_DOCUMENT_TYPE_ID = 1057585; // echte Kundenrechnung (nicht Gutschrift/Storno)
+// Rechnungsart (metadata.invoice_style): nur Endrechnungen sollen den Anruf auslösen.
+// "full" = Vollrechnung, "cumulative" = kumulative Schlussrechnung.
+// (ausgeschlossen: "parted" = Teilrechnung, "downpayment" = Abschlagsrechnung)
+const ENDRECHNUNG_STYLES = new Set(["full", "cumulative"]);
 
 function fillEndrechnung(tpl: string, inv: CustomerInvoice): string {
   return tpl
@@ -186,6 +190,7 @@ async function collectEvents(triggerKey: string): Promise<WfEvent[]> {
     const events: WfEvent[] = [];
     for (const inv of invoices) {
       if (inv.documentTypeId !== RECHNUNG_DOCUMENT_TYPE_ID) continue; // keine Gutschrift/Storno
+      if (!ENDRECHNUNG_STYLES.has(inv.invoiceStyle ?? "")) continue; // nur Endrechnung, nicht Teil-/Abschlagsrechnung
       events.push({
         ref: `re-${inv.id}`,
         supplier: inv.customerName ?? "",

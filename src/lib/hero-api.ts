@@ -237,6 +237,12 @@ export interface CustomerInvoice {
   documentTypeId: number | null;
   /** Referenced original document id (Storno/Gutschrift → Originalrechnung). */
   selectedDocumentId: number | null;
+  /**
+   * Rechnungsart (metadata.invoice_style):
+   * "parted" = Teilrechnung, "downpayment" = Abschlagsrechnung,
+   * "cumulative" = kumulative Schlussrechnung, "full" = (End-)Vollrechnung.
+   */
+  invoiceStyle: string | null;
 }
 
 interface RawCustomerDocument {
@@ -259,6 +265,7 @@ interface RawCustomerDocument {
     due_date: string | null;
     balance: number | null;
   } | null;
+  metadata: { invoice_style: string | null } | null;
 }
 
 const CUSTOMER_INVOICES_QUERY = `
@@ -273,6 +280,7 @@ const CUSTOMER_INVOICES_QUERY = `
       status_name
       document_type_id
       selected_document_id
+      metadata { invoice_style }
       customer { id company_name full_name }
       project_match { id name }
       file_upload { id filename type src }
@@ -334,6 +342,7 @@ export async function getCustomerDocumentsByType(typeIds: number[]): Promise<Cus
         balance: d.customer_document_booking?.balance ?? null,
         documentTypeId: d.document_type_id ?? null,
         selectedDocumentId: d.selected_document_id ?? null,
+        invoiceStyle: d.metadata?.invoice_style ?? null,
       });
     }
     if (docs.length < pageSize) break;
