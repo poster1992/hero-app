@@ -29,7 +29,8 @@ const MODEL = "claude-haiku-4-5";
 const PRICE = { in: 1, out: 5 }; // $ / 1 Mio Tokens (Haiku)
 const USD_EUR = 0.92;
 // Version der OCR-Extraktionslogik – Änderung invalidiert den Beleg-Cache.
-const OCR_VERSION = "v2-rabatt";
+// WICHTIG: Prompt + Version mit src/lib/beleg-article-ocr.ts synchron halten.
+const OCR_VERSION = "v3-fz-rabatt";
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const docHashOf = (src: string) => createHash("sha256").update(`${src}|${OCR_VERSION}`).digest("hex");
 
@@ -95,9 +96,19 @@ async function ocrBelegArticles(
               "line_total = Positionssumme NETTO NACH Abzug eines positionsbezogenen Rabatts/Nachlasses (falls die " +
               "Position selbst einen Rabatt in % oder € hat, ziehe ihn ab). unit_price = line_total / quantity " +
               "(effektiver Einkaufspreis je Einheit NACH Rabatt). " +
+              "SEHR WICHTIG – Positionsrabatt DIREKT UNTER der Position: Manche Lieferanten (z.B. Fliesen-Zentrum) " +
+              "schreiben unter eine Position eine eigene Rabattzeile wie 'Kund.Rabatt aut %. -35,000 % aus 1.269,74 " +
+              "-444,41' oder 'Kundenrabatt: -45,000 % aus 73,37 = -33,02 EUR'. Dieser Rabatt gehört zur DARÜBER " +
+              "stehenden Position: line_total (netto) = Positionsbetrag − Rabattabzug (Beispiel: 1.269,74 − 444,41 = " +
+              "825,33). Verwende IMMER den Netto-Betrag NACH Rabatt, niemals den Bruttobetrag davor. Gib die " +
+              "Rabattzeile NICHT als eigene Position aus. Wenn eine 'Nettosumme' für die Position angegeben ist, nimm diese. " +
+              "EINHEIT/MENGE: Nennt eine Position eine Gebindemenge (z.B. '14 KAR') UND eine Basiseinheit mit Stückpreis " +
+              "(z.B. '62,98 / 1 M2', '~20,161 m²'), dann nutze die BASISEINHEIT: unit = Einheit des Stückpreises (z.B. m2, ST), " +
+              "quantity = Menge in dieser Basiseinheit, unit_price = line_total(netto) / quantity. " +
               "global_discount = ein auf die GESAMTSUMME/alle Positionen wirkender Rabatt/Nachlass (z.B. 'Rabatt 3%' " +
               "oder 'Nachlass 50,00 €'); gib percent ODER amount an, sonst beide null. " +
               "WICHTIG: Skonto ist KEIN Rabatt (Skonto = Zahlungsrabatt) und darf NICHT abgezogen werden. " +
+              "'Maut Zuschlag'/Frachtzuschlag ist KEIN Artikel und wird NICHT eingerechnet. " +
               "Nur echte Artikel-/Materialpositionen – KEINE Zwischensummen, Versand-/Frachtkosten, reine Rabattzeilen, " +
               "MwSt- oder Gesamtsummen. Wenn keine Positionen erkennbar sind: leeres Array. " +
               "Zahlen mit Punkt als Dezimaltrennzeichen, keine Tausenderpunkte. Keine Erklärung, nur JSON.",
