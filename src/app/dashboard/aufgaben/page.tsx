@@ -4,6 +4,7 @@ import { getUserByUsername, listUsers } from "@/lib/users";
 import { listTasksAssignedTo, listTasksCreatedBy, listAllOpenTasks } from "@/lib/tasks";
 import { getProjects } from "@/lib/hero-api";
 import { listReceiptReviews } from "@/lib/receipt-reviews";
+import { getGoogleReviewUrl } from "@/lib/settings";
 import TaskManager, { type ReviewTaskInfo } from "@/components/TaskManager";
 import PushSetup from "@/components/PushSetup";
 import TaskNotifications from "@/components/TaskNotifications";
@@ -22,6 +23,7 @@ export default async function AufgabenPage() {
   let users: Awaited<ReturnType<typeof listUsers>> = [];
   let notifications: TaskNotification[] = [];
   let projects: { id: number; relativeId: number | null; name: string }[] = [];
+  let googleReviewUrl = "";
 
   try {
     me = await getUserByUsername(session.username);
@@ -46,6 +48,12 @@ export default async function AufgabenPage() {
     }));
   } catch {
     // Projektliste optional – ohne sie fehlt nur die Projektauswahl.
+  }
+
+  try {
+    googleReviewUrl = (await getGoogleReviewUrl()) ?? "";
+  } catch {
+    googleReviewUrl = "";
   }
 
   // Prüf-Infos je HERO-Beleg-ID (für Prüf-Aufgaben: PDF + Entscheidung).
@@ -103,6 +111,7 @@ export default async function AufgabenPage() {
           projects={projects}
           meId={me?.id ?? 0}
           reviewsByHeroId={reviewsByHeroId}
+          googleReviewUrl={googleReviewUrl}
         />
       )}
     </div>

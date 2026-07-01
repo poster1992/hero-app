@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState, useEffect, useRef, useTransition } from "react";
+import { createContext, useActionState, useContext, useState, useEffect, useRef, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   createTaskAction,
@@ -9,9 +9,11 @@ import {
   addNoteAction,
   taskButtonAction,
   loadPersonTasksAction,
-  sendReviewEmailAction,
   type CreateTaskState,
 } from "@/app/dashboard/aufgaben/actions";
+
+/** Google-Bewertungslink (aus den Einstellungen) für den „E-Mail öffnen"-Button. */
+const ReviewUrlContext = createContext<string>("");
 import { decideReviewAction } from "@/app/dashboard/belege/review-actions";
 import { taskStatusLabel, isOverdue, type Task, type TaskStatus } from "@/lib/task-types";
 
@@ -126,22 +128,21 @@ function TaskCard({
   const desc = cleanDescription(task.description);
   const bewertung = reviewEmailInfo(task.description);
   const [bewMail, setBewMail] = useState(bewertung?.email ?? "");
-  const [bewSending, setBewSending] = useState(false);
-  const [bewMsg, setBewMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const googleReviewUrl = useContext(ReviewUrlContext);
 
-  const sendBewertung = async () => {
-    setBewSending(true);
-    setBewMsg(null);
-    try {
-      const fd = new FormData();
-      fd.set("taskId", String(task.id));
-      fd.set("email", bewMail.trim());
-      fd.set("name", bewertung?.name ?? "");
-      const res = await sendReviewEmailAction(fd);
-      setBewMsg(res.ok ? { ok: true, text: "Bewertungslink gesendet." } : { ok: false, text: res.error ?? "Fehler." });
-    } finally {
-      setBewSending(false);
-    }
+  const openReviewMail = () => {
+    const to = bewMail.trim();
+    if (!to) return;
+    const name = bewertung?.name ?? "";
+    const anrede = name ? `Hallo ${name},` : "Guten Tag,";
+    const linkLine = googleReviewUrl
+      ? `Über eine kurze Google-Bewertung würden wir uns sehr freuen:\n${googleReviewUrl}\n\n`
+      : "";
+    const subject = "Ihre Meinung ist uns wichtig – FLOORTEC";
+    const body =
+      `${anrede}\n\nvielen Dank, dass wir für Sie tätig sein durften. Wir hoffen, Sie sind mit unserer Arbeit zufrieden.\n\n` +
+      `${linkLine}Herzlichen Dank und beste Grüße\nIhr FLOORTEC-Team`;
+    window.location.href = `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   };
 
   const decideReview = async (decision: "freigegeben" | "abgelehnt") => {
@@ -247,19 +248,22 @@ function TaskCard({
             />
             <button
               type="button"
-              disabled={bewSending || !bewMail.trim()}
-              onClick={sendBewertung}
+              disabled={!bewMail.trim()}
+              onClick={openReviewMail}
               className="shrink-0 rounded-md bg-brand-red px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
             >
-              {bewSending ? "Sendet …" : "📧 Bewertungslink senden"}
+              📧 E-Mail an Kunde öffnen
             </button>
           </div>
           {!bewertung.email && (
             <p className="mt-1 text-xs text-amber-700">Keine E-Mail im Kundenstamm – bitte eintragen.</p>
           )}
-          {bewMsg && (
-            <p className={`mt-1 text-xs ${bewMsg.ok ? "text-emerald-600" : "text-brand-red"}`}>{bewMsg.text}</p>
+          {!googleReviewUrl && (
+            <p className="mt-1 text-xs text-amber-700">
+              Kein Bewertungslink hinterlegt – unter Konfiguration → Einstellungen eintragen.
+            </p>
           )}
+          <p className="mt-1 text-xs text-gray-500">Öffnet dein Standard-Mailprogramm mit vorbefülltem Text und Link.</p>
         </div>
       )}
 
@@ -502,6 +506,7 @@ export default function TaskManager({
   users,
   projects,
   reviewsByHeroId = {},
+  googleReviewUrl = "",
 }: {
   assigned: Task[];
   created: Task[];
@@ -511,6 +516,7 @@ export default function TaskManager({
   projects: ProjectOption[];
   meId: number;
   reviewsByHeroId?: Record<string, ReviewTaskInfo>;
+  googleReviewUrl?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [state, formAction, pending] = useActionState<CreateTaskState, FormData>(
@@ -595,6 +601,7 @@ export default function TaskManager({
     "w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-brand-red/60";
 
   return (
+    <ReviewUrlContext.Provider value={googleReviewUrl}>
     <div className="flex flex-col gap-6">
       {/* Neue Aufgabe – Button öffnet Pop-up */}
       <div className="flex justify-end">
@@ -882,5 +889,6 @@ export default function TaskManager({
       </div>
       )}
     </div>
+    </ReviewUrlContext.Provider>
   );
 }
