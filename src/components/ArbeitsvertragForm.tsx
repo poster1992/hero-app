@@ -282,25 +282,27 @@ function contractBody(data: ContractData): string {
 // Personalfragebogen Luxembourg
 // ---------------------------------------------------------------------------
 
+// Auf .pfroot gescopte CSS – wird auch als <style> in die Seiten-Vorschau injiziert,
+// darf daher NICHT global (body/*) wirken.
+const PF_PAGE = "@page { margin: 1.4cm; }";
 const PF_STYLE = `
-  @page { margin: 1.4cm; }
-  * { box-sizing: border-box; }
-  body { font-family: Arial, Helvetica, sans-serif; color: #000; font-size: 9pt; line-height: 1.3; }
-  .pf-h { font-size: 15pt; font-weight: 800; margin: 0; }
-  .pf-sub { color: #c01818; font-weight: bold; font-size: 8pt; margin: 0 0 0.6em; }
-  .pf-firma { font-size: 12pt; font-weight: bold; border-bottom: 1px solid #000; padding-bottom: 2px; margin: 0.4em 0; }
-  .pf-note { float: right; font-style: italic; font-size: 7.5pt; color: #333; text-align: right; }
-  .pf-sec { font-weight: bold; border-bottom: 1px solid #000; margin: 0.8em 0 0.3em; padding-bottom: 1px; }
-  table.pf { width: 100%; border-collapse: collapse; margin-bottom: 0.3em; table-layout: fixed; }
-  table.pf td { border: 1px solid #000; padding: 3px 5px; vertical-align: top; }
-  .lbl { display: block; font-size: 7.5pt; color: #000; }
-  .val { display: block; font-size: 10pt; font-weight: bold; min-height: 1.25em; }
-  .q { margin: 0.5em 0 0.2em; font-weight: bold; }
-  .decl { font-size: 8pt; margin: 0.8em 0; }
-  table.pf-sig { width: 100%; border-collapse: collapse; margin-top: 1.8em; }
-  table.pf-sig td { vertical-align: bottom; padding: 0 8px; font-size: 8pt; }
-  .sigline { border-top: 1px solid #000; padding-top: 2px; text-align: center; }
-  .foot { font-size: 7.5pt; font-weight: bold; margin-top: 1em; }`;
+  .pfroot { font-family: Arial, Helvetica, sans-serif; color: #000; font-size: 9pt; line-height: 1.3; box-sizing: border-box; }
+  .pfroot * { box-sizing: border-box; }
+  .pfroot .pf-h { font-size: 15pt; font-weight: 800; margin: 0; color: #000; }
+  .pfroot .pf-sub { color: #c01818; font-weight: bold; font-size: 8pt; margin: 0 0 0.6em; }
+  .pfroot .pf-firma { font-size: 12pt; font-weight: bold; border-bottom: 1px solid #000; padding-bottom: 2px; margin: 0.4em 0; color: #000; }
+  .pfroot .pf-note { float: right; font-style: italic; font-size: 7.5pt; color: #333; text-align: right; max-width: 42%; }
+  .pfroot .pf-sec { font-weight: bold; border-bottom: 1px solid #000; margin: 0.8em 0 0.3em; padding-bottom: 1px; color: #000; }
+  .pfroot table.pf { width: 100%; border-collapse: collapse; margin-bottom: 0.3em; table-layout: fixed; }
+  .pfroot table.pf td { border: 1px solid #000; padding: 3px 5px; vertical-align: top; }
+  .pfroot .lbl { display: block; font-size: 7.5pt; color: #333; }
+  .pfroot .val { display: block; font-size: 10pt; font-weight: bold; min-height: 1.25em; color: #000; }
+  .pfroot .q { margin: 0.5em 0 0.2em; font-weight: bold; color: #000; }
+  .pfroot .decl { font-size: 8pt; margin: 0.8em 0; color: #000; }
+  .pfroot table.pf-sig { width: 100%; border-collapse: collapse; margin-top: 1.8em; }
+  .pfroot table.pf-sig td { vertical-align: bottom; padding: 0 8px; font-size: 8pt; color: #000; }
+  .pfroot .sigline { border-top: 1px solid #000; padding-top: 2px; text-align: center; }
+  .pfroot .foot { font-size: 7.5pt; font-weight: bold; margin-top: 1em; color: #000; }`;
 
 function pfBody(d: ContractData): string {
   const cb = (on: boolean) => (on ? "☒" : "☐");
@@ -317,7 +319,7 @@ function pfBody(d: ContractData): string {
   const probe = `vom ${escHtml(fmtDate(d.probezeitVom, "________"))} bis ${escHtml(fmtDate(d.probezeitBis, "________"))}`;
   const famstand = `${escHtml(d.familienstand)}${d.familienstandSeit ? `  seit: ${escHtml(fmtDate(d.familienstandSeit, ""))}` : ""}`;
 
-  return `
+  return `<div class="pfroot">
     <div class="pf-note">Bitte umgehend per Mail an uns zurück. Vielen Dank</div>
     <div class="pf-h">Personalfragebogen Luxembourg</div>
     <div class="pf-sub">Die Anmeldung bei der CCSS muss innerhalb von 8 Tagen nach Arbeitsantritt erfolgen</div>
@@ -363,7 +365,8 @@ function pfBody(d: ContractData): string {
       </tr>
     </table>
 
-    <div class="foot">*Sollte noch keine Sozialversicherungsnummer in Luxemburg vorliegen: Bitte Kopie des Personalausweises (Vor- und Rückseite)</div>`;
+    <div class="foot">*Sollte noch keine Sozialversicherungsnummer in Luxemburg vorliegen: Bitte Kopie des Personalausweises (Vor- und Rückseite)</div>
+  </div>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -395,7 +398,7 @@ export default function ArbeitsvertragForm({ contracts }: { contracts: SavedCont
 
   const printDoc = (docKind: DocKind, data: ContractData) => {
     if (docKind === "personalfragebogen") {
-      openPrint(`Personalfragebogen ${fullName(data)}`, PF_STYLE, pfBody(data));
+      openPrint(`Personalfragebogen ${fullName(data)}`, `${PF_PAGE} ${PF_STYLE}`, pfBody(data));
     } else {
       openPrint(`Arbeitsvertrag ${fullName(data)}`, CONTRACT_STYLE, contractBody(data));
     }
@@ -737,9 +740,16 @@ export default function ArbeitsvertragForm({ contracts }: { contracts: SavedCont
         <div className="rounded-xl border border-gray-300 bg-gray-100 p-4 shadow-lg shadow-black/10">
           <p className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">Vorschau — {isPf ? "Personalfragebogen" : "Arbeitsvertrag"}</p>
           {isPf ? (
-            <div className="mx-auto max-w-[800px] rounded-md bg-white px-8 py-8 text-gray-900 shadow" dangerouslySetInnerHTML={{ __html: previewHtml }} />
+            <div
+              className="mx-auto max-w-[800px] rounded-md px-8 py-8 shadow"
+              style={{ backgroundColor: "#ffffff", color: "#111111" }}
+              dangerouslySetInnerHTML={{ __html: previewHtml }}
+            />
           ) : (
-            <div className="mx-auto max-w-[800px] rounded-md bg-white px-8 py-10 text-[12.5px] leading-relaxed text-gray-900 shadow" style={{ fontFamily: '"Times New Roman", Georgia, serif' }}>
+            <div
+              className="mx-auto max-w-[800px] rounded-md px-8 py-10 text-[12.5px] leading-relaxed shadow"
+              style={{ fontFamily: '"Times New Roman", Georgia, serif', backgroundColor: "#ffffff", color: "#111111" }}
+            >
               <div className="mb-5 flex items-end justify-between border-b-2 border-[#c01818] pb-1.5">
                 <span className="text-2xl font-extrabold tracking-[0.25em] text-[#c01818]" style={{ fontFamily: "Arial, Helvetica, sans-serif" }}>FLOORTEC</span>
                 <span className="text-right text-[9px] leading-tight text-gray-500" style={{ fontFamily: "Arial, Helvetica, sans-serif" }}>
