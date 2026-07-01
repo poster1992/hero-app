@@ -7,6 +7,7 @@ import { sendMail } from "@/lib/mailer";
 import { sendPushToUsers } from "@/lib/push";
 import { getGoogleReviewUrl } from "@/lib/settings";
 import { wasReviewEmailSent, markReviewEmailSent } from "@/lib/review-emails";
+import { addLogbookEntry } from "@/app/dashboard/logbook-actions";
 import {
   createTaskNotification,
   acknowledgeNotification,
@@ -494,6 +495,18 @@ export async function sendReviewEmailAction(formData: FormData): Promise<SendRev
     await addTaskNote(taskId, user.id, `Bewertungsmail gesendet an ${email}`);
   } catch {
     /* Protokoll ist best-effort */
+  }
+  // Logbuch-Eintrag im HERO-Projekt (Projekt-Schlüssel im Marker = p<ProjektID>).
+  try {
+    const pid = /^p(\d+)$/.exec(projectKey);
+    if (pid) {
+      await addLogbookEntry(
+        Number(pid[1]),
+        `Kundenzufriedenheitsumfrage per E-Mail an ${email} versendet (durch ${user.displayName || user.username}).`
+      );
+    }
+  } catch {
+    /* Logbuch ist best-effort */
   }
   revalidatePath(PATH);
   return { ok: true };
