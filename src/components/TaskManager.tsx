@@ -9,6 +9,7 @@ import {
   addNoteAction,
   taskButtonAction,
   loadPersonTasksAction,
+  sendReviewEmailAction,
   type CreateTaskState,
 } from "@/app/dashboard/aufgaben/actions";
 import { decideReviewAction } from "@/app/dashboard/belege/review-actions";
@@ -32,9 +33,17 @@ function reviewHeroId(description: string | null): string | null {
   return m ? m[1] : null;
 }
 
-/** Removes internal markers (e.g. [RECHNPRUEF:..], [EKREQ:..]) from display text. */
+/** Removes internal markers (e.g. [RECHNPRUEF:..], [EKREQ:..], [BEWERTUNG:..]) from display text. */
 function cleanDescription(description: string | null): string {
-  return (description ?? "").replace(/\s*\[[A-Z]+:[^\]]+\]/g, "").trim();
+  return (description ?? "").replace(/\s*\[[A-Z]+:[^\]]*\]/g, "").trim();
+}
+
+/** Extracts the customer email + name from a satisfaction-call task's [BEWERTUNG:email|name] marker. */
+function reviewEmailInfo(description: string | null): { email: string; name: string } | null {
+  const m = description?.match(/\[BEWERTUNG:([^\]]*)\]/);
+  if (!m) return null;
+  const [email, ...rest] = m[1].split("|");
+  return { email: (email ?? "").trim(), name: rest.join("|").trim() };
 }
 
 interface UserOption {
@@ -115,6 +124,25 @@ function TaskCard({
   const overdue = isOverdue(task.dueDate, task.status);
   const heroId = reviewHeroId(task.description);
   const desc = cleanDescription(task.description);
+  const bewertung = reviewEmailInfo(task.description);
+  const [bewMail, setBewMail] = useState(bewertung?.email ?? "");
+  const [bewSending, setBewSending] = useState(false);
+  const [bewMsg, setBewMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const sendBewertung = async () => {
+    setBewSending(true);
+    setBewMsg(null);
+    try {
+      const fd = new FormData();
+      fd.set("taskId", String(task.id));
+      fd.set("email", bewMail.trim());
+      fd.set("name", bewertung?.name ?? "");
+      const res = await sendReviewEmailAction(fd);
+      setBewMsg(res.ok ? { ok: true, text: "Bewertungslink gesendet." } : { ok: false, text: res.error ?? "Fehler." });
+    } finally {
+      setBewSending(false);
+    }
+  };
 
   const decideReview = async (decision: "freigegeben" | "abgelehnt") => {
     if (!heroId) return;
@@ -200,6 +228,38 @@ function TaskCard({
               </button>
             </form>
           ))}
+        </div>
+      )}
+
+      {/* Endrechnung: Google-Bewertungslink an Kunde senden (E-Mail aus Kundenstamm) */}
+      {bewertung && (
+        <div className="mt-3 rounded-lg border border-amber-300/50 bg-amber-50 p-3">
+          <span className="text-xs font-semibold uppercase tracking-wide text-amber-700">
+            Google-Bewertung an Kunde senden
+          </span>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <input
+              type="email"
+              value={bewMail}
+              onChange={(e) => setBewMail(e.target.value)}
+              placeholder="E-Mail des Kunden"
+              className="min-w-0 flex-1 rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 outline-none focus:border-brand-red/60"
+            />
+            <button
+              type="button"
+              disabled={bewSending || !bewMail.trim()}
+              onClick={sendBewertung}
+              className="shrink-0 rounded-md bg-brand-red px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+            >
+              {bewSending ? "Sendet …" : "📧 Bewertungslink senden"}
+            </button>
+          </div>
+          {!bewertung.email && (
+            <p className="mt-1 text-xs text-amber-700">Keine E-Mail im Kundenstamm – bitte eintragen.</p>
+          )}
+          {bewMsg && (
+            <p className={`mt-1 text-xs ${bewMsg.ok ? "text-emerald-600" : "text-brand-red"}`}>{bewMsg.text}</p>
+          )}
         </div>
       )}
 

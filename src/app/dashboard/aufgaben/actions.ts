@@ -367,6 +367,59 @@ export async function taskButtonAction(formData: FormData): Promise<void> {
   revalidatePath(PATH);
 }
 
+export interface SendReviewResult {
+  ok: boolean;
+  error?: string;
+}
+
+/** Sendet dem Kunden einen Link zur Google-Bewertungsseite (E-Mail aus dem Kundenstamm). */
+export async function sendReviewEmailAction(formData: FormData): Promise<SendReviewResult> {
+  const session = await getSession();
+  if (!session) return { ok: false, error: "Nicht angemeldet." };
+  const user = await getUserByUsername(session.username);
+  if (!user) return { ok: false, error: "Kein Benutzer." };
+
+  const taskId = Number(formData.get("taskId"));
+  const email = String(formData.get("email") ?? "").trim();
+  const name = String(formData.get("name") ?? "").trim();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return { ok: false, error: "Ungültige E-Mail-Adresse." };
+
+  const url = process.env.GOOGLE_REVIEW_URL?.trim();
+  if (!url) {
+    return { ok: false, error: "Google-Bewertungslink ist nicht konfiguriert (GOOGLE_REVIEW_URL im Server-.env)." };
+  }
+
+  const anrede = name ? `Hallo ${name},` : "Guten Tag,";
+  const subject = "Ihre Meinung ist uns wichtig – FLOORTEC";
+  const text =
+    `${anrede}\n\nvielen Dank, dass wir für Sie tätig sein durften. Wir hoffen, Sie sind mit unserer Arbeit zufrieden.\n\n` +
+    `Über eine kurze Google-Bewertung würden wir uns sehr freuen:\n${url}\n\nHerzlichen Dank und beste Grüße\nIhr FLOORTEC-Team`;
+  const html =
+    `<p>${anrede}</p>` +
+    `<p>vielen Dank, dass wir für Sie tätig sein durften. Wir hoffen, Sie sind mit unserer Arbeit zufrieden.</p>` +
+    `<p>Über eine kurze Google-Bewertung würden wir uns sehr freuen:</p>` +
+    `<p><a href="${url}" style="display:inline-block;padding:10px 18px;background:#e8392a;color:#fff;text-decoration:none;border-radius:6px;font-weight:600">Jetzt bei Google bewerten</a></p>` +
+    `<p>oder direkt: <a href="${url}">${url}</a></p>` +
+    `<p>Herzlichen Dank und beste Grüße<br/>Ihr FLOORTEC-Team</p>`;
+
+  try {
+    const ok = await sendMail(email, subject, text, html);
+    if (!ok) return { ok: false, error: "E-Mail konnte nicht gesendet werden." };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sendefehler." };
+  }
+
+  try {
+    if (Number.isFinite(taskId) && taskId > 0) {
+      await addTaskNote(taskId, user.id, `Google-Bewertungslink gesendet an ${email}`);
+    }
+  } catch {
+    /* Protokoll ist best-effort */
+  }
+  revalidatePath(PATH);
+  return { ok: true };
+}
+
 /** Admin: lädt alle Aufgaben einer bestimmten Person (zugewiesen oder erstellt). */
 export async function loadPersonTasksAction(userId: number): Promise<Task[]> {
   const me = await currentUser();

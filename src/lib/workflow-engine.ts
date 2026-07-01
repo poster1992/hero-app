@@ -191,11 +191,24 @@ async function collectEvents(triggerKey: string): Promise<WfEvent[]> {
     for (const inv of invoices) {
       if (inv.documentTypeId !== RECHNUNG_DOCUMENT_TYPE_ID) continue; // keine Gutschrift/Storno
       if (!ENDRECHNUNG_STYLES.has(inv.invoiceStyle ?? "")) continue; // nur Endrechnung, nicht Teil-/Abschlagsrechnung
+      const kunde = inv.customerName ?? "";
+      const email = inv.customerEmail ?? "";
+      // Notiz für den Anrufer + Marker (Kunden-E-Mail) für den „Bewertungslink senden"-Button.
+      const note = [
+        `Kunde: ${kunde || "—"}`,
+        inv.project?.name ? `Projekt: ${inv.project.name}` : null,
+        `Rechnung: ${inv.number}`,
+        `E-Mail (Kundenstamm): ${email || "— keine hinterlegt —"}`,
+        `[BEWERTUNG:${email}|${kunde}]`,
+      ]
+        .filter(Boolean)
+        .join("\n");
       events.push({
         ref: `re-${inv.id}`,
-        supplier: inv.customerName ?? "",
+        supplier: kunde,
         amount: inv.net || inv.gross || 0,
         eventDate: inv.date ? inv.date.slice(0, 10) : null,
+        note,
         fill: (tpl: string) => fillEndrechnung(tpl, inv),
       });
     }

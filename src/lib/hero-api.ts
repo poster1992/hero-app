@@ -233,6 +233,9 @@ export interface CustomerInvoice {
   dueDate: string | null;
   /** Open balance (remaining amount), or null. */
   balance: number | null;
+  /** Customer contact id + email (from the customer master), if available. */
+  customerId: number | null;
+  customerEmail: string | null;
   /** HERO document type id (Rechnung/Gutschrift/Storno). */
   documentTypeId: number | null;
   /** Referenced original document id (Storno/Gutschrift → Originalrechnung). */
@@ -255,7 +258,7 @@ interface RawCustomerDocument {
   status_name: string | null;
   document_type_id: number | null;
   selected_document_id: number | null;
-  customer: { id: number; company_name: string | null; full_name: string | null } | null;
+  customer: { id: number; company_name: string | null; full_name: string | null; email: string | null } | null;
   project_match: { id: number; name: string } | null;
   file_upload: { id: number; filename: string; type: string | null; src: string | null } | null;
   customer_document_booking: {
@@ -281,7 +284,7 @@ const CUSTOMER_INVOICES_QUERY = `
       document_type_id
       selected_document_id
       metadata { invoice_style }
-      customer { id company_name full_name }
+      customer { id company_name full_name email }
       project_match { id name }
       file_upload { id filename type src }
       customer_document_booking { status_name is_open paid_date due_date balance }
@@ -324,6 +327,8 @@ export async function getCustomerDocumentsByType(typeIds: number[]): Promise<Cus
         customerName: d.customer
           ? d.customer.company_name || d.customer.full_name || null
           : null,
+        customerId: d.customer?.id ?? null,
+        customerEmail: d.customer?.email ?? null,
         project: d.project_match ? { id: d.project_match.id, name: d.project_match.name } : null,
         fileUpload:
           d.file_upload?.src != null
