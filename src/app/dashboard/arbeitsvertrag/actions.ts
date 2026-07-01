@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getSession } from "@/lib/session";
 import { getUserByUsername } from "@/lib/users";
-import { createContract, deleteContract, listContracts, type SavedContract } from "@/lib/contracts";
+import { createContract, deleteContract, listContracts, type SavedContract, type DocKind } from "@/lib/contracts";
 
 const PATH = "/dashboard/arbeitsvertrag";
 
@@ -23,8 +23,9 @@ export interface SaveContractResult {
   error?: string;
 }
 
-/** Speichert einen ausgefüllten Vertrag (Feld-Snapshot). */
+/** Speichert ein ausgefülltes Dokument (Feld-Snapshot). */
 export async function saveContractAction(
+  kind: DocKind,
   employeeName: string,
   data: Record<string, unknown>
 ): Promise<SaveContractResult> {
@@ -33,6 +34,7 @@ export async function saveContractAction(
   const uid = await currentUserId();
   try {
     const id = await createContract({
+      kind: kind === "personalfragebogen" ? "personalfragebogen" : "arbeitsvertrag",
       employeeName: (employeeName || "").trim() || "Unbenannt",
       data,
       createdBy: uid,
