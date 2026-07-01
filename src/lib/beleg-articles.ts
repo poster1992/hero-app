@@ -45,6 +45,25 @@ function parseItems(value: unknown): BelegArticle[] {
   }));
 }
 
+/** HERO-Beleg-IDs, für die bereits Artikel ausgelesen wurden. */
+export async function getBelegArticleHeroIds(): Promise<Set<string>> {
+  const [rows] = await getPool().query<RowDataPacket[]>("SELECT hero_receipt_id FROM beleg_articles");
+  return new Set(rows.map((r) => String((r as { hero_receipt_id: string }).hero_receipt_id)));
+}
+
+/** Alle gecachten OCR-Artikel-Einträge (für den Preisvergleich über alle Belege). */
+export async function listAllBelegArticles(): Promise<BelegArticleEntry[]> {
+  const [rows] = await getPool().query<ArticleRow[]>(
+    "SELECT hero_receipt_id, doc_hash, items, total FROM beleg_articles"
+  );
+  return rows.map((r) => ({
+    heroReceiptId: r.hero_receipt_id,
+    docHash: r.doc_hash,
+    items: parseItems(r.items),
+    total: Number(r.total),
+  }));
+}
+
 /** Gecachte OCR-Artikel für mehrere Belege (heroId → Eintrag). */
 export async function getBelegArticlesMap(heroIds: string[]): Promise<Map<string, BelegArticleEntry>> {
   const map = new Map<string, BelegArticleEntry>();

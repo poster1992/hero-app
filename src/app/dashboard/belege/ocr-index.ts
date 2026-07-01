@@ -5,6 +5,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import { getSession } from "@/lib/session";
 import { getReceiptsInRange, type Receipt } from "@/lib/hero-api";
 import { getOcrHeroIds, upsertReceiptOcr } from "@/lib/receipt-ocr";
+import { getBelegArticleHeroIds, upsertBelegArticles } from "@/lib/beleg-articles";
+import { extractBelegArticles, articleDocHash, ARTICLE_OCR_MODEL } from "@/lib/beleg-article-ocr";
 
 const HERO_HOST = "https://login.hero-software.de";
 const MODEL = "claude-haiku-4-5";
@@ -113,18 +115,46 @@ async function ocrReceipt(client: Anthropic, receipt: Receipt): Promise<number> 
   return cost;
 }
 
+/** Artikel + Einzelpreise eines Belegs auslesen und in beleg_articles ablegen. */
+async function articleOcr(client: Anthropic, receipt: Receipt): Promise<number> {
+  const src = receipt.fileUpload?.src;
+  if (!src) return 0;
+  try {
+    const { items, cost } = await extractBelegArticles(client, receipt);
+    const total = round2(items.reduce((s, it) => s + it.lineTotal, 0));
+    await upsertBelegArticles({
+      heroReceiptId: receipt.id,
+      docHash: articleDocHash(src),
+      items,
+      total,
+      model: ARTICLE_OCR_MODEL,
+      costEur: cost,
+    });
+    return cost;
+  } catch {
+    return 0;
+  }
+}
+
 export interface OcrStatus {
   total: number;
   done: number;
 }
 
-/** Wie viele Eingangsrechnungen ab 2026 sind schon OCR-indexiert? */
+/**
+ * Wie viele Eingangsrechnungen ab 2026 sind vollständig indexiert (Volltext UND
+ * Artikel/Einzelpreise)?
+ */
 export async function getOcrStatus(): Promise<OcrStatus> {
   if (!(await getSession())) return { total: 0, done: 0 };
   try {
-    const [candidates, doneIds] = await Promise.all([getCandidates(), getOcrHeroIds()]);
+    const [candidates, ocrDone, artDone] = await Promise.all([
+      getCandidates(),
+      getOcrHeroIds(),
+      getBelegArticleHeroIds(),
+    ]);
     const total = candidates.length;
-    const done = candidates.filter((r) => doneIds.has(r.id)).length;
+    const done = candidates.filter((r) => ocrDone.has(r.id) && artDone.has(r.id)).length;
     return { total, done };
   } catch {
     return { total: 0, done: 0 };
@@ -146,17 +176,30 @@ export async function runOcrBackfill(): Promise<OcrBackfillResult> {
     return { processed: 0, remaining: 0, total: 0, costEur: 0, error: "OCR ist nicht konfiguriert: ANTHROPIC_API_KEY fehlt." };
   }
   let candidates: Receipt[];
-  let doneIds: Set<string>;
+  let ocrDone: Set<string>;
+  let artDone: Set<string>;
   try {
-    [candidates, doneIds] = await Promise.all([getCandidates(), getOcrHeroIds()]);
+    [candidates, ocrDone, artDone] = await Promise.all([
+      getCandidates(),
+      getOcrHeroIds(),
+      getBelegArticleHeroIds(),
+    ]);
   } catch (e) {
     return { processed: 0, remaining: 0, total: 0, costEur: 0, error: e instanceof Error ? e.message : "Laden fehlgeschlagen." };
   }
   const total = candidates.length;
-  const missing = candidates.filter((r) => !doneIds.has(r.id));
+  // Fehlt entweder der Volltext ODER die Artikelpositionen.
+  const missing = candidates.filter((r) => !ocrDone.has(r.id) || !artDone.has(r.id));
   const batch = missing.slice(0, BATCH);
   const client = new Anthropic({ maxRetries: 2, timeout: 120_000 });
-  const costs = await Promise.all(batch.map((r) => ocrReceipt(client, r)));
+  const costs = await Promise.all(
+    batch.map(async (r) => {
+      let c = 0;
+      if (!ocrDone.has(r.id)) c += await ocrReceipt(client, r); // Volltext + Skonto
+      if (!artDone.has(r.id)) c += await articleOcr(client, r); // Artikel + Einzelpreise
+      return c;
+    })
+  );
   const costEur = round2(costs.reduce((s, c) => s + c, 0) * 10000) / 10000;
   return { processed: batch.length, remaining: missing.length - batch.length, total, costEur };
 }
