@@ -15,9 +15,9 @@ export interface PriceRow {
   lineTotal: number;
 }
 
-/** 📄-Link zum Beleg-PDF (öffnet neuen Tab). */
-function BelegLink({ url }: { url: string | null }) {
-  if (!url) return null;
+/** Belegnummer als Link zum Beleg-PDF (öffnet neuen Tab). */
+function BelegNo({ number, url }: { number: string; url: string | null }) {
+  if (!url) return <span className="text-gray-500">{number || "—"}</span>;
   return (
     <a
       href={url}
@@ -25,9 +25,9 @@ function BelegLink({ url }: { url: string | null }) {
       rel="noopener noreferrer"
       title="Beleg (PDF) öffnen"
       onClick={(e) => e.stopPropagation()}
-      className="ml-1.5 inline-block align-middle text-brand-red hover:opacity-80"
+      className="whitespace-nowrap font-medium text-brand-red hover:underline"
     >
-      📄
+      {number || "Beleg"} 📄
     </a>
   );
 }
@@ -301,10 +301,7 @@ export default function PriceComparison({ rows }: { rows: PriceRow[] }) {
                           .sort((a, b) => a.unitPrice - b.unitPrice)
                           .map((r, i) => (
                             <tr key={`${g.key}-${i}`} className="border-b border-gray-100 bg-gray-50/60 text-[11px]">
-                              <td className="px-3 py-1.5 pl-8 align-top text-gray-700">
-                                {r.article}
-                                <BelegLink url={r.docUrl} />
-                              </td>
+                              <td className="px-3 py-1.5 pl-8 align-top text-gray-700">{r.article}</td>
                               <td className="px-3 py-1.5 text-center align-top text-gray-600">{r.supplier}</td>
                               <td className="px-3 py-1.5 text-right align-top whitespace-nowrap">
                                 {deltaCell(r, g.min, g.rows.length > 1)}
@@ -315,8 +312,9 @@ export default function PriceComparison({ rows }: { rows: PriceRow[] }) {
                               <td className="px-3 py-1.5 text-right align-top whitespace-nowrap text-gray-500">
                                 {r.quantity ? `${num.format(r.quantity)}${r.unit ? " " + r.unit : ""}` : ""}
                               </td>
-                              <td className="px-3 py-1.5 text-right align-top whitespace-nowrap text-gray-400">
-                                {r.date ? dateFmt.format(new Date(r.date)) : ""}
+                              <td className="px-3 py-1.5 text-right align-top whitespace-nowrap">
+                                <BelegNo number={r.number} url={r.docUrl} />
+                                {r.date ? <span className="block text-gray-400">{dateFmt.format(new Date(r.date))}</span> : null}
                               </td>
                             </tr>
                           ))}
@@ -346,10 +344,7 @@ export default function PriceComparison({ rows }: { rows: PriceRow[] }) {
                   const comparable = (exact.count.get(k) ?? 0) > 1;
                   return (
                     <tr key={`${r.heroReceiptId}-${i}`} className="border-b border-gray-200 last:border-0 hover:bg-gray-100">
-                      <td className="px-3 py-2 align-top font-medium text-gray-800">
-                        {r.article}
-                        <BelegLink url={r.docUrl} />
-                      </td>
+                      <td className="px-3 py-2 align-top font-medium text-gray-800">{r.article}</td>
                       <td className="px-3 py-2 align-top text-gray-700">{r.supplier}</td>
                       <td className="px-3 py-2 align-top whitespace-nowrap text-gray-600">
                         {r.date ? dateFmt.format(new Date(r.date)) : "—"}
@@ -363,7 +358,7 @@ export default function PriceComparison({ rows }: { rows: PriceRow[] }) {
                       <td className="px-3 py-2 align-top text-right whitespace-nowrap">
                         {deltaCell(r, exact.min.get(k), comparable)}
                       </td>
-                      <td className="px-3 py-2 align-top whitespace-nowrap text-gray-500">{r.number || "—"}</td>
+                      <td className="px-3 py-2 align-top whitespace-nowrap"><BelegNo number={r.number} url={r.docUrl} /></td>
                     </tr>
                   );
                 })}
