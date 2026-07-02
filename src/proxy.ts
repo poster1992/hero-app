@@ -8,10 +8,20 @@ export async function proxy(request: NextRequest) {
 
   if (!session) {
     const loginUrl = new URL("/login", request.url);
-    return NextResponse.redirect(loginUrl);
+    const res = NextResponse.redirect(loginUrl);
+    // Weiterleitung nie cachen (sonst „hängt" der Browser nach Abmeldung auf einer
+    // gecachten geschützten Seite bzw. auf der Login-Weiterleitung).
+    res.headers.set("Cache-Control", "no-store, must-revalidate");
+    // Ein evtl. noch vorhandenes, aber ungültiges/abgelaufenes Cookie entfernen.
+    if (token) res.cookies.delete(SESSION_COOKIE_NAME);
+    return res;
   }
 
-  return NextResponse.next();
+  // Geschützte Seiten nie im Browser/Proxy cachen – verhindert veraltete
+  // (eingeloggte) Ansichten nach automatischer Abmeldung.
+  const res = NextResponse.next();
+  res.headers.set("Cache-Control", "no-store, must-revalidate");
+  return res;
 }
 
 export const config = {
