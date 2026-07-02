@@ -27,6 +27,8 @@ export interface ReviewTaskInfo {
   reviewedByName: string | null;
   note: string | null;
   projectMatchId: number | null;
+  /** Alle dem Beleg zugeordneten Projekte (aus den Belegpositionen). */
+  projects: { relativeId: number | null; name: string }[];
   history: { actionLabel: string; detail: string | null; byName: string | null; at: string | null }[];
 }
 
@@ -305,6 +307,21 @@ function TaskCard({
               <span className="text-xs text-gray-400">Kein PDF hinterlegt</span>
             )}
           </div>
+
+          {review?.projects && review.projects.length > 0 && (
+            <p className="mt-2 text-xs text-gray-600">
+              <span className="font-medium text-gray-500">
+                Zugeordnete{review.projects.length > 1 ? " Projekte" : "s Projekt"}:{" "}
+              </span>
+              {review.projects.map((p, i) => (
+                <span key={i}>
+                  {i > 0 ? " · " : ""}
+                  {p.relativeId != null ? `#${p.relativeId} ` : ""}
+                  {p.name}
+                </span>
+              ))}
+            </p>
+          )}
 
           {review?.status === "freigegeben" || review?.status === "abgelehnt" ? (
             <p

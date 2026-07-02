@@ -2,7 +2,8 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
 import { getUserByUsername, listUsers } from "@/lib/users";
 import { listTasksAssignedTo, listTasksCreatedBy, listAllOpenTasks } from "@/lib/tasks";
-import { getProjects } from "@/lib/hero-api";
+import { getProjects, getReceiptsInRange } from "@/lib/hero-api";
+import { getReceiptProjects } from "@/lib/invoices";
 import { listReceiptReviews } from "@/lib/receipt-reviews";
 import { getGoogleReviewUrl } from "@/lib/settings";
 import TaskManager, { type ReviewTaskInfo } from "@/components/TaskManager";
@@ -60,7 +61,28 @@ export default async function AufgabenPage() {
   const reviewsByHeroId: Record<string, ReviewTaskInfo> = {};
   try {
     const rev = await listReceiptReviews();
+
+    // Alle Projekte je Beleg aus den Belegpositionen (für die Prüf-Aufgabe auflisten).
+    const projectsByHeroId = new Map<string, { relativeId: number | null; name: string }[]>();
+    if (rev.size > 0) {
+      try {
+        const now = new Date();
+        const from = new Date(now.getTime() - 180 * 24 * 3600 * 1000).toISOString();
+        const to = `${now.getUTCFullYear() + 1}-12-31T23:59:59Z`;
+        const receipts = await getReceiptsInRange(from, to);
+        for (const rc of receipts) {
+          const projs = getReceiptProjects(rc).map((p) => ({ relativeId: p.relativeId, name: p.name }));
+          if (projs.length > 0) projectsByHeroId.set(rc.id, projs);
+        }
+      } catch {
+        // Projektliste optional
+      }
+    }
+
     for (const [id, r] of rev) {
+      const projects =
+        projectsByHeroId.get(id) ??
+        (r.projectName ? [{ relativeId: r.projectRelativeId, name: r.projectName }] : []);
       reviewsByHeroId[id] = {
         status: r.status,
         docUrl: r.docUrl,
@@ -70,6 +92,7 @@ export default async function AufgabenPage() {
         reviewedByName: r.reviewedByName,
         note: r.note,
         projectMatchId: r.projectMatchId,
+        projects,
         history: r.history.map((h) => ({
           actionLabel: h.actionLabel,
           detail: h.detail,
