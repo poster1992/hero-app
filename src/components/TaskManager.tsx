@@ -121,12 +121,33 @@ function TaskCard({
 }) {
   const [noteOpen, setNoteOpen] = useState(false);
   const [fwdOpen, setFwdOpen] = useState(false);
-  const [statusTarget, setStatusTarget] = useState<TaskStatus | null>(null);
+  const [localStatus, setLocalStatus] = useState<TaskStatus | null>(null);
+  const [changing, setChanging] = useState(false);
   const [reviewNote, setReviewNote] = useState("");
   const [deciding, setDeciding] = useState(false);
   const router = useRouter();
+  // Optimistischer Status: sofort sichtbar, bevor der Server nachzieht.
+  const effectiveStatus: TaskStatus = localStatus ?? task.status;
+
+  const changeStatus = async (status: TaskStatus) => {
+    if (status === effectiveStatus || changing) return;
+    setChanging(true);
+    setLocalStatus(status); // sofort umschalten
+    try {
+      const fd = new FormData();
+      fd.set("id", String(task.id));
+      fd.set("status", status);
+      await setStatusAction(fd);
+      router.refresh();
+    } catch {
+      setLocalStatus(null); // bei Fehler zurück
+    } finally {
+      setChanging(false);
+    }
+  };
+
   const assigneeNames = task.assignees.map((a) => a.name).join(", ") || "—";
-  const overdue = isOverdue(task.dueDate, task.status);
+  const overdue = isOverdue(task.dueDate, effectiveStatus);
   const heroId = reviewHeroId(task.description);
   const desc = cleanDescription(task.description);
   const bewertung = reviewEmailInfo(task.description);
@@ -182,15 +203,15 @@ function TaskCard({
 
   const accentLeft = overdue
     ? "border-l-rose-500"
-    : task.status === "erledigt"
+    : effectiveStatus === "erledigt"
       ? "border-l-emerald-500"
-      : task.status === "in_arbeit"
+      : effectiveStatus === "in_arbeit"
         ? "border-l-amber-500"
         : "border-l-gray-400";
   return (
     <div
       className={`rounded-lg border border-l-4 p-4 ${
-        task.status === "erledigt"
+        effectiveStatus === "erledigt"
           ? "border-gray-200 bg-gray-50"
           : overdue
             ? "border-rose-200 bg-rose-50/40"
@@ -200,12 +221,12 @@ function TaskCard({
       <div className="flex items-start justify-between gap-3">
         <p
           className={`min-w-0 font-medium ${
-            task.status === "erledigt" ? "text-gray-500 line-through" : "text-gray-900"
+            effectiveStatus === "erledigt" ? "text-gray-500 line-through" : "text-gray-900"
           }`}
         >
           {task.title}
         </p>
-        <StatusBadge status={task.status} />
+        <StatusBadge status={effectiveStatus} />
       </div>
       {desc && <p className="mt-1 whitespace-pre-wrap text-sm text-gray-600">{desc}</p>}
       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
@@ -228,7 +249,7 @@ function TaskCard({
       </div>
 
       {/* Vordefinierte Antwort-Buttons (z.B. aus einer Workflow-Regel) */}
-      {task.actionButtons.length > 0 && task.status !== "erledigt" && (
+      {task.actionButtons.length > 0 && effectiveStatus !== "erledigt" && (
         <div className="mt-3 flex flex-wrap items-center gap-2 rounded-md border border-brand-red/20 bg-brand-red/5 p-2">
           <span className="text-xs font-medium text-gray-600">Antwort:</span>
           {task.actionButtons.map((label) => (
@@ -383,15 +404,15 @@ function TaskCard({
       )}
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        {/* Status-Schalter (aktueller Status hervorgehoben) */}
+        {/* Status-Schalter – Klick ändert den Status sofort */}
         <div className="inline-flex overflow-hidden rounded-md border border-gray-300">
           {STATUS_ACTIONS.map((s, i) => {
-            const cur = s.key === task.status;
+            const cur = s.key === effectiveStatus;
             const base = `px-2.5 py-1 text-xs font-medium ${i > 0 ? "border-l border-gray-300" : ""}`;
             if (cur) {
               return (
-                <span key={s.key} className={`${base} ${statusActiveClass(task.status)}`}>
-                  {s.label}
+                <span key={s.key} className={`${base} ${statusActiveClass(effectiveStatus)}`}>
+                  ✓ {s.label}
                 </span>
               );
             }
@@ -399,15 +420,12 @@ function TaskCard({
               <button
                 key={s.key}
                 type="button"
-                onClick={() => setStatusTarget(s.key)}
-                aria-pressed={statusTarget === s.key}
-                className={`${base} ${
-                  statusTarget === s.key
-                    ? `${statusActiveClass(s.key)} ring-2 ring-inset ring-white/50`
-                    : "bg-white text-gray-600 hover:bg-gray-100"
-                }`}
+                disabled={changing}
+                onClick={() => changeStatus(s.key)}
+                title={`Status auf „${s.label}" setzen`}
+                className={`${base} bg-white text-gray-600 hover:bg-gray-100 disabled:opacity-50`}
               >
-                {statusTarget === s.key ? `✓ ${s.label}` : s.label}
+                {s.label}
               </button>
             );
           })}
@@ -432,40 +450,6 @@ function TaskCard({
           </button>
         </div>
       </div>
-
-      {/* Statuswechsel mit Pflicht-Bemerkung */}
-      {statusTarget && statusTarget !== task.status && (
-        <form action={setStatusAction} className="mt-2 rounded-md border border-gray-200 bg-gray-50 p-2">
-          <input type="hidden" name="id" value={task.id} />
-          <input type="hidden" name="status" value={statusTarget} />
-          <label className="mb-1 block text-xs font-medium text-gray-600">
-            Status auf „{taskStatusLabel(statusTarget)}" ändern – Bemerkung (Pflicht):
-          </label>
-          <textarea
-            name="note"
-            rows={2}
-            required
-            autoFocus
-            placeholder="Was wurde gemacht / warum die Änderung …"
-            className="w-full resize-y rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-brand-red/60"
-          />
-          <div className="mt-2 flex items-center gap-2">
-            <button
-              type="submit"
-              className="rounded-md bg-brand-red px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90"
-            >
-              Status ändern
-            </button>
-            <button
-              type="button"
-              onClick={() => setStatusTarget(null)}
-              className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:border-brand-red/50"
-            >
-              Abbrechen
-            </button>
-          </div>
-        </form>
-      )}
 
       {fwdOpen && (
         <form action={forwardAction} className="mt-2 flex items-center gap-2">

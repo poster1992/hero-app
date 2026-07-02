@@ -221,8 +221,6 @@ export async function setStatusAction(formData: FormData): Promise<void> {
   const note = String(formData.get("note") ?? "").trim();
   if (!Number.isFinite(id)) return;
   if (!TASK_STATUSES.some((s) => s.key === status)) return;
-  // Bemerkung ist beim Statuswechsel Pflicht.
-  if (!note) return;
 
   // Nur Ersteller oder eine zugewiesene Person dürfen den Status ändern.
   const task = await getTaskById(id);
@@ -230,7 +228,7 @@ export async function setStatusAction(formData: FormData): Promise<void> {
   const mayChange = task.createdById === meId || task.assignees.some((a) => a.id === meId);
   if (!mayChange) return;
 
-  await setTaskStatus(id, status, meId, note.slice(0, 2000));
+  await setTaskStatus(id, status, meId, note ? note.slice(0, 2000) : null);
 
   // Rückmeldung an den Ersteller (sofern nicht er selbst geändert hat).
   await notifyCreator(task, meId, {
