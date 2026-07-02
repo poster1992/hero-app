@@ -169,9 +169,9 @@ export default function ReceiptsTableClient({
     setFilters((prev) => ({ ...prev, [key]: value }));
 
   // Sortierung nach Datum / Nr. (klickbare Spaltenköpfe).
-  const [sortKey, setSortKey] = useState<"date" | "number" | null>(null);
+  const [sortKey, setSortKey] = useState<"date" | "number" | "party" | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
-  const sortBy = (key: "date" | "number") => {
+  const sortBy = (key: "date" | "number" | "party") => {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     else {
       setSortKey(key);
@@ -218,6 +218,7 @@ export default function ReceiptsTableClient({
     const dir = sortDir === "asc" ? 1 : -1;
     return [...filtered].sort((a, b) => {
       if (sortKey === "date") return (dateVal(a.dateStr) - dateVal(b.dateStr)) * dir;
+      if (sortKey === "party") return a.party.localeCompare(b.party, "de", { sensitivity: "base" }) * dir;
       return a.number.localeCompare(b.number, "de", { numeric: true, sensitivity: "base" }) * dir;
     });
   }, [filtered, sortKey, sortDir]);
@@ -510,7 +511,12 @@ export default function ReceiptsTableClient({
             </button>
           </th>
           {showDue && <th className="px-3 py-3 font-medium">Fällig</th>}
-          <th className="px-3 py-3 font-medium">{partyLabel}</th>
+          <th className="px-3 py-3 font-medium">
+            <button type="button" onClick={() => sortBy("party")} className="inline-flex items-center gap-1 hover:text-gray-900">
+              {partyLabel}
+              <span className="text-gray-400">{sortKey === "party" ? (sortDir === "asc" ? "▲" : "▼") : "↕"}</span>
+            </button>
+          </th>
           {showProject && <th className="px-3 py-3 font-medium">Projekt</th>}
           <th className="px-3 py-3 font-medium text-right">Netto</th>
           <th className="px-3 py-3 font-medium text-right">Steuer</th>
