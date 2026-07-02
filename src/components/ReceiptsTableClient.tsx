@@ -168,6 +168,17 @@ export default function ReceiptsTableClient({
   const setFilter = (key: FilterKey, value: string) =>
     setFilters((prev) => ({ ...prev, [key]: value }));
 
+  // Sortierung nach Datum / Nr. (klickbare Spaltenköpfe).
+  const [sortKey, setSortKey] = useState<"date" | "number" | null>(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const sortBy = (key: "date" | "number") => {
+    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setSortKey(key);
+      setSortDir(key === "date" ? "desc" : "asc");
+    }
+  };
+
   const filtered = useMemo(() => {
     const f = {
       number: filters.number.trim().toLowerCase(),
@@ -195,6 +206,21 @@ export default function ReceiptsTableClient({
       return true;
     });
   }, [rows, filters, showProject, showDue]);
+
+  // Datum "TT.MM.JJJJ" -> vergleichbarer Zahlenwert (JJJJMMTT); "—" ans Ende.
+  const dateVal = (s: string) => {
+    const m = /^(\d{2})\.(\d{2})\.(\d{4})/.exec(s.trim());
+    return m ? Number(`${m[3]}${m[2]}${m[1]}`) : -1;
+  };
+
+  const sorted = useMemo(() => {
+    if (!sortKey) return filtered;
+    const dir = sortDir === "asc" ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      if (sortKey === "date") return (dateVal(a.dateStr) - dateVal(b.dateStr)) * dir;
+      return a.number.localeCompare(b.number, "de", { numeric: true, sensitivity: "base" }) * dir;
+    });
+  }, [filtered, sortKey, sortDir]);
 
   const totals = useMemo(
     () =>
@@ -471,8 +497,18 @@ export default function ReceiptsTableClient({
               />
             </th>
           )}
-          <th className="px-3 py-3 font-medium">Nr.</th>
-          <th className="px-3 py-3 font-medium">Datum</th>
+          <th className="px-3 py-3 font-medium">
+            <button type="button" onClick={() => sortBy("number")} className="inline-flex items-center gap-1 hover:text-gray-900">
+              Nr.
+              <span className="text-gray-400">{sortKey === "number" ? (sortDir === "asc" ? "▲" : "▼") : "↕"}</span>
+            </button>
+          </th>
+          <th className="px-3 py-3 font-medium">
+            <button type="button" onClick={() => sortBy("date")} className="inline-flex items-center gap-1 hover:text-gray-900">
+              Datum
+              <span className="text-gray-400">{sortKey === "date" ? (sortDir === "asc" ? "▲" : "▼") : "↕"}</span>
+            </button>
+          </th>
           {showDue && <th className="px-3 py-3 font-medium">Fällig</th>}
           <th className="px-3 py-3 font-medium">{partyLabel}</th>
           {showProject && <th className="px-3 py-3 font-medium">Projekt</th>}
@@ -597,7 +633,7 @@ export default function ReceiptsTableClient({
             </td>
           </tr>
         ) : (
-          filtered.map((row) => (
+          sorted.map((row) => (
             <tr
               key={row.id}
               className="border-b border-gray-200 last:border-0 hover:bg-gray-100"
