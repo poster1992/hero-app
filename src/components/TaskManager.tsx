@@ -383,11 +383,14 @@ function TaskCard({
                 key={s.key}
                 type="button"
                 onClick={() => setStatusTarget(s.key)}
+                aria-pressed={statusTarget === s.key}
                 className={`${base} ${
-                  statusTarget === s.key ? "bg-gray-200 text-gray-900" : "bg-white text-gray-600 hover:bg-gray-100"
+                  statusTarget === s.key
+                    ? `${statusActiveClass(s.key)} ring-2 ring-inset ring-white/50`
+                    : "bg-white text-gray-600 hover:bg-gray-100"
                 }`}
               >
-                {s.label}
+                {statusTarget === s.key ? `✓ ${s.label}` : s.label}
               </button>
             );
           })}
