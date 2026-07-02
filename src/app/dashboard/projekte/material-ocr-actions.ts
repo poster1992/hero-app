@@ -30,7 +30,7 @@ const PRICE = { in: 1, out: 5 }; // $ / 1 Mio Tokens (Haiku)
 const USD_EUR = 0.92;
 // Version der OCR-Extraktionslogik – Änderung invalidiert den Beleg-Cache.
 // WICHTIG: Prompt + Version mit src/lib/beleg-article-ocr.ts synchron halten.
-const OCR_VERSION = "v3-fz-rabatt";
+const OCR_VERSION = "v4-einheit";
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const docHashOf = (src: string) => createHash("sha256").update(`${src}|${OCR_VERSION}`).digest("hex");
 
@@ -102,9 +102,15 @@ async function ocrBelegArticles(
               "stehenden Position: line_total (netto) = Positionsbetrag − Rabattabzug (Beispiel: 1.269,74 − 444,41 = " +
               "825,33). Verwende IMMER den Netto-Betrag NACH Rabatt, niemals den Bruttobetrag davor. Gib die " +
               "Rabattzeile NICHT als eigene Position aus. Wenn eine 'Nettosumme' für die Position angegeben ist, nimm diese. " +
-              "EINHEIT/MENGE: Nennt eine Position eine Gebindemenge (z.B. '14 KAR') UND eine Basiseinheit mit Stückpreis " +
-              "(z.B. '62,98 / 1 M2', '~20,161 m²'), dann nutze die BASISEINHEIT: unit = Einheit des Stückpreises (z.B. m2, ST), " +
-              "quantity = Menge in dieser Basiseinheit, unit_price = line_total(netto) / quantity. " +
+              "EINHEIT/MENGE – SEHR WICHTIG für konsistente Preise (derselbe Artikel MUSS über alle Rechnungen dieselbe " +
+              "Einheit haben): (1) Wird ein Artikel klar nach FLÄCHE/LÄNGE/VOLUMEN verkauft (Stückpreis wie '62,98 / 1 M2', " +
+              "'.. / lfm', '.. / l'), nutze diese Einheit (m2, lfm, l): quantity = Menge in dieser Einheit, unit_price = " +
+              "line_total / quantity. (2) Wird ein Artikel in GEBINDEN verkauft (Sack, Beutel, Karton, Eimer, Rolle, " +
+              "Stück/ST – oft mit Füllgewicht im Namen, z.B. 'SERVOFLEX K PLUS 20 KG SACK', 'X 5 KG BEUTEL'), nutze IMMER " +
+              "die GEBINDE-/VERKAUFSEINHEIT: unit = Sack/Beutel/Karton/Rolle/Stück, quantity = ANZAHL der Gebinde (Spalte " +
+              "'Menge'/'Anzahl', z.B. 54), unit_price = line_total / Anzahl. Verwende NIEMALS das Füllgewicht in kg (z.B. " +
+              "eine Gewichtsspalte '1.080,000' oder einen kg-Grundpreis) als unit oder quantity – das '20 KG' im Namen ist " +
+              "nur die Packungsgröße, NICHT die Menge. So ist z.B. 'Kiesel/Servoflex' immer je Sack, nicht mal kg mal Sack. " +
               "global_discount = ein auf die GESAMTSUMME/alle Positionen wirkender Rabatt/Nachlass (z.B. 'Rabatt 3%' " +
               "oder 'Nachlass 50,00 €'); gib percent ODER amount an, sonst beide null. " +
               "WICHTIG: Skonto ist KEIN Rabatt (Skonto = Zahlungsrabatt) und darf NICHT abgezogen werden. " +
