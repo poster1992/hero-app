@@ -146,6 +146,54 @@ function TaskCard({
     }
   };
 
+  const [busy, setBusy] = useState(false);
+
+  const submitNote = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const fd = new FormData(form);
+    fd.set("id", String(task.id));
+    if (!String(fd.get("note") ?? "").trim()) return;
+    setBusy(true);
+    try {
+      await addNoteAction(fd);
+      form.reset();
+      setNoteOpen(false);
+      router.refresh();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitForward = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const fd = new FormData(form);
+    fd.set("id", String(task.id));
+    if (!fd.get("toUserId")) return;
+    setBusy(true);
+    try {
+      await forwardAction(fd);
+      setFwdOpen(false);
+      router.refresh();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const clickActionButton = async (label: string) => {
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      fd.set("id", String(task.id));
+      fd.set("label", label);
+      await taskButtonAction(fd);
+      router.refresh();
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const assigneeNames = task.assignees.map((a) => a.name).join(", ") || "—";
   const overdue = isOverdue(task.dueDate, effectiveStatus);
   const heroId = reviewHeroId(task.description);
@@ -253,17 +301,16 @@ function TaskCard({
         <div className="mt-3 flex flex-wrap items-center gap-2 rounded-md border border-brand-red/20 bg-brand-red/5 p-2">
           <span className="text-xs font-medium text-gray-600">Antwort:</span>
           {task.actionButtons.map((label) => (
-            <form key={label} action={taskButtonAction}>
-              <input type="hidden" name="id" value={task.id} />
-              <input type="hidden" name="label" value={label} />
-              <button
-                type="submit"
-                title="Antwort senden & Aufgabe erledigen"
-                className="rounded-md border border-brand-red/40 bg-white px-3 py-1 text-xs font-semibold text-brand-red transition-colors hover:bg-brand-red hover:text-white"
-              >
-                {label}
-              </button>
-            </form>
+            <button
+              key={label}
+              type="button"
+              disabled={busy}
+              onClick={() => clickActionButton(label)}
+              title="Antwort senden & Aufgabe erledigen"
+              className="rounded-md border border-brand-red/40 bg-white px-3 py-1 text-xs font-semibold text-brand-red transition-colors hover:bg-brand-red hover:text-white disabled:opacity-50"
+            >
+              {label}
+            </button>
           ))}
         </div>
       )}
@@ -452,7 +499,7 @@ function TaskCard({
       </div>
 
       {fwdOpen && (
-        <form action={forwardAction} className="mt-2 flex items-center gap-2">
+        <form onSubmit={submitForward} className="mt-2 flex items-center gap-2">
           <input type="hidden" name="id" value={task.id} />
           <select
             name="toUserId"
@@ -471,15 +518,16 @@ function TaskCard({
           </select>
           <button
             type="submit"
-            className="shrink-0 rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900"
+            disabled={busy}
+            className="shrink-0 rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900 disabled:opacity-50"
           >
-            Weiterleiten
+            {busy ? "…" : "Weiterleiten"}
           </button>
         </form>
       )}
 
       {noteOpen && (
-        <form action={addNoteAction} className="mt-2 flex items-end gap-2">
+        <form onSubmit={submitNote} className="mt-2 flex items-end gap-2">
           <input type="hidden" name="id" value={task.id} />
           <textarea
             name="note"
@@ -490,9 +538,10 @@ function TaskCard({
           />
           <button
             type="submit"
-            className="shrink-0 rounded-md bg-brand-red px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90"
+            disabled={busy}
+            className="shrink-0 rounded-md bg-brand-red px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
           >
-            Senden
+            {busy ? "Sendet …" : "Senden"}
           </button>
         </form>
       )}
