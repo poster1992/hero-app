@@ -39,6 +39,7 @@ const NAV_ITEMS: NavItem[] = [
     module: "cockpit",
     children: [
       { href: "/dashboard/cockpit", label: "Unternehmensübersicht" },
+      { href: "/dashboard/aktivitaet", label: "Aktivitäts-Logbuch" },
       { href: "/dashboard/planung", label: "Arbeitsplanung" },
       { href: "/dashboard/belege", label: "Belege" },
       { href: "/dashboard/lohn-abschlaege", label: "Lohn Abschläge erstellen" },

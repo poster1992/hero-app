@@ -71,6 +71,60 @@ export async function getProjectLogbook(projectId: number, includeSystem = true)
   return entries.reverse();
 }
 
+export interface GlobalLogEntry {
+  id: number;
+  date: string | null;
+  title: string;
+  text: string;
+  author: string | null;
+  projectId: number | null;
+  projectRelativeId: number | null;
+  projectName: string | null;
+}
+
+/**
+ * Übergreifendes Aktivitäts-Logbuch über ALLE Projekte/Dokumente (neueste zuerst).
+ * Nutzt die globale HERO-`histories`-Query.
+ */
+export async function getGlobalLogbook(limit = 200): Promise<GlobalLogEntry[]> {
+  if (!(await getSession())) return [];
+  const data = await heroGraphQL<{
+    histories: {
+      id: number;
+      created: string | null;
+      custom_title: string | null;
+      custom_text: string | null;
+      author_name: string | null;
+      target_project_match: { id: number; name: string | null; relative_id: number | null } | null;
+      user: { partner: { name: string | null } | null; email: string | null } | null;
+    }[];
+  }>(
+    `query GlobalLog($limit: Int) {
+      histories(orderBy: "id", last: $limit) {
+        id
+        created
+        custom_title
+        custom_text
+        author_name
+        target_project_match { id name relative_id }
+        user { partner { name } email }
+      }
+    }`,
+    { limit }
+  );
+  // HERO liefert bei last:N absteigend (neueste zuerst).
+  return (data.histories ?? []).map((h) => ({
+    id: h.id,
+    date: h.created,
+    title: stripHtml(h.custom_title),
+    text: stripHtml(h.custom_text),
+    author: h.author_name?.trim() || h.user?.partner?.name || h.user?.email || null,
+    projectId: h.target_project_match?.id ?? null,
+    projectRelativeId: h.target_project_match?.relative_id ?? null,
+    projectName: h.target_project_match?.name ?? null,
+  }));
+}
+
 export interface AddLogbookResult {
   ok: boolean;
   message: string;
