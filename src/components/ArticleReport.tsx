@@ -23,7 +23,7 @@ function norm(s: string): string {
   return s.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
-type SortKey = "article" | "qty" | "amount" | "count";
+type SortKey = "article" | "supplier" | "qty" | "amount" | "count";
 
 interface Group {
   key: string;
@@ -33,6 +33,7 @@ interface Group {
   unit: string; // gemeinsame Einheit oder "gemischt"
   totalAmount: number;
   suppliers: number;
+  supplierList: string[]; // distinkte Lieferanten, häufigster zuerst
 }
 
 function BelegLink({ number, url }: { number: string; url: string | null }) {
@@ -67,7 +68,10 @@ export default function ArticleReport({ rows }: { rows: ArticleRow[] }) {
       const freq = new Map<string, number>();
       for (const r of gr) freq.set(r.article, (freq.get(r.article) ?? 0) + 1);
       const label = [...freq.entries()].sort((a, b) => b[1] - a[1] || a[0].length - b[0].length)[0][0];
-      out.push({ key, label, rows: gr, totalQty, unit, totalAmount, suppliers: new Set(gr.map((r) => r.supplier)).size });
+      const supFreq = new Map<string, number>();
+      for (const r of gr) if (r.supplier && r.supplier !== "—") supFreq.set(r.supplier, (supFreq.get(r.supplier) ?? 0) + 1);
+      const supplierList = [...supFreq.entries()].sort((a, b) => b[1] - a[1]).map(([n]) => n);
+      out.push({ key, label, rows: gr, totalQty, unit, totalAmount, suppliers: supplierList.length, supplierList });
     }
     return out;
   }, [rows, search]);
@@ -77,6 +81,7 @@ export default function ArticleReport({ rows }: { rows: ArticleRow[] }) {
     const val = (g: Group): string | number => {
       switch (sortKey) {
         case "article": return g.label.toLowerCase();
+        case "supplier": return (g.supplierList[0] ?? "").toLowerCase();
         case "qty": return g.totalQty;
         case "amount": return g.totalAmount;
         case "count": return g.rows.length;
@@ -140,6 +145,7 @@ export default function ArticleReport({ rows }: { rows: ArticleRow[] }) {
               <thead>
                 <tr className="text-xs uppercase tracking-wide text-gray-700 [&>th]:sticky [&>th]:top-0 [&>th]:z-10 [&>th]:border-b-2 [&>th]:border-white/10 [&>th]:bg-[#191c20]">
                   <Th k="article" label="Artikel" />
+                  <Th k="supplier" label="Lieferant" />
                   <Th k="qty" label="Gesamtmenge" cls="text-right" />
                   <Th k="amount" label="Gesamtbetrag" cls="text-right" />
                   <Th k="count" label="Belege" cls="text-center" />
@@ -155,6 +161,13 @@ export default function ArticleReport({ rows }: { rows: ArticleRow[] }) {
                           <span className="mr-1 text-gray-400">{open ? "▾" : "▸"}</span>
                           {g.label}
                         </td>
+                        <td className="px-3 py-2 align-top text-gray-700" title={g.supplierList.join(", ")}>
+                          {g.supplierList.length === 0
+                            ? "—"
+                            : g.supplierList.length === 1
+                              ? g.supplierList[0]
+                              : `${g.supplierList[0]} +${g.supplierList.length - 1}`}
+                        </td>
                         <td className="px-3 py-2 text-right align-top whitespace-nowrap text-gray-800">
                           {num.format(g.totalQty)} {g.unit || ""}
                         </td>
@@ -167,7 +180,7 @@ export default function ArticleReport({ rows }: { rows: ArticleRow[] }) {
                       </tr>
                       {open && (
                         <tr className="border-b border-gray-200 bg-black/30">
-                          <td colSpan={4} className="px-3 py-2">
+                          <td colSpan={5} className="px-3 py-2">
                             <table className="w-full text-[11px]">
                               <thead>
                                 <tr className="text-gray-300">
