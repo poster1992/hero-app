@@ -35,8 +35,12 @@ function stripHtml(s: string | null): string {
     .trim();
 }
 
-/** Loads a project's logbook entries (newest first). */
-export async function getProjectLogbook(projectId: number): Promise<LogbookEntry[]> {
+/**
+ * Loads a project's logbook entries (newest first).
+ * includeSystem=true zeigt das KOMPLETTE Logbuch inkl. System-Einträgen
+ * (Projekt zugewiesen, Zeiten eingetragen, Dokumente …).
+ */
+export async function getProjectLogbook(projectId: number, includeSystem = true): Promise<LogbookEntry[]> {
   const data = await heroGraphQL<{
     project_histories: {
       id: number;
@@ -46,8 +50,8 @@ export async function getProjectLogbook(projectId: number): Promise<LogbookEntry
       user: { partner: { name: string | null } | null; email: string | null } | null;
     }[];
   }>(
-    `query Logbook($id: Int) {
-      project_histories(project_match_id: $id, show_system_histories: false, orderBy: "id", first: 100) {
+    `query Logbook($id: Int, $sys: Boolean) {
+      project_histories(project_match_id: $id, show_system_histories: $sys, orderBy: "id", first: 300) {
         id
         created
         custom_title
@@ -55,7 +59,7 @@ export async function getProjectLogbook(projectId: number): Promise<LogbookEntry
         user { partner { name } email }
       }
     }`,
-    { id: projectId }
+    { id: projectId, sys: includeSystem }
   );
   const entries = (data.project_histories ?? []).map((h) => ({
     id: h.id,

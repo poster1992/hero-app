@@ -31,6 +31,7 @@ export default function LogbookButton({
   const [mounted, setMounted] = useState(false);
   const [entries, setEntries] = useState<LogbookEntry[] | null>(null);
   const [loading, setLoading] = useState(false);
+  const [includeSystem, setIncludeSystem] = useState(true);
   const [noteText, setNoteText] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -106,18 +107,26 @@ export default function LogbookButton({
     };
   }, [open]);
 
+  async function loadEntries(sys: boolean) {
+    setLoading(true);
+    try {
+      setEntries(await getProjectLogbook(projectId, sys));
+    } catch {
+      setEntries([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function openLogbook() {
     setOpen(true);
-    if (entries === null && !loading) {
-      setLoading(true);
-      try {
-        setEntries(await getProjectLogbook(projectId));
-      } catch {
-        setEntries([]);
-      } finally {
-        setLoading(false);
-      }
-    }
+    if (entries === null && !loading) await loadEntries(includeSystem);
+  }
+
+  function switchView(sys: boolean) {
+    if (sys === includeSystem) return;
+    setIncludeSystem(sys);
+    void loadEntries(sys);
   }
 
   async function onSave(e: React.FormEvent) {
@@ -147,15 +156,34 @@ export default function LogbookButton({
         className="flex max-h-[85vh] w-full max-w-xl flex-col overflow-hidden rounded-xl border border-gray-700 bg-gray-900 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between gap-4 border-b border-gray-800 px-5 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-800 px-5 py-3">
           <p className="truncate text-sm font-medium text-gray-100">Logbuch · {projectName}</p>
-          <button
-            type="button"
-            onClick={() => setOpen(false)}
-            className="rounded-md border border-gray-700 px-3 py-1.5 text-xs font-medium text-gray-300 transition-colors hover:border-gray-500 hover:text-gray-100"
-          >
-            Schließen
-          </button>
+          <div className="flex items-center gap-2">
+            <div className="flex overflow-hidden rounded-md border border-gray-700 text-xs">
+              {[
+                { v: true, label: "Komplett" },
+                { v: false, label: "Nur Notizen" },
+              ].map((o) => (
+                <button
+                  key={String(o.v)}
+                  type="button"
+                  onClick={() => switchView(o.v)}
+                  className={`px-2.5 py-1 font-medium ${
+                    includeSystem === o.v ? "bg-brand-red text-white" : "text-gray-300 hover:bg-gray-800"
+                  }`}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              className="rounded-md border border-gray-700 px-3 py-1.5 text-xs font-medium text-gray-300 transition-colors hover:border-gray-500 hover:text-gray-100"
+            >
+              Schließen
+            </button>
+          </div>
         </div>
         <div className="overflow-y-auto">
           {loading ? (
