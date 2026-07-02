@@ -3,19 +3,23 @@ import { getSession } from "@/lib/session";
 import { listAllBelegArticles } from "@/lib/beleg-articles";
 import { getReceiptsInRange } from "@/lib/hero-api";
 import { getCustomerName, getDocumentUrl } from "@/lib/invoices";
+import { getMergeMap, type MergeInfo } from "@/lib/article-merges";
 import ArticleReport, { type ArticleRow } from "@/components/ArticleReport";
 
 export default async function ArtikelAuswertungPage() {
   if (!(await getSession())) redirect("/login");
 
   let rows: ArticleRow[] = [];
+  let merges: Record<string, MergeInfo> = {};
   let error: string | null = null;
   try {
     const now = new Date();
-    const [entries, receipts] = await Promise.all([
+    const [entries, receipts, mergeMap] = await Promise.all([
       listAllBelegArticles(),
       getReceiptsInRange(`${now.getUTCFullYear() - 1}-01-01T00:00:00Z`, `${now.getUTCFullYear() + 1}-12-31T23:59:59Z`),
+      getMergeMap().catch(() => ({})),
     ]);
+    merges = mergeMap;
     const recMap = new Map(receipts.map((r) => [r.id, r]));
     for (const e of entries) {
       const r = recMap.get(e.heroReceiptId);
@@ -59,7 +63,7 @@ export default async function ArtikelAuswertungPage() {
         </div>
       )}
 
-      <ArticleReport rows={rows} />
+      <ArticleReport rows={rows} merges={merges} />
     </div>
   );
 }
