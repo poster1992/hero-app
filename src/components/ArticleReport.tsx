@@ -166,17 +166,17 @@ export default function ArticleReport({ rows }: { rows: ArticleRow[] }) {
                         </td>
                       </tr>
                       {open && (
-                        <tr className="bg-gray-50/60">
+                        <tr className="border-b border-gray-200 bg-black/30">
                           <td colSpan={4} className="px-3 py-2">
                             <table className="w-full text-[11px]">
                               <thead>
-                                <tr className="text-gray-500">
-                                  <th className="px-2 py-1 text-left font-medium">Datum</th>
-                                  <th className="px-2 py-1 text-left font-medium">Lieferant</th>
-                                  <th className="px-2 py-1 text-right font-medium">Menge</th>
-                                  <th className="px-2 py-1 text-right font-medium">Einzelpreis</th>
-                                  <th className="px-2 py-1 text-right font-medium">Betrag</th>
-                                  <th className="px-2 py-1 text-left font-medium">Beleg</th>
+                                <tr className="text-gray-300">
+                                  <th className="px-2 py-1 text-left font-semibold">Datum</th>
+                                  <th className="px-2 py-1 text-left font-semibold">Lieferant</th>
+                                  <th className="px-2 py-1 text-right font-semibold">Menge</th>
+                                  <th className="px-2 py-1 text-right font-semibold">Einzelpreis</th>
+                                  <th className="px-2 py-1 text-right font-semibold">Betrag</th>
+                                  <th className="px-2 py-1 text-left font-semibold">Beleg</th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -184,12 +184,12 @@ export default function ArticleReport({ rows }: { rows: ArticleRow[] }) {
                                   .slice()
                                   .sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""))
                                   .map((r, i) => (
-                                    <tr key={`${g.key}-${i}`} className="border-t border-gray-200/70">
-                                      <td className="px-2 py-1 whitespace-nowrap text-gray-500">{r.date ? dateFmt.format(new Date(r.date)) : "—"}</td>
-                                      <td className="px-2 py-1 text-gray-700">{r.supplier}</td>
-                                      <td className="px-2 py-1 text-right whitespace-nowrap text-gray-700">{num.format(r.quantity)} {r.unit || ""}</td>
-                                      <td className="px-2 py-1 text-right whitespace-nowrap text-gray-700">{r.unitPrice > 0 ? eur.format(r.unitPrice) : "—"}</td>
-                                      <td className="px-2 py-1 text-right whitespace-nowrap font-medium text-gray-900">{eur.format(r.lineTotal)}</td>
+                                    <tr key={`${g.key}-${i}`} className="border-t border-white/10">
+                                      <td className="px-2 py-1 whitespace-nowrap text-gray-300">{r.date ? dateFmt.format(new Date(r.date)) : "—"}</td>
+                                      <td className="px-2 py-1 text-gray-100">{r.supplier}</td>
+                                      <td className="px-2 py-1 text-right whitespace-nowrap text-gray-100">{num.format(r.quantity)} {r.unit || ""}</td>
+                                      <td className="px-2 py-1 text-right whitespace-nowrap text-gray-100">{r.unitPrice > 0 ? eur.format(r.unitPrice) : "—"}</td>
+                                      <td className="px-2 py-1 text-right whitespace-nowrap font-semibold text-white">{eur.format(r.lineTotal)}</td>
                                       <td className="px-2 py-1 whitespace-nowrap"><BelegLink number={r.number} url={r.docUrl} /></td>
                                     </tr>
                                   ))}
