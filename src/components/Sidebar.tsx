@@ -48,6 +48,7 @@ const NAV_ITEMS: NavItem[] = [
       { href: "/dashboard/arbeitszeiten", label: "Arbeitszeiten" },
       { href: "/dashboard/abc-analyse", label: "ABC-Analyse" },
       { href: "/dashboard/preisvergleich", label: "Preisvergleich" },
+      { href: "/dashboard/artikel-auswertung", label: "Artikel-Auswertung" },
       { href: "/dashboard/mitarbeiterbewertung", label: "Mitarbeiterbewertung" },
       { href: "/dashboard/arbeitsvertrag", label: "Arbeitsvertrag erstellen" },
     ],
