@@ -2,7 +2,11 @@ import { getCustomerDocumentsByType, type CustomerInvoice } from "@/lib/hero-api
 import { getDocumentUrl, type InvoiceStatusTone } from "@/lib/invoices";
 import ReceiptsTableClient, { type ReceiptRow } from "@/components/ReceiptsTableClient";
 
-const dateFormatter = new Intl.DateTimeFormat("de-DE");
+const dateFormatter = new Intl.DateTimeFormat("de-DE", {
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+});
 
 function statusToTone(status: string | null): InvoiceStatusTone {
   const s = (status ?? "").toLowerCase();

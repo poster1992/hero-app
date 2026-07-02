@@ -207,10 +207,10 @@ export default function ReceiptsTableClient({
     });
   }, [rows, filters, showProject, showDue]);
 
-  // Datum "TT.MM.JJJJ" -> vergleichbarer Zahlenwert (JJJJMMTT); "—" ans Ende.
+  // Datum "T.M.JJJJ" oder "TT.MM.JJJJ" -> vergleichbarer Zahlenwert (JJJJMMTT); "—" ans Ende.
   const dateVal = (s: string) => {
-    const m = /^(\d{2})\.(\d{2})\.(\d{4})/.exec(s.trim());
-    return m ? Number(`${m[3]}${m[2]}${m[1]}`) : -1;
+    const m = /^(\d{1,2})\.(\d{1,2})\.(\d{4})/.exec(s.trim());
+    return m ? Number(`${m[3]}${m[2].padStart(2, "0")}${m[1].padStart(2, "0")}`) : -1;
   };
 
   const sorted = useMemo(() => {

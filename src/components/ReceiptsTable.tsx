@@ -11,7 +11,7 @@ import { getSupplierIbanMap } from "@/lib/supplier-ibans";
 import type { PaymentOverride } from "@/lib/receipt-payment-status";
 import type { ReceiptOcrFields } from "@/lib/receipt-ocr";
 
-const dateFormatter = new Intl.DateTimeFormat("de-DE");
+const dateFormatter = new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
 
 export default async function ReceiptsTable({
   receipts,
