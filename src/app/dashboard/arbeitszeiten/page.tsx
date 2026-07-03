@@ -5,7 +5,7 @@ import { MONTH_LABELS } from "@/lib/invoices";
 import WorkingHoursTable from "@/components/WorkingHoursTable";
 import MonthlyOverviewTable from "@/components/MonthlyOverviewTable";
 import { getMonthlyOverview, isMonthLocked, type MonthlyOverviewRow } from "@/lib/monthly-overview";
-import { getSession } from "@/lib/session";
+import { getEffectiveRole } from "@/lib/session";
 
 const BASE_PATH = "/dashboard/arbeitszeiten";
 
@@ -73,8 +73,9 @@ export default async function ArbeitszeitenPage({
     overviewError = e instanceof Error ? e.message : "Übersicht konnte nicht geladen werden.";
   }
 
-  const session = await getSession();
-  const isAdmin = session?.role === "administrator";
+  // Effektive Rolle: In der Admin-Rollen-Vorschau simuliert das die gesperrte Ansicht.
+  const { role } = await getEffectiveRole();
+  const isAdmin = role === "administrator";
 
   return (
     <div className="flex w-full max-w-none flex-1 flex-col gap-6 px-6 py-8">
