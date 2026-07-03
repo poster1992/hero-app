@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   saveMonthlyFieldAction,
@@ -9,6 +9,37 @@ import {
   setDocsCompleteAction,
 } from "@/app/dashboard/arbeitszeiten/overview-actions";
 import type { MonthlyOverviewRow, MonthlyField } from "@/lib/monthly-overview";
+
+/** Editierbare Zelle mit automatischem Zeilenumbruch (Textarea wächst mit). */
+function AutoCell({
+  value,
+  onChange,
+  onBlur,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onBlur: (v: string) => void;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const resize = () => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  };
+  useEffect(resize, [value]);
+  return (
+    <textarea
+      ref={ref}
+      rows={1}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      onBlur={(e) => onBlur(e.target.value)}
+      onInput={resize}
+      className="block w-full min-w-[7rem] resize-none overflow-hidden whitespace-pre-wrap break-words bg-transparent px-3 py-1.5 text-sm leading-snug text-gray-900 outline-none focus:bg-brand-red/5"
+    />
+  );
+}
 
 const FIELDS: { key: MonthlyField; label: string; prop: keyof MonthlyOverviewRow }[] = [
   { key: "krank", label: "Krank", prop: "krank" },
@@ -37,6 +68,13 @@ export default function MonthlyOverviewTable({
   const [busy, setBusy] = useState<string | null>(null);
   const [completeOverride, setCompleteOverride] = useState<Record<number, boolean>>({});
   const fileInputs = useRef<Record<number, HTMLInputElement | null>>({});
+
+  // Beim Monats-/Jahreswechsel lokale (optimistische) Zustände leeren, damit jeder
+  // Monat seinen eigenen Status/seine eigenen Werte aus den Serverdaten zeigt.
+  useEffect(() => {
+    setDraft({});
+    setCompleteOverride({});
+  }, [year, month]);
 
   const toggleComplete = (employeeId: number, current: boolean) => {
     const next = !current;
@@ -254,12 +292,11 @@ export default function MonthlyOverviewTable({
                     const original = String(row[f.prop] ?? "");
                     const k = cellKey(row.employeeId, f.key);
                     return (
-                      <td key={f.key} className="border border-gray-300 p-0">
-                        <input
+                      <td key={f.key} className="border border-gray-300 p-0 align-top">
+                        <AutoCell
                           value={draft[k] ?? original}
-                          onChange={(e) => setDraft((d) => ({ ...d, [k]: e.target.value }))}
-                          onBlur={(e) => saveField(row.employeeId, f.key, e.target.value, original)}
-                          className="w-full min-w-[7rem] bg-transparent px-3 py-1.5 text-sm text-gray-900 outline-none focus:bg-brand-red/5"
+                          onChange={(v) => setDraft((d) => ({ ...d, [k]: v }))}
+                          onBlur={(v) => saveField(row.employeeId, f.key, v, original)}
                         />
                       </td>
                     );
