@@ -19,6 +19,7 @@ export const MODULES: AppModule[] = [
   { key: "ueberfaellige_aufgaben", label: "Überfällige Aufgaben (Unternehmen)" },
   { key: "rechnungspruefung", label: "Rechnungsprüfung (Belege prüfen)" },
   { key: "ki", label: "KI-Assistent (Chat-Widget)" },
+  { key: "baustellen", label: "Baustellen-Dokumentation (Projekt-Fotos)" },
   { key: "hilfe", label: "Hilfe" },
 
   // Cockpit – einzelne Menüpunkte getrennt freigebbar.

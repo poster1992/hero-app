@@ -16,6 +16,7 @@ import {
 import { getUserByUsername } from "@/lib/users";
 import { sendMailResult, verifySmtp } from "@/lib/mailer";
 import { getGoogleReviewStats } from "@/lib/google-reviews";
+import { addBaustelle, deleteBaustelle } from "@/lib/baustellen-docs";
 
 const PATH = "/dashboard/einstellungen";
 
@@ -102,6 +103,30 @@ export async function checkGoogleReviewsAction(): Promise<CheckReviewsResult> {
   if (s.error) return { ok: false, message: s.error };
   if (s.count == null) return { ok: false, message: "Keine Daten – Place-ID prüfen." };
   return { ok: true, message: `${s.count} Rezensionen · Ø ${s.rating ?? "–"} ★` };
+}
+
+/** Fügt einen Baustellen-Doku-Ordner hinzu (löst die Projektnummer über HERO auf). */
+export async function addBaustelleAction(
+  _prev: SettingsState,
+  formData: FormData
+): Promise<SettingsState> {
+  if (!(await isAdmin())) return { error: "Kein Zugriff." };
+  const label = String(formData.get("label") ?? "");
+  const projectNr = String(formData.get("projectNr") ?? "");
+  const imageCategory = String(formData.get("imageCategory") ?? "");
+  const res = await addBaustelle({ label, projectNr, imageCategory });
+  if (res.error) return { error: res.error };
+  revalidatePath(PATH);
+  return { success: `Menüpunkt „${label.trim()}" hinzugefügt.` };
+}
+
+/** Entfernt einen Baustellen-Doku-Ordner. */
+export async function deleteBaustelleAction(formData: FormData): Promise<void> {
+  if (!(await isAdmin())) return;
+  const id = Number(formData.get("id"));
+  if (!Number.isFinite(id) || id <= 0) return;
+  await deleteBaustelle(id);
+  revalidatePath(PATH);
 }
 
 export interface TestMailResult {

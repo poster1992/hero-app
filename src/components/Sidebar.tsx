@@ -201,6 +201,13 @@ function NavIcon({ name }: { name: string }) {
           <path d="M3 9h18M8 20v-6h8v6" />
         </svg>
       );
+    case "kamera":
+      return (
+        <svg {...common}>
+          <path d="M3 8a2 2 0 012-2h2l1.5-2h7L17 6h2a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
+          <circle cx="12" cy="12.5" r="3.2" />
+        </svg>
+      );
     default:
       return null;
   }
@@ -211,16 +218,34 @@ const STORAGE_KEY = "sidebar-collapsed";
 export default function Sidebar({
   allowedModules,
   taskNotifCount = 0,
+  baustellen = [],
 }: {
   allowedModules: string[];
   taskNotifCount?: number;
+  baustellen?: { id: number; label: string }[];
 }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({});
+
+  // Dynamische Baustellen-Doku-Menüpunkte (in Einstellungen gepflegt), je mit Ordner „Dokumentation".
+  const baustellenItems: NavItem[] = baustellen.map((b) => ({
+    href: `/dashboard/baustellen/${b.id}`,
+    label: b.label,
+    icon: "kamera",
+    module: "baustellen",
+    children: [{ href: `/dashboard/baustellen/${b.id}`, label: "Dokumentation" }],
+  }));
+  const sourceItems: NavItem[] = (() => {
+    const idx = NAV_ITEMS.findIndex((i) => i.module === "konfiguration");
+    if (baustellenItems.length === 0) return NAV_ITEMS;
+    if (idx < 0) return [...NAV_ITEMS, ...baustellenItems];
+    return [...NAV_ITEMS.slice(0, idx), ...baustellenItems, ...NAV_ITEMS.slice(idx)];
+  })();
+
   // Kindpunkte nach eigenem Recht filtern (ohne Recht folgen sie dem Elternmodul).
-  const navItems = NAV_ITEMS.map((item) => ({
+  const navItems = sourceItems.map((item) => ({
     ...item,
     children: item.children?.filter((c) =>
       c.modulesAny

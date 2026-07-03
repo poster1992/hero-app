@@ -1859,3 +1859,96 @@ export async function getProjects(): Promise<ProjectSummary[]> {
 
   return result;
 }
+
+// ---------------------------------------------------------------------------
+// Baustellen-Dokumentation: Fotos zu einem HERO-Projekt (FileUpload-System).
+// ---------------------------------------------------------------------------
+
+export interface ProjectPhoto {
+  id: number;
+  filename: string;
+  created: string | null;
+  size: number | null;
+  /** Signierte Vorschau-URL (Thumbnail) aus HEROs Cloud – kein Speicher bei uns. */
+  thumbUrl: string;
+  /** Signierte URL zum Originalbild. */
+  fullUrl: string;
+}
+
+interface RawFileUpload {
+  id: number;
+  filename: string | null;
+  image_category: string | null;
+  type: string | null;
+  size: number | null;
+  created: string | null;
+  temporary_url: string | null;
+  thumbnails: { format: string | null; url: string | null }[] | null;
+}
+
+/** Findet ein Projekt anhand seiner Projektnummer (z. B. "PRJ-199"). */
+export async function findProjectByNr(
+  nr: string
+): Promise<{ projectMatchId: number; name: string; projectNr: string } | null> {
+  const clean = nr.trim();
+  if (!clean) return null;
+  const data = await heroGraphQL<{
+    project_matches: { id: number; project_nr: string | null; name: string | null }[] | null;
+  }>(
+    `query ($s: String) {
+      project_matches(search: $s, type: "project", first: 25) {
+        id
+        project_nr
+        name
+      }
+    }`,
+    { s: clean }
+  );
+  const list = data.project_matches ?? [];
+  const match =
+    list.find((p) => (p.project_nr ?? "").toLowerCase() === clean.toLowerCase()) ??
+    list.find((p) => (p.project_nr ?? "").toLowerCase().includes(clean.toLowerCase()));
+  if (!match) return null;
+  return { projectMatchId: match.id, name: match.name ?? "", projectNr: match.project_nr ?? clean };
+}
+
+/** Lädt die Fotos eines Projekts aus der angegebenen Bild-Kategorie (Live aus HERO). */
+export async function getProjectPhotos(
+  projectMatchId: number,
+  imageCategory: string
+): Promise<ProjectPhoto[]> {
+  const data = await heroGraphQL<{
+    project_matches: { file_uploads: RawFileUpload[] | null }[] | null;
+  }>(
+    `query ($ids: [Int]) {
+      project_matches(ids: $ids) {
+        file_uploads(is_deleted: false, first: 1000) {
+          id
+          filename
+          image_category
+          type
+          size
+          created
+          temporary_url(expires: 3600)
+          thumbnails(formats: [fit_512]) { format url }
+        }
+      }
+    }`,
+    { ids: [projectMatchId] }
+  );
+  const uploads = data.project_matches?.[0]?.file_uploads ?? [];
+  return uploads
+    .filter((u) => (u.image_category ?? "") === imageCategory && u.temporary_url)
+    .map((u) => {
+      const thumb = u.thumbnails?.find((t) => t.url)?.url ?? u.temporary_url!;
+      return {
+        id: u.id,
+        filename: u.filename ?? `Foto ${u.id}`,
+        created: u.created ?? null,
+        size: u.size ?? null,
+        thumbUrl: thumb,
+        fullUrl: u.temporary_url!,
+      };
+    })
+    .sort((a, b) => (b.created ?? "").localeCompare(a.created ?? ""));
+}

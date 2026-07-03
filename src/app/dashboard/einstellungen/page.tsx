@@ -12,6 +12,8 @@ import {
   GOOGLE_PLACE_ID_KEY,
 } from "@/lib/settings";
 import SettingsForm from "@/components/SettingsForm";
+import BaustellenAdmin from "@/components/BaustellenAdmin";
+import { listBaustellen, type BaustelleDoc } from "@/lib/baustellen-docs";
 
 export default async function EinstellungenPage() {
   const session = await getSession();
@@ -51,6 +53,13 @@ export default async function EinstellungenPage() {
     /* leer lassen */
   }
 
+  let baustellen: BaustelleDoc[] = [];
+  try {
+    baustellen = await listBaustellen();
+  } catch {
+    /* leer lassen */
+  }
+
   return (
     <div className="flex w-full max-w-full flex-1 flex-col gap-6 px-6 py-8">
       <header>
@@ -58,6 +67,7 @@ export default async function EinstellungenPage() {
         <p className="mt-1 text-sm text-gray-600">Allgemeine Konfiguration des Dashboards.</p>
       </header>
       <SettingsForm googleReviewUrl={googleReviewUrl} smtp={smtp} places={places} />
+      <BaustellenAdmin items={baustellen} />
     </div>
   );
 }
