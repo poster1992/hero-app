@@ -1,6 +1,9 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useMemo, useState, useTransition } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { addToOrderListAction } from "@/app/dashboard/bestellliste/actions";
 
 export interface PriceRow {
   article: string;
@@ -85,6 +88,37 @@ export default function PriceComparison({ rows }: { rows: PriceRow[] }) {
   const [sortKey, setSortKey] = useState<SortKey>("article");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  // Bestellliste: Auswahl von Positionen (article @ Lieferant @ Preis).
+  const router = useRouter();
+  const [ordering, startOrdering] = useTransition();
+  const [orderSel, setOrderSel] = useState<Set<string>>(new Set());
+  const [orderMsg, setOrderMsg] = useState<string | null>(null);
+  const rowKey = (r: PriceRow) => `${r.heroReceiptId}|${r.supplier}|${r.unitPrice}|${norm(r.article)}`;
+  const toggleOrder = (r: PriceRow) =>
+    setOrderSel((prev) => {
+      const n = new Set(prev);
+      const k = rowKey(r);
+      n.has(k) ? n.delete(k) : n.add(k);
+      return n;
+    });
+  const addToOrder = () => {
+    const picked = rows.filter((r) => orderSel.has(rowKey(r)));
+    if (picked.length === 0) return;
+    setOrderMsg(null);
+    startOrdering(async () => {
+      const res = await addToOrderListAction(
+        picked.map((r) => ({ articleKey: norm(r.article), articleLabel: r.article, supplier: r.supplier, unitPrice: r.unitPrice, unit: r.unit }))
+      );
+      if (res.ok) {
+        setOrderSel(new Set());
+        setOrderMsg("Zur Bestellliste hinzugefügt.");
+        router.refresh();
+      } else {
+        setOrderMsg(res.error ?? "Fehler.");
+      }
+    });
+  };
 
   // Günstigster Einzelpreis + Vorkommen je EXAKTER Bezeichnung (für die Positionsansicht).
   const exact = useMemo(() => {
@@ -235,10 +269,28 @@ export default function PriceComparison({ rows }: { rows: PriceRow[] }) {
           <input type="checkbox" checked={onlyComparable} onChange={(e) => setOnlyComparable(e.target.checked)} />
           Nur vergleichbare (mehrere Lieferanten)
         </label>
-        <span className="ml-auto text-sm text-gray-500">
+        <Link href="/dashboard/bestellliste" className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:border-brand-red/50">
+          🛒 Bestellliste
+        </Link>
+        <span className="text-sm text-gray-500">
           {grouped ? `${visibleGroups.length} Artikelgruppen` : `${flatRows.length} Positionen`}
         </span>
       </div>
+
+      {/* Auswahl → Bestellliste (Positionsansicht) */}
+      {orderSel.size > 0 && (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-brand-red/30 bg-brand-red/5 px-4 py-2">
+          <span className="text-sm font-medium text-gray-700">{orderSel.size} Position(en) ausgewählt</span>
+          <button type="button" disabled={ordering} onClick={addToOrder} className="rounded-md bg-brand-red px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50">
+            {ordering ? "…" : "🛒 Zur Bestellliste hinzufügen"}
+          </button>
+          <button type="button" onClick={() => setOrderSel(new Set())} className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
+            Auswahl aufheben
+          </button>
+          {orderMsg && <span className="text-xs text-emerald-600">{orderMsg}</span>}
+        </div>
+      )}
+      {orderMsg && orderSel.size === 0 && <p className="text-xs text-emerald-600">{orderMsg}</p>}
 
       <div className="rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
         {rows.length === 0 ? (
@@ -329,6 +381,7 @@ export default function PriceComparison({ rows }: { rows: PriceRow[] }) {
             <table className="w-full min-w-[900px] text-left text-xs">
               <thead>
                 <tr className="text-xs uppercase tracking-wide text-gray-700 [&>th]:sticky [&>th]:top-0 [&>th]:z-10 [&>th]:border-b-2 [&>th]:border-white/10 [&>th]:bg-[#191c20]">
+                  <th className="w-8 px-2 py-2" />
                   <Th k="article" label="Artikel" />
                   <Th k="supplier" label="Lieferant" />
                   <Th k="date" label="Datum" />
@@ -342,8 +395,12 @@ export default function PriceComparison({ rows }: { rows: PriceRow[] }) {
                 {flatRows.map((r, i) => {
                   const k = norm(r.article);
                   const comparable = (exact.count.get(k) ?? 0) > 1;
+                  const sel = orderSel.has(rowKey(r));
                   return (
-                    <tr key={`${r.heroReceiptId}-${i}`} className="border-b border-gray-200 last:border-0 hover:bg-gray-100">
+                    <tr key={`${r.heroReceiptId}-${i}`} className={`border-b border-gray-200 last:border-0 hover:bg-gray-100 ${sel ? "bg-brand-red/5" : ""}`}>
+                      <td className="px-2 py-2 align-top">
+                        <input type="checkbox" checked={sel} onChange={() => toggleOrder(r)} title="Zur Bestellliste auswählen" />
+                      </td>
                       <td className="px-3 py-2 align-top font-medium text-gray-800">{r.article}</td>
                       <td className="px-3 py-2 align-top text-gray-700">{r.supplier}</td>
                       <td className="px-3 py-2 align-top whitespace-nowrap text-gray-600">
