@@ -95,13 +95,14 @@ export default function MonthlyOverviewTable({
       const marginX = 12;
       const usable = 297 - marginX * 2;
       const cols = [
-        { label: "Mitarbeiter", w: 42, prop: "name" as const },
-        { label: "Krank", w: 30, prop: "krank" as const },
-        { label: "Krank gesamt", w: 37, prop: "krankGesamt" as const },
-        { label: "Urlaub", w: 30, prop: "urlaub" as const },
-        { label: "Urlaub gesamt", w: 37, prop: "urlaubGesamt" as const },
-        { label: "Überstunden mit 40% Aufschlag", w: 49, prop: "ueberstunden" as const },
-        { label: "Elternzeit/Sonderurlaub", w: usable - 42 - 30 - 37 - 30 - 37 - 49, prop: "elternzeit" as const },
+        { label: "Mitarbeiter", w: 34, prop: "name" as const },
+        { label: "Krank", w: 24, prop: "krank" as const },
+        { label: "Krank gesamt", w: 22, prop: "krankGesamt" as const },
+        { label: "Urlaub", w: 24, prop: "urlaub" as const },
+        { label: "Urlaub gesamt", w: 22, prop: "urlaubGesamt" as const },
+        { label: "Überstunden mit 40% Aufschlag", w: 40, prop: "ueberstunden" as const },
+        { label: "Elternzeit/Sonderurlaub", w: 38, prop: "elternzeit" as const },
+        { label: "Notiz", w: usable - 34 - 24 - 22 - 24 - 22 - 40 - 38, prop: "note" as const },
       ];
       let y = 16;
       doc.setFont("helvetica", "bold");
@@ -109,7 +110,6 @@ export default function MonthlyOverviewTable({
       doc.text(`Monatliche Übersicht ${periodLabel}`, marginX, y);
       y += 6;
 
-      const rowH = 9;
       const headerFont = 7.5;
       const headerLineH = 3.3;
       // Kopfhöhe nach dem am stärksten umbrochenen Label bemessen.
@@ -137,9 +137,14 @@ export default function MonthlyOverviewTable({
       };
       drawHeader();
 
+      const dataLineH = 3.4;
       doc.setFont("helvetica", "normal");
       doc.setFontSize(8);
       for (const row of rows) {
+        // Zeilenhöhe dynamisch nach der am stärksten umbrochenen Zelle (z. B. Notiz).
+        const cellLines = cols.map((c) => doc.splitTextToSize(String(row[c.prop] ?? ""), c.w - 3) as string[]);
+        const lineCount = Math.max(1, ...cellLines.map((l) => l.length));
+        const rowH = Math.max(9, lineCount * dataLineH + 3);
         if (y + rowH > 205) {
           doc.addPage();
           y = 16;
@@ -148,16 +153,16 @@ export default function MonthlyOverviewTable({
           doc.setFontSize(8);
         }
         let x = marginX;
-        for (const c of cols) {
+        cols.forEach((c, i) => {
           doc.setDrawColor(180, 180, 180);
           doc.rect(x, y, c.w, rowH);
-          const text = String(row[c.prop] ?? "");
-          if (text) {
+          const lines = cellLines[i];
+          if (lines.length && lines[0] !== "") {
             doc.setTextColor(20, 20, 20);
-            doc.text(doc.splitTextToSize(text, c.w - 3), x + 1.5, y + 5.5);
+            doc.text(lines, x + 1.5, y + 4);
           }
           x += c.w;
-        }
+        });
         y += rowH;
       }
       doc.save(`Monatliche-Uebersicht-${periodLabel.replace(/\s+/g, "-")}.pdf`);
