@@ -3,6 +3,8 @@ import MonthTabs from "@/components/MonthTabs";
 import { getTrackingTimes } from "@/lib/hero-api";
 import { MONTH_LABELS } from "@/lib/invoices";
 import WorkingHoursTable from "@/components/WorkingHoursTable";
+import MonthlyOverviewTable from "@/components/MonthlyOverviewTable";
+import { getMonthlyOverview, type MonthlyOverviewRow } from "@/lib/monthly-overview";
 
 const BASE_PATH = "/dashboard/arbeitszeiten";
 
@@ -60,6 +62,15 @@ export default async function ArbeitszeitenPage({
     .map(([name, hours]) => ({ name, hours: Math.round(hours * 100) / 100 }))
     .sort((a, b) => b.hours - a.hours);
 
+  // Monatliche Übersicht (Krank/Urlaub/Überstunden je Mitarbeiter aus der Abschlagsliste).
+  let overview: MonthlyOverviewRow[] = [];
+  let overviewError: string | null = null;
+  try {
+    overview = await getMonthlyOverview(year, month);
+  } catch (e) {
+    overviewError = e instanceof Error ? e.message : "Übersicht konnte nicht geladen werden.";
+  }
+
   return (
     <div className="flex w-full max-w-none flex-1 flex-col gap-6 px-6 py-8">
       <header className="flex flex-wrap items-center justify-between gap-4">
@@ -105,6 +116,19 @@ export default async function ArbeitszeitenPage({
             <WorkingHoursTable entries={entries} />
           </div>
         </>
+      )}
+
+      {overviewError ? (
+        <div className="rounded-md border border-brand-red/30 bg-brand-red/10 p-4 text-sm text-red-300">
+          {overviewError}
+        </div>
+      ) : (
+        <MonthlyOverviewTable
+          rows={overview}
+          year={year}
+          month={month}
+          periodLabel={`${MONTH_LABELS[month - 1]} ${year}`}
+        />
       )}
     </div>
   );
