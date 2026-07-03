@@ -43,6 +43,7 @@ export default async function MonthlyReceipts({
   ocrStatus,
   searchIds,
   q = "",
+  restricted = false,
 }: {
   title: string;
   type: ReceiptType;
@@ -51,6 +52,8 @@ export default async function MonthlyReceipts({
   month: number;
   view: ReceiptsView;
   partyLabel?: string;
+  /** Eingeschränkte Ansicht: nur Suche + Belegliste (ohne Summen, Import-Tools, Tabs, Jahr). */
+  restricted?: boolean;
   /** Manually uploaded receipts (year), folded into the summary cards. */
   manual?: ManualReceipt[];
   /** Review status per HERO receipt id (Rechnungsprüfung). */
@@ -148,7 +151,7 @@ export default async function MonthlyReceipts({
       <header className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-2xl font-semibold text-gray-900">{title}</h1>
         <div className="flex flex-wrap items-center gap-2">
-          {type === "output" && (
+          {type === "output" && !restricted && (
             <>
               <Link
                 href="/dashboard/belege/kontoauszug"
@@ -164,10 +167,13 @@ export default async function MonthlyReceipts({
               </Link>
             </>
           )}
-          <YearSelector year={year} basePath={basePath} extraParams={{ view, month: String(month) }} />
+          {!restricted && (
+            <YearSelector year={year} basePath={basePath} extraParams={{ view, month: String(month) }} />
+          )}
         </div>
       </header>
 
+      {!restricted && (
       <div className="flex flex-wrap gap-1.5">
         {(canReview
           ? [...VIEW_OPTIONS, { value: "unreviewed" as ReceiptsView, label: "Ungeprüft" }]
@@ -189,6 +195,7 @@ export default async function MonthlyReceipts({
           );
         })}
       </div>
+      )}
 
       {type === "output" && (
         <div className="flex flex-wrap items-center gap-3">
@@ -218,11 +225,11 @@ export default async function MonthlyReceipts({
               </a>
             )}
           </form>
-          {ocrStatus && <OcrIndexPanel status={ocrStatus} />}
+          {ocrStatus && !restricted && <OcrIndexPanel status={ocrStatus} />}
         </div>
       )}
 
-      {view === "month" && !searchIds && (
+      {!restricted && view === "month" && !searchIds && (
         <MonthTabs year={year} month={month} basePath={basePath} counts={counts} view={view} />
       )}
 
@@ -232,7 +239,7 @@ export default async function MonthlyReceipts({
         </div>
       )}
 
-      {monthly && <ReceiptsSummaryPanel summary={summary} />}
+      {monthly && !restricted && <ReceiptsSummaryPanel summary={summary} />}
 
       {monthly && (
         <div className="rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">

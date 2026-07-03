@@ -1,10 +1,13 @@
 import MonthlyReceipts, { type ReceiptsView } from "@/components/MonthlyReceipts";
 import ManualBelege from "@/components/ManualBelege";
+import BelegeChecklist from "@/components/BelegeChecklist";
 import { listManualReceipts } from "@/lib/manual-receipts";
 import { listReceiptReviews } from "@/lib/receipt-reviews";
 import { getPaymentOverrideMap } from "@/lib/receipt-payment-status";
 import { getReceiptOcrMap, searchOcrHeroIds } from "@/lib/receipt-ocr";
 import { getOcrStatus } from "@/app/dashboard/belege/ocr-index";
+import { listChecklist } from "@/lib/belege-checklist";
+import { MONTH_LABELS } from "@/lib/invoices";
 import { listUsers, getUserByUsername } from "@/lib/users";
 import { getAllowedModules } from "@/lib/role-store";
 import { getSession } from "@/lib/session";
@@ -70,14 +73,20 @@ export default async function BelegePage({
     // Optional – ohne Overrides gilt einfach der HERO-Status.
   }
 
-  // Rechnungsprüfung: Status, Prüfer-Liste und Berechtigung.
+  // Rechnungsprüfung + Zugriffsstufe (voll vs. eingeschränkt).
   let reviews: Awaited<ReturnType<typeof listReceiptReviews>> = new Map();
   let reviewers: { id: number; name: string }[] = [];
   let canReview = false;
+  // Ohne vollen Belege-Zugriff nur die eingeschränkte Ansicht (Checkliste + Belegliste + Suche).
+  let restricted = false;
   try {
     const session = await getSession();
     const me = session ? await getUserByUsername(session.username) : null;
-    if (me) canReview = (await getAllowedModules(me.role)).includes("rechnungspruefung");
+    if (me) {
+      const mods = await getAllowedModules(me.role);
+      canReview = mods.includes("rechnungspruefung");
+      restricted = !mods.includes("cockpit_belege");
+    }
     if (canReview) {
       const [r, users] = await Promise.all([listReceiptReviews(), listUsers()]);
       reviews = r;
@@ -89,8 +98,25 @@ export default async function BelegePage({
     // Prüfung ist optional – Fehler hier blockiert die Seite nicht.
   }
 
+  // Checkliste nur für die eingeschränkte Ansicht direkt laden.
+  let checklist: Awaited<ReturnType<typeof listChecklist>> = [];
+  if (restricted) {
+    try {
+      checklist = await listChecklist(year, month);
+    } catch {
+      // optional – ohne Checkliste bleibt der Bereich leer.
+    }
+  }
+
+  const monthLabel = `${MONTH_LABELS[month - 1]} ${year}`;
+
   return (
     <>
+      {restricted && (
+        <div className="w-full max-w-none px-6 pt-8">
+          <BelegeChecklist items={checklist} year={year} month={month} periodLabel={monthLabel} />
+        </div>
+      )}
       <MonthlyReceipts
         title="Belege"
         type="output"
@@ -108,8 +134,9 @@ export default async function BelegePage({
         ocrStatus={ocrStatus}
         searchIds={searchIds}
         q={q}
+        restricted={restricted}
       />
-      <ManualBelege year={year} month={month} view={view} />
+      {!restricted && <ManualBelege year={year} month={month} view={view} />}
     </>
   );
 }

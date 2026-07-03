@@ -12,6 +12,8 @@ interface NavChild {
   label: string;
   /** Optionales Recht; ohne Angabe folgt der Punkt dem Elternmodul. */
   module?: string;
+  /** Sichtbar, sobald eines dieser Rechte vorhanden ist (überstimmt `module`). */
+  modulesAny?: string[];
 }
 
 interface NavItem {
@@ -48,7 +50,7 @@ const NAV_ITEMS: NavItem[] = [
       { href: "/dashboard/cockpit", label: "Unternehmensübersicht", module: "cockpit_uebersicht" },
       { href: "/dashboard/aktivitaet", label: "Aktivitäts-Logbuch", module: "cockpit_aktivitaet" },
       { href: "/dashboard/planung", label: "Arbeitsplanung", module: "cockpit_planung" },
-      { href: "/dashboard/belege", label: "Belege", module: "cockpit_belege" },
+      { href: "/dashboard/belege", label: "Belege", module: "cockpit_belege", modulesAny: ["cockpit_belege", "cockpit_belege_basis"] },
       { href: "/dashboard/lohn-abschlaege", label: "Lohn Abschläge erstellen", module: "cockpit_lohn" },
       { href: "/dashboard/benzin", label: "Benzin / Tankkosten", module: "cockpit_benzin" },
       { href: "/dashboard/rechnungen", label: "Rechnungen", module: "cockpit_rechnungen" },
@@ -220,7 +222,11 @@ export default function Sidebar({
   // Kindpunkte nach eigenem Recht filtern (ohne Recht folgen sie dem Elternmodul).
   const navItems = NAV_ITEMS.map((item) => ({
     ...item,
-    children: item.children?.filter((c) => !c.module || allowedModules.includes(c.module)),
+    children: item.children?.filter((c) =>
+      c.modulesAny
+        ? c.modulesAny.some((m) => allowedModules.includes(m))
+        : !c.module || allowedModules.includes(c.module)
+    ),
   })).filter((item) => {
     // Cockpit ist ein reiner Container: sichtbar, sobald mindestens ein Unterpunkt freigegeben ist.
     if (item.module === "cockpit") return (item.children?.length ?? 0) > 0;
