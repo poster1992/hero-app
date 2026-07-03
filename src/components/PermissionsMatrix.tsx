@@ -1,5 +1,6 @@
 "use client";
 
+import { Fragment } from "react";
 import { savePermissionsAction } from "@/app/dashboard/gruppen/actions";
 import type { AppModule } from "@/lib/modules";
 
@@ -29,7 +30,8 @@ export default function PermissionsMatrix({
     <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
       <h2 className="mb-1 text-lg font-semibold text-gray-900">Rechte je Gruppe</h2>
       <p className="mb-4 text-sm text-gray-600">
-        Lege fest, welche Bereiche jede Gruppe im Menü sieht. Administrator hat immer vollen Zugriff.
+        Lege fest, welche Bereiche jede Gruppe im Menü sieht – die Cockpit-Menüpunkte lassen sich
+        einzeln freigeben. Administrator hat immer vollen Zugriff.
       </p>
 
       <form action={savePermissionsAction}>
@@ -47,21 +49,37 @@ export default function PermissionsMatrix({
               </tr>
             </thead>
             <tbody>
-              {modules.map((m) => (
-                <tr key={m.key} className="border-t border-gray-100">
-                  <td className="px-3 py-2 text-gray-900">{m.label}</td>
-                  {roles.map((r) => (
-                    <td key={r.key} className="px-3 py-2 text-center">
-                      <input
-                        type="checkbox"
-                        name={`perm__${r.key}__${m.key}`}
-                        defaultChecked={permissions[r.key]?.includes(m.key) ?? false}
-                        className="h-4 w-4 accent-brand-red"
-                      />
-                    </td>
-                  ))}
-                </tr>
-              ))}
+              {modules.map((m, i) => {
+                const prev = modules[i - 1];
+                const showGroupHeader = m.group && m.group !== prev?.group;
+                return (
+                  <Fragment key={m.key}>
+                    {showGroupHeader && (
+                      <tr className="border-t border-gray-200 bg-gray-50">
+                        <td
+                          colSpan={roles.length + 1}
+                          className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500"
+                        >
+                          {m.group}
+                        </td>
+                      </tr>
+                    )}
+                    <tr className="border-t border-gray-100">
+                      <td className={`px-3 py-2 text-gray-900 ${m.group ? "pl-6" : ""}`}>{m.label}</td>
+                      {roles.map((r) => (
+                        <td key={r.key} className="px-3 py-2 text-center">
+                          <input
+                            type="checkbox"
+                            name={`perm__${r.key}__${m.key}`}
+                            defaultChecked={permissions[r.key]?.includes(m.key) ?? false}
+                            className="h-4 w-4 accent-brand-red"
+                          />
+                        </td>
+                      ))}
+                    </tr>
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>

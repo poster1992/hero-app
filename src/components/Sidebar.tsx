@@ -7,12 +7,19 @@ import Logo from "./Logo";
 import PushBell from "@/components/PushBell";
 import { logout } from "@/app/login/actions";
 
+interface NavChild {
+  href: string;
+  label: string;
+  /** Optionales Recht; ohne Angabe folgt der Punkt dem Elternmodul. */
+  module?: string;
+}
+
 interface NavItem {
   href: string;
   label: string;
   icon: string;
   module: string;
-  children?: { href: string; label: string }[];
+  children?: NavChild[];
 }
 
 const NAV_ITEMS: NavItem[] = [
@@ -38,20 +45,20 @@ const NAV_ITEMS: NavItem[] = [
     icon: "dashboard",
     module: "cockpit",
     children: [
-      { href: "/dashboard/cockpit", label: "Unternehmensübersicht" },
-      { href: "/dashboard/aktivitaet", label: "Aktivitäts-Logbuch" },
-      { href: "/dashboard/planung", label: "Arbeitsplanung" },
-      { href: "/dashboard/belege", label: "Belege" },
-      { href: "/dashboard/lohn-abschlaege", label: "Lohn Abschläge erstellen" },
-      { href: "/dashboard/benzin", label: "Benzin / Tankkosten" },
-      { href: "/dashboard/rechnungen", label: "Rechnungen" },
-      { href: "/dashboard/arbeitszeiten", label: "Arbeitszeiten" },
-      { href: "/dashboard/abc-analyse", label: "ABC-Analyse" },
-      { href: "/dashboard/preisvergleich", label: "Preisvergleich" },
-      { href: "/dashboard/artikel-auswertung", label: "Artikel-Auswertung" },
-      { href: "/dashboard/bestellliste", label: "Bestellliste" },
-      { href: "/dashboard/mitarbeiterbewertung", label: "Mitarbeiterbewertung" },
-      { href: "/dashboard/arbeitsvertrag", label: "Arbeitsvertrag erstellen" },
+      { href: "/dashboard/cockpit", label: "Unternehmensübersicht", module: "cockpit_uebersicht" },
+      { href: "/dashboard/aktivitaet", label: "Aktivitäts-Logbuch", module: "cockpit_aktivitaet" },
+      { href: "/dashboard/planung", label: "Arbeitsplanung", module: "cockpit_planung" },
+      { href: "/dashboard/belege", label: "Belege", module: "cockpit_belege" },
+      { href: "/dashboard/lohn-abschlaege", label: "Lohn Abschläge erstellen", module: "cockpit_lohn" },
+      { href: "/dashboard/benzin", label: "Benzin / Tankkosten", module: "cockpit_benzin" },
+      { href: "/dashboard/rechnungen", label: "Rechnungen", module: "cockpit_rechnungen" },
+      { href: "/dashboard/arbeitszeiten", label: "Arbeitszeiten", module: "cockpit_arbeitszeiten" },
+      { href: "/dashboard/abc-analyse", label: "ABC-Analyse", module: "cockpit_abc" },
+      { href: "/dashboard/preisvergleich", label: "Preisvergleich", module: "cockpit_preisvergleich" },
+      { href: "/dashboard/artikel-auswertung", label: "Artikel-Auswertung", module: "cockpit_artikel" },
+      { href: "/dashboard/bestellliste", label: "Bestellliste", module: "cockpit_bestellliste" },
+      { href: "/dashboard/mitarbeiterbewertung", label: "Mitarbeiterbewertung", module: "cockpit_mitarbeiterbewertung" },
+      { href: "/dashboard/arbeitsvertrag", label: "Arbeitsvertrag erstellen", module: "cockpit_arbeitsvertrag" },
     ],
   },
   {
@@ -210,7 +217,15 @@ export default function Sidebar({
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({});
-  const navItems = NAV_ITEMS.filter((item) => allowedModules.includes(item.module));
+  // Kindpunkte nach eigenem Recht filtern (ohne Recht folgen sie dem Elternmodul).
+  const navItems = NAV_ITEMS.map((item) => ({
+    ...item,
+    children: item.children?.filter((c) => !c.module || allowedModules.includes(c.module)),
+  })).filter((item) => {
+    // Cockpit ist ein reiner Container: sichtbar, sobald mindestens ein Unterpunkt freigegeben ist.
+    if (item.module === "cockpit") return (item.children?.length ?? 0) > 0;
+    return allowedModules.includes(item.module);
+  });
 
   useEffect(() => {
     setCollapsed(window.localStorage.getItem(STORAGE_KEY) === "1");

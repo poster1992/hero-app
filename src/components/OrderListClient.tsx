@@ -35,6 +35,12 @@ export default function OrderListClient({ items }: { items: OrderItem[] }) {
   }, [items]);
 
   const openItems = items.filter((i) => !i.done).length;
+  // Zeilensumme = Einkaufspreis × Menge (nur wenn beides vorhanden).
+  const lineTotal = (it: OrderItem) =>
+    it.unitPrice != null && it.quantity != null ? it.unitPrice * it.quantity : null;
+  const supplierSum = (list: OrderItem[]) =>
+    list.filter((i) => !i.done).reduce((s, i) => s + (lineTotal(i) ?? 0), 0);
+  const grandTotal = items.filter((i) => !i.done).reduce((s, i) => s + (lineTotal(i) ?? 0), 0);
 
   const patch = (id: number, p: { quantity?: number | null; done?: boolean; link?: string | null }) =>
     startTransition(async () => {
@@ -75,15 +81,17 @@ export default function OrderListClient({ items }: { items: OrderItem[] }) {
     const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     const body = bySupplier
       .map(([sup, list]) => {
-        const rows = list
-          .filter((i) => !i.done)
-          .map(
-            (i) =>
-              `<tr><td>${esc(i.articleLabel)}${i.link ? `<br/><a href="${esc(i.link)}" style="font-size:9pt;color:#c01818">${esc(i.link)}</a>` : ""}</td><td style="text-align:right">${i.quantity != null ? num.format(i.quantity) : ""} ${esc(i.unit || "")}</td><td style="text-align:right">${i.unitPrice != null ? eur.format(i.unitPrice) : ""}</td></tr>`
-          )
+        const open = list.filter((i) => !i.done);
+        const rows = open
+          .map((i) => {
+            const lt = lineTotal(i);
+            return `<tr><td>${esc(i.articleLabel)}${i.link ? `<br/><a href="${esc(i.link)}" style="font-size:9pt;color:#c01818">${esc(i.link)}</a>` : ""}</td><td style="text-align:right">${i.quantity != null ? num.format(i.quantity) : ""} ${esc(i.unit || "")}</td><td style="text-align:right">${i.unitPrice != null ? eur.format(i.unitPrice) : ""}</td><td style="text-align:right">${lt != null ? eur.format(lt) : ""}</td></tr>`;
+          })
           .join("");
         if (!rows) return "";
-        return `<h2>${esc(sup)}</h2><table><thead><tr><th>Artikel</th><th style="text-align:right">Menge</th><th style="text-align:right">Preis/Einh.</th></tr></thead><tbody>${rows}</tbody></table>`;
+        const sub = supplierSum(list);
+        const subRow = sub > 0 ? `<tr><td colspan="3" style="text-align:right;font-weight:bold">Zwischensumme EK</td><td style="text-align:right;font-weight:bold">${eur.format(sub)}</td></tr>` : "";
+        return `<h2>${esc(sup)}</h2><table><thead><tr><th>Artikel</th><th style="text-align:right">Menge</th><th style="text-align:right">EK/Einh.</th><th style="text-align:right">Gesamt EK</th></tr></thead><tbody>${rows}${subRow}</tbody></table>`;
       })
       .join("");
     const html = `<!doctype html><html lang="de"><head><meta charset="utf-8"/><title>Bestellliste</title>
@@ -91,7 +99,7 @@ export default function OrderListClient({ items }: { items: OrderItem[] }) {
       h1{font-size:16pt}h2{font-size:12pt;margin:1.1em 0 .3em;border-bottom:2px solid #c01818;padding-bottom:2px}
       table{width:100%;border-collapse:collapse;margin-bottom:.6em}
       th,td{border-bottom:1px solid #ccc;padding:4px 6px;text-align:left}</style></head>
-      <body><h1>Bestellliste</h1><p>Stand: ${new Date().toLocaleString("de-DE")}</p>${body || "<p>Keine offenen Artikel.</p>"}</body></html>`;
+      <body><h1>Bestellliste</h1><p>Stand: ${new Date().toLocaleString("de-DE")}</p>${body || "<p>Keine offenen Artikel.</p>"}${grandTotal > 0 ? `<p style="text-align:right;font-size:12pt;font-weight:bold;margin-top:1em">Gesamt EK (offen): ${eur.format(grandTotal)}</p>` : ""}</body></html>`;
     const w = window.open("", "_blank", "width=820,height=1040");
     if (!w) return;
     w.document.write(html);
@@ -169,6 +177,11 @@ export default function OrderListClient({ items }: { items: OrderItem[] }) {
   const toolbar = (
     <div className="flex flex-wrap items-center gap-3">
       <span className="text-sm text-gray-600">{openItems} offen · {items.length} gesamt</span>
+      {grandTotal > 0 && (
+        <span className="rounded-md bg-gray-100 px-2.5 py-1 text-sm font-semibold text-gray-800">
+          Gesamt EK: {eur.format(grandTotal)}
+        </span>
+      )}
       <div className="ml-auto flex items-center gap-2">
         <button type="button" onClick={() => setShowManual((v) => !v)} className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:border-brand-red/50">
           + Artikel
@@ -205,7 +218,10 @@ export default function OrderListClient({ items }: { items: OrderItem[] }) {
         <div key={sup} className="rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
           <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3">
             <h2 className="text-base font-semibold text-gray-900">🏷️ {sup}</h2>
-            <span className="text-xs text-gray-500">{list.filter((i) => !i.done).length} offen</span>
+            <span className="text-xs text-gray-500">
+              {list.filter((i) => !i.done).length} offen
+              {supplierSum(list) > 0 && <> · EK {eur.format(supplierSum(list))}</>}
+            </span>
           </div>
           <ul className="divide-y divide-gray-100">
             {list.map((it) => (
@@ -225,10 +241,7 @@ export default function OrderListClient({ items }: { items: OrderItem[] }) {
                       </a>
                     )}
                   </p>
-                  <p className="text-xs text-gray-500">
-                    {it.unitPrice != null ? `${eur.format(it.unitPrice)}${it.unit ? " / " + it.unit : ""}` : ""}
-                    {it.addedByName ? ` · von ${it.addedByName}` : ""}
-                  </p>
+                  {it.addedByName && <p className="text-xs text-gray-500">von {it.addedByName}</p>}
                   <input
                     value={linkDraft[it.id] ?? (it.link ?? "")}
                     onChange={(e) => setLinkDraft((p) => ({ ...p, [it.id]: e.target.value }))}
@@ -253,6 +266,14 @@ export default function OrderListClient({ items }: { items: OrderItem[] }) {
                     className="w-20 rounded-md border border-gray-300 px-2 py-1 text-right text-sm text-gray-900 outline-none focus:border-brand-red/60"
                   />
                   <span className="w-10 text-xs text-gray-500">{it.unit || ""}</span>
+                </div>
+                <div className="w-28 shrink-0 text-right">
+                  <p className="text-xs text-gray-500">
+                    EK {it.unitPrice != null ? `${eur.format(it.unitPrice)}${it.unit ? "/" + it.unit : ""}` : "—"}
+                  </p>
+                  {lineTotal(it) != null && (
+                    <p className="text-sm font-semibold text-gray-900">{eur.format(lineTotal(it)!)}</p>
+                  )}
                 </div>
                 <button type="button" onClick={() => remove(it.id)} className="text-xs text-gray-400 hover:text-brand-red" title="Entfernen">
                   ✕
