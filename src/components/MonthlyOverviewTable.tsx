@@ -33,7 +33,120 @@ export default function MonthlyOverviewTable({
   const [pending, startTransition] = useTransition();
   // Lokale Entwürfe je Zelle (damit die Eingabe beim Speichern nicht zurückspringt).
   const [draft, setDraft] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState<string | null>(null);
   const fileInputs = useRef<Record<number, HTMLInputElement | null>>({});
+
+  // PDF-Formular (hell) direkt erzeugen und herunterladen.
+  const exportPdf = async () => {
+    setBusy("pdf");
+    try {
+      const { jsPDF } = await import("jspdf");
+      const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+      const marginX = 12;
+      const usable = 297 - marginX * 2;
+      const cols = [
+        { label: "Mitarbeiter", w: 42, prop: "name" as const },
+        { label: "Krank", w: 30, prop: "krank" as const },
+        { label: "Krank gesamt", w: 37, prop: "krankGesamt" as const },
+        { label: "Urlaub", w: 30, prop: "urlaub" as const },
+        { label: "Urlaub gesamt", w: 37, prop: "urlaubGesamt" as const },
+        { label: "Überstunden mit 40% Aufschlag", w: 49, prop: "ueberstunden" as const },
+        { label: "Elternzeit/Sonderurlaub", w: usable - 42 - 30 - 37 - 30 - 37 - 49, prop: "elternzeit" as const },
+      ];
+      let y = 16;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(13);
+      doc.text(`Monatliche Übersicht ${periodLabel}`, marginX, y);
+      y += 6;
+
+      const rowH = 9;
+      const drawHeader = () => {
+        doc.setFillColor(230, 230, 230);
+        doc.setDrawColor(150, 150, 150);
+        doc.setTextColor(20, 20, 20);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(7.5);
+        let x = marginX;
+        for (const c of cols) {
+          doc.rect(x, y, c.w, rowH, "FD");
+          doc.text(doc.splitTextToSize(c.label, c.w - 3), x + 1.5, y + 4);
+          x += c.w;
+        }
+        y += rowH;
+      };
+      drawHeader();
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      for (const row of rows) {
+        if (y + rowH > 205) {
+          doc.addPage();
+          y = 16;
+          drawHeader();
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(8);
+        }
+        let x = marginX;
+        for (const c of cols) {
+          doc.setDrawColor(180, 180, 180);
+          doc.rect(x, y, c.w, rowH);
+          const text = String(row[c.prop] ?? "");
+          if (text) {
+            doc.setTextColor(20, 20, 20);
+            doc.text(doc.splitTextToSize(text, c.w - 3), x + 1.5, y + 5.5);
+          }
+          x += c.w;
+        }
+        y += rowH;
+      }
+      doc.save(`Monatliche-Uebersicht-${periodLabel.replace(/\s+/g, "-")}.pdf`);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  // Alle Krankmeldungen des Monats als ZIP (jede Datei separat) herunterladen.
+  const exportAttachments = async () => {
+    const files = rows.flatMap((r) =>
+      r.krankmeldungen.map((f) => ({ ...f, employee: r.name }))
+    );
+    if (files.length === 0) {
+      alert("Keine Krankmeldungen in diesem Monat vorhanden.");
+      return;
+    }
+    setBusy("zip");
+    try {
+      const JSZip = (await import("jszip")).default;
+      const zip = new JSZip();
+      const used = new Set<string>();
+      for (const f of files) {
+        try {
+          const res = await fetch(`/api/krankmeldung?id=${f.id}`);
+          if (!res.ok) continue;
+          const blob = await res.blob();
+          const safeEmp = f.employee.replace(/[^\wäöüÄÖÜß .-]/g, "_").slice(0, 40);
+          let name = `${safeEmp}_${f.fileName}`.replace(/\s+/g, " ").trim();
+          let i = 2;
+          const base = name.replace(/(\.[a-z0-9]+)?$/i, "");
+          const ext = name.slice(base.length);
+          while (used.has(name)) name = `${base} (${i++})${ext}`;
+          used.add(name);
+          zip.file(name, blob);
+        } catch {
+          // einzelne Datei überspringen
+        }
+      }
+      const out = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(out);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Krankmeldungen-${periodLabel.replace(/\s+/g, "-")}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setBusy(null);
+    }
+  };
 
   const cellKey = (employeeId: number, field: MonthlyField) => `${employeeId}:${field}`;
 
@@ -68,7 +181,25 @@ export default function MonthlyOverviewTable({
     <div className="rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-5 py-4">
         <h2 className="text-lg font-semibold text-gray-900">Monatliche Übersicht {periodLabel}</h2>
-        <p className="text-sm text-gray-600">{rows.length} Mitarbeiter</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm text-gray-600">{rows.length} Mitarbeiter</span>
+          <button
+            type="button"
+            onClick={exportPdf}
+            disabled={busy !== null}
+            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:border-brand-red/50 hover:text-gray-900 disabled:opacity-50"
+          >
+            {busy === "pdf" ? "PDF …" : "Als PDF"}
+          </button>
+          <button
+            type="button"
+            onClick={exportAttachments}
+            disabled={busy !== null}
+            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:border-brand-red/50 hover:text-gray-900 disabled:opacity-50"
+          >
+            {busy === "zip" ? "ZIP …" : "Anhänge (ZIP)"}
+          </button>
+        </div>
       </div>
 
       {rows.length === 0 ? (
@@ -92,7 +223,7 @@ export default function MonthlyOverviewTable({
             </thead>
             <tbody>
               {rows.map((row) => (
-                <tr key={row.employeeId} className="even:bg-gray-50">
+                <tr key={row.employeeId} className="even:bg-white/[0.04]">
                   <td className="border border-gray-300 px-3 py-1.5 font-medium text-gray-900">
                     {row.name}
                   </td>
