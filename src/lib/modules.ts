@@ -26,7 +26,7 @@ export const MODULES: AppModule[] = [
   { key: "cockpit_aktivitaet", label: "Aktivitäts-Logbuch", group: "Cockpit" },
   { key: "cockpit_planung", label: "Arbeitsplanung", group: "Cockpit" },
   { key: "cockpit_belege", label: "Belege (voller Zugriff)", group: "Cockpit" },
-  { key: "cockpit_belege_basis", label: "Belege – eingeschränkt (nur Checkliste, Belegliste & Suche)", group: "Cockpit" },
+  { key: "cockpit_belege_basis", label: "Belege – eingeschränkt (nur Belegliste & Suche)", group: "Cockpit" },
   { key: "cockpit_lohn", label: "Lohn Abschläge erstellen", group: "Cockpit" },
   { key: "cockpit_benzin", label: "Benzin / Tankkosten", group: "Cockpit" },
   { key: "cockpit_rechnungen", label: "Rechnungen", group: "Cockpit" },

@@ -1,13 +1,10 @@
 import MonthlyReceipts, { type ReceiptsView } from "@/components/MonthlyReceipts";
 import ManualBelege from "@/components/ManualBelege";
-import BelegeChecklist from "@/components/BelegeChecklist";
 import { listManualReceipts } from "@/lib/manual-receipts";
 import { listReceiptReviews } from "@/lib/receipt-reviews";
 import { getPaymentOverrideMap } from "@/lib/receipt-payment-status";
 import { getReceiptOcrMap, searchOcrHeroIds } from "@/lib/receipt-ocr";
 import { getOcrStatus } from "@/app/dashboard/belege/ocr-index";
-import { listChecklist } from "@/lib/belege-checklist";
-import { MONTH_LABELS } from "@/lib/invoices";
 import { listUsers, getUserByUsername } from "@/lib/users";
 import { getAllowedModules } from "@/lib/role-store";
 import { getSession } from "@/lib/session";
@@ -98,25 +95,8 @@ export default async function BelegePage({
     // Prüfung ist optional – Fehler hier blockiert die Seite nicht.
   }
 
-  // Checkliste nur für die eingeschränkte Ansicht direkt laden.
-  let checklist: Awaited<ReturnType<typeof listChecklist>> = [];
-  if (restricted) {
-    try {
-      checklist = await listChecklist(year, month);
-    } catch {
-      // optional – ohne Checkliste bleibt der Bereich leer.
-    }
-  }
-
-  const monthLabel = `${MONTH_LABELS[month - 1]} ${year}`;
-
   return (
     <>
-      {restricted && (
-        <div className="w-full max-w-none px-6 pt-8">
-          <BelegeChecklist items={checklist} year={year} month={month} periodLabel={monthLabel} />
-        </div>
-      )}
       <MonthlyReceipts
         title="Belege"
         type="output"
