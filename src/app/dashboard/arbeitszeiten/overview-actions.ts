@@ -5,6 +5,7 @@ import { getSession } from "@/lib/session";
 import { getUserByUsername } from "@/lib/users";
 import {
   saveMonthlyField,
+  saveDocsComplete,
   addKrankmeldung,
   deleteKrankmeldung,
   type MonthlyField,
@@ -47,6 +48,24 @@ export async function saveMonthlyFieldAction(
   if (!VALID_FIELDS.includes(field)) return { ok: false };
   try {
     await saveMonthlyField(year, month, employeeId, field, value ?? "");
+    revalidatePath(PATH);
+    return { ok: true };
+  } catch {
+    return { ok: false };
+  }
+}
+
+/** Setzt den Status „Unterlagen vollständig" (grün) bzw. „unvollständig" (rot). */
+export async function setDocsCompleteAction(
+  year: number,
+  month: number,
+  employeeId: number,
+  complete: boolean
+): Promise<{ ok: boolean }> {
+  if (!(await getSession())) return { ok: false };
+  if (!validPeriod(year, month, employeeId)) return { ok: false };
+  try {
+    await saveDocsComplete(year, month, employeeId, complete);
     revalidatePath(PATH);
     return { ok: true };
   } catch {

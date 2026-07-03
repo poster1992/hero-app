@@ -6,6 +6,7 @@ import {
   saveMonthlyFieldAction,
   uploadKrankmeldungAction,
   deleteKrankmeldungAction,
+  setDocsCompleteAction,
 } from "@/app/dashboard/arbeitszeiten/overview-actions";
 import type { MonthlyOverviewRow, MonthlyField } from "@/lib/monthly-overview";
 
@@ -34,7 +35,17 @@ export default function MonthlyOverviewTable({
   // Lokale Entwürfe je Zelle (damit die Eingabe beim Speichern nicht zurückspringt).
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
+  const [completeOverride, setCompleteOverride] = useState<Record<number, boolean>>({});
   const fileInputs = useRef<Record<number, HTMLInputElement | null>>({});
+
+  const toggleComplete = (employeeId: number, current: boolean) => {
+    const next = !current;
+    setCompleteOverride((m) => ({ ...m, [employeeId]: next }));
+    startTransition(async () => {
+      await setDocsCompleteAction(year, month, employeeId, next);
+      router.refresh();
+    });
+  };
 
   // PDF-Formular (hell) direkt erzeugen und herunterladen.
   const exportPdf = async () => {
@@ -69,14 +80,17 @@ export default function MonthlyOverviewTable({
       const maxLines = Math.max(...headerLines.map((l) => l.length));
       const headerH = maxLines * headerLineH + 3;
       const drawHeader = () => {
-        doc.setFillColor(230, 230, 230);
-        doc.setDrawColor(150, 150, 150);
-        doc.setTextColor(20, 20, 20);
         doc.setFont("helvetica", "bold");
         doc.setFontSize(headerFont);
         let x = marginX;
         cols.forEach((c, i) => {
-          doc.rect(x, y, c.w, headerH, "FD");
+          // Füllung und Rahmen getrennt zeichnen (browserseitig ist "FD" unzuverlässig
+          // und kann eine schwarze Fläche erzeugen). So bleibt der Kopf immer hell.
+          doc.setFillColor(235, 235, 235);
+          doc.rect(x, y, c.w, headerH, "F");
+          doc.setDrawColor(150, 150, 150);
+          doc.rect(x, y, c.w, headerH, "S");
+          doc.setTextColor(0, 0, 0);
           doc.text(headerLines[i], x + 1.5, y + 3.2);
           x += c.w;
         });
@@ -227,6 +241,7 @@ export default function MonthlyOverviewTable({
                   </th>
                 ))}
                 <th className="border border-gray-300 px-3 py-2">Krankmeldung</th>
+                <th className="border border-gray-300 px-3 py-2">Unterlagen</th>
               </tr>
             </thead>
             <tbody>
@@ -298,6 +313,24 @@ export default function MonthlyOverviewTable({
                         + Datei
                       </button>
                     </div>
+                  </td>
+                  <td className="border border-gray-300 px-3 py-1.5">
+                    {(() => {
+                      const isComplete = completeOverride[row.employeeId] ?? row.docsComplete;
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => toggleComplete(row.employeeId, isComplete)}
+                          disabled={pending}
+                          className={`w-full rounded-md px-2 py-1 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50 ${
+                            isComplete ? "bg-emerald-600" : "bg-brand-red"
+                          }`}
+                          title="Status umschalten"
+                        >
+                          {isComplete ? "Unterlagen vollständig" : "Unterlagen unvollständig"}
+                        </button>
+                      );
+                    })()}
                   </td>
                 </tr>
               ))}

@@ -25,6 +25,7 @@ export interface MonthlyOverviewRow {
   urlaubGesamt: string;
   ueberstunden: string;
   elternzeit: string;
+  docsComplete: boolean;
   krankmeldungen: KrankmeldungFile[];
 }
 
@@ -36,6 +37,7 @@ interface OverviewRow extends RowDataPacket {
   urlaub_gesamt: string | null;
   ueberstunden: string | null;
   elternzeit: string | null;
+  docs_complete: number | null;
 }
 
 interface KrankRow extends RowDataPacket {
@@ -54,7 +56,7 @@ export async function getMonthlyOverview(year: number, month: number): Promise<M
   const pool = getPool();
 
   const [saved] = await pool.query<OverviewRow[]>(
-    `SELECT employee_id, krank, krank_gesamt, urlaub, urlaub_gesamt, ueberstunden, elternzeit
+    `SELECT employee_id, krank, krank_gesamt, urlaub, urlaub_gesamt, ueberstunden, elternzeit, docs_complete
        FROM monthly_overview WHERE year = ? AND month = ?`,
     [year, month]
   );
@@ -85,6 +87,7 @@ export async function getMonthlyOverview(year: number, month: number): Promise<M
       urlaubGesamt: s?.urlaub_gesamt ?? "",
       ueberstunden: s?.ueberstunden ?? "",
       elternzeit: s?.elternzeit ?? "",
+      docsComplete: s?.docs_complete === 1,
       krankmeldungen: filesMap.get(e.id) ?? [],
     };
   });
@@ -123,6 +126,21 @@ export async function saveMonthlyField(
        VALUES (?, ?, ?, ?)
      ON DUPLICATE KEY UPDATE ${col} = VALUES(${col})`,
     [year, month, employeeId, val]
+  );
+}
+
+/** Setzt den Status „Unterlagen vollständig" je Mitarbeiter/Monat (Upsert). */
+export async function saveDocsComplete(
+  year: number,
+  month: number,
+  employeeId: number,
+  complete: boolean
+): Promise<void> {
+  await getPool().query(
+    `INSERT INTO monthly_overview (year, month, employee_id, docs_complete)
+       VALUES (?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE docs_complete = VALUES(docs_complete)`,
+    [year, month, employeeId, complete ? 1 : 0]
   );
 }
 
