@@ -10,6 +10,7 @@ export interface OrderItem {
   unit: string | null;
   quantity: number | null;
   note: string | null;
+  link: string | null;
   done: boolean;
   addedByName: string | null;
   addedAt: string | null;
@@ -24,6 +25,7 @@ interface OrderRow extends RowDataPacket {
   unit: string | null;
   quantity: string | number | null;
   note: string | null;
+  link: string | null;
   done: number;
   added_by_name: string | null;
   added_at: string | null;
@@ -31,7 +33,7 @@ interface OrderRow extends RowDataPacket {
 
 export async function listOrderList(): Promise<OrderItem[]> {
   const [rows] = await getPool().query<OrderRow[]>(
-    `SELECT o.id, o.article_key, o.article_label, o.supplier, o.unit_price, o.unit, o.quantity, o.note, o.done, o.added_at,
+    `SELECT o.id, o.article_key, o.article_label, o.supplier, o.unit_price, o.unit, o.quantity, o.note, o.link, o.done, o.added_at,
             COALESCE(NULLIF(u.display_name, ''), u.username) AS added_by_name
        FROM order_list o
        LEFT JOIN users u ON u.id = o.added_by
@@ -46,6 +48,7 @@ export async function listOrderList(): Promise<OrderItem[]> {
     unit: r.unit,
     quantity: r.quantity == null ? null : Number(r.quantity),
     note: r.note,
+    link: r.link,
     done: r.done === 1,
     addedByName: r.added_by_name,
     addedAt: r.added_at ? String(r.added_at) : null,
@@ -73,9 +76,32 @@ export async function addToOrderList(items: OrderInput[], userId: number | null)
   return (res as { affectedRows: number }).affectedRows;
 }
 
+/** Fügt einen manuell erfassten Artikel hinzu (freie Eingabe inkl. Internet-Link). */
+export async function addManualOrderItem(
+  input: {
+    articleLabel: string;
+    supplier: string | null;
+    unitPrice: number | null;
+    unit: string | null;
+    quantity: number | null;
+    link: string | null;
+    note: string | null;
+  },
+  userId: number | null
+): Promise<void> {
+  const label = input.articleLabel.trim();
+  if (!label) return;
+  const key = `manual:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
+  await getPool().query(
+    `INSERT INTO order_list (article_key, article_label, supplier, unit_price, unit, quantity, link, note, added_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [key, label.slice(0, 255), input.supplier, input.unitPrice, input.unit, input.quantity, input.link, input.note, userId]
+  );
+}
+
 export async function updateOrderItem(
   id: number,
-  patch: { quantity?: number | null; done?: boolean; note?: string | null; supplier?: string | null }
+  patch: { quantity?: number | null; done?: boolean; note?: string | null; supplier?: string | null; link?: string | null }
 ): Promise<void> {
   const sets: string[] = [];
   const vals: unknown[] = [];
@@ -83,6 +109,7 @@ export async function updateOrderItem(
   if (patch.done !== undefined) { sets.push("done = ?"); vals.push(patch.done ? 1 : 0); }
   if (patch.note !== undefined) { sets.push("note = ?"); vals.push(patch.note); }
   if (patch.supplier !== undefined) { sets.push("supplier = ?"); vals.push(patch.supplier); }
+  if (patch.link !== undefined) { sets.push("link = ?"); vals.push(patch.link); }
   if (sets.length === 0) return;
   vals.push(id);
   await getPool().query(`UPDATE order_list SET ${sets.join(", ")} WHERE id = ?`, vals);

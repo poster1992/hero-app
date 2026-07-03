@@ -5,6 +5,7 @@ import { getSession } from "@/lib/session";
 import { getUserByUsername } from "@/lib/users";
 import {
   addToOrderList,
+  addManualOrderItem,
   updateOrderItem,
   removeOrderItem,
   clearDoneOrderItems,
@@ -39,9 +40,50 @@ export async function addToOrderListAction(items: OrderInput[]): Promise<OrderAc
   }
 }
 
+/** Manuell erfasster Artikel (mit optionalem Internet-Link). */
+export async function addManualOrderItemAction(input: {
+  articleLabel: string;
+  supplier?: string | null;
+  unitPrice?: number | null;
+  unit?: string | null;
+  quantity?: number | null;
+  link?: string | null;
+  note?: string | null;
+}): Promise<OrderActionResult> {
+  const session = await getSession();
+  if (!session) return { ok: false, error: "Nicht angemeldet." };
+  if (!input.articleLabel?.trim()) return { ok: false, error: "Bitte einen Artikelnamen angeben." };
+  const link = (input.link ?? "").trim();
+  if (link && !/^https?:\/\/\S+/i.test(link)) return { ok: false, error: "Link muss mit http:// oder https:// beginnen." };
+  let uid: number | null = null;
+  try {
+    uid = (await getUserByUsername(session.username))?.id ?? null;
+  } catch {
+    uid = null;
+  }
+  try {
+    await addManualOrderItem(
+      {
+        articleLabel: input.articleLabel,
+        supplier: input.supplier?.trim() || null,
+        unitPrice: input.unitPrice ?? null,
+        unit: input.unit?.trim() || null,
+        quantity: input.quantity ?? null,
+        link: link || null,
+        note: input.note?.trim() || null,
+      },
+      uid
+    );
+    revalidatePath(PATH);
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "Hinzufügen fehlgeschlagen." };
+  }
+}
+
 export async function updateOrderItemAction(
   id: number,
-  patch: { quantity?: number | null; done?: boolean; note?: string | null }
+  patch: { quantity?: number | null; done?: boolean; note?: string | null; link?: string | null }
 ): Promise<{ ok: boolean }> {
   if (!(await getSession())) return { ok: false };
   if (!Number.isFinite(id) || id <= 0) return { ok: false };
