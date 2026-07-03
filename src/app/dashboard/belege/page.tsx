@@ -5,9 +5,9 @@ import { listReceiptReviews } from "@/lib/receipt-reviews";
 import { getPaymentOverrideMap } from "@/lib/receipt-payment-status";
 import { getReceiptOcrMap, searchOcrHeroIds } from "@/lib/receipt-ocr";
 import { getOcrStatus } from "@/app/dashboard/belege/ocr-index";
-import { listUsers, getUserByUsername } from "@/lib/users";
+import { listUsers } from "@/lib/users";
 import { getAllowedModules } from "@/lib/role-store";
-import { getSession } from "@/lib/session";
+import { getEffectiveRole } from "@/lib/session";
 
 const BASE_PATH = "/dashboard/belege";
 
@@ -77,10 +77,10 @@ export default async function BelegePage({
   // Ohne vollen Belege-Zugriff nur die eingeschränkte Ansicht (Checkliste + Belegliste + Suche).
   let restricted = false;
   try {
-    const session = await getSession();
-    const me = session ? await getUserByUsername(session.username) : null;
-    if (me) {
-      const mods = await getAllowedModules(me.role);
+    // Effektive Rolle nutzen, damit die Admin-Vorschau (preview_role) hier ebenso greift.
+    const { role } = await getEffectiveRole();
+    if (role) {
+      const mods = await getAllowedModules(role);
       canReview = mods.includes("rechnungspruefung");
       restricted = !mods.includes("cockpit_belege");
     }
