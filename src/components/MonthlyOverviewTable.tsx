@@ -60,19 +60,27 @@ export default function MonthlyOverviewTable({
       y += 6;
 
       const rowH = 9;
+      const headerFont = 7.5;
+      const headerLineH = 3.3;
+      // Kopfhöhe nach dem am stärksten umbrochenen Label bemessen.
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(headerFont);
+      const headerLines = cols.map((c) => doc.splitTextToSize(c.label, c.w - 3) as string[]);
+      const maxLines = Math.max(...headerLines.map((l) => l.length));
+      const headerH = maxLines * headerLineH + 3;
       const drawHeader = () => {
         doc.setFillColor(230, 230, 230);
         doc.setDrawColor(150, 150, 150);
         doc.setTextColor(20, 20, 20);
         doc.setFont("helvetica", "bold");
-        doc.setFontSize(7.5);
+        doc.setFontSize(headerFont);
         let x = marginX;
-        for (const c of cols) {
-          doc.rect(x, y, c.w, rowH, "FD");
-          doc.text(doc.splitTextToSize(c.label, c.w - 3), x + 1.5, y + 4);
+        cols.forEach((c, i) => {
+          doc.rect(x, y, c.w, headerH, "FD");
+          doc.text(headerLines[i], x + 1.5, y + 3.2);
           x += c.w;
-        }
-        y += rowH;
+        });
+        y += headerH;
       };
       drawHeader();
 
