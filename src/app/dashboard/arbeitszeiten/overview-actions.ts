@@ -8,6 +8,7 @@ import {
   saveDocsComplete,
   addKrankmeldung,
   deleteKrankmeldung,
+  setMonthLock,
   type MonthlyField,
 } from "@/lib/monthly-overview";
 
@@ -49,6 +50,30 @@ export async function saveMonthlyFieldAction(
   if (!VALID_FIELDS.includes(field)) return { ok: false };
   try {
     await saveMonthlyField(year, month, employeeId, field, value ?? "");
+    revalidatePath(PATH);
+    return { ok: true };
+  } catch {
+    return { ok: false };
+  }
+}
+
+/** Sperrt bzw. entsperrt einen Monat (nur Administrator). */
+export async function setMonthLockAction(
+  year: number,
+  month: number,
+  locked: boolean
+): Promise<{ ok: boolean }> {
+  const session = await getSession();
+  if (!session || session.role !== "administrator") return { ok: false };
+  if (!validPeriod(year, month, 1)) return { ok: false };
+  let uid: number | null = null;
+  try {
+    uid = (await getUserByUsername(session.username))?.id ?? null;
+  } catch {
+    uid = null;
+  }
+  try {
+    await setMonthLock(year, month, locked, uid);
     revalidatePath(PATH);
     return { ok: true };
   } catch {

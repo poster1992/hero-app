@@ -7,6 +7,7 @@ import {
   uploadKrankmeldungAction,
   deleteKrankmeldungAction,
   setDocsCompleteAction,
+  setMonthLockAction,
 } from "@/app/dashboard/arbeitszeiten/overview-actions";
 import type { MonthlyOverviewRow, MonthlyField } from "@/lib/monthly-overview";
 
@@ -15,10 +16,12 @@ function AutoCell({
   value,
   onChange,
   onBlur,
+  readOnly = false,
 }: {
   value: string;
   onChange: (v: string) => void;
   onBlur: (v: string) => void;
+  readOnly?: boolean;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const resize = () => {
@@ -32,6 +35,7 @@ function AutoCell({
     <textarea
       ref={ref}
       rows={1}
+      readOnly={readOnly}
       value={value}
       onChange={(e) => onChange(e.target.value)}
       onBlur={(e) => onBlur(e.target.value)}
@@ -56,11 +60,15 @@ export default function MonthlyOverviewTable({
   year,
   month,
   periodLabel,
+  isAdmin = false,
+  locked = false,
 }: {
   rows: MonthlyOverviewRow[];
   year: number;
   month: number;
   periodLabel: string;
+  isAdmin?: boolean;
+  locked?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -82,6 +90,13 @@ export default function MonthlyOverviewTable({
     setCompleteOverride((m) => ({ ...m, [employeeId]: next }));
     startTransition(async () => {
       await setDocsCompleteAction(year, month, employeeId, next);
+      router.refresh();
+    });
+  };
+
+  const toggleLock = () => {
+    startTransition(async () => {
+      await setMonthLockAction(year, month, !locked);
       router.refresh();
     });
   };
@@ -246,9 +261,29 @@ export default function MonthlyOverviewTable({
   return (
     <div className="rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-5 py-4">
-        <h2 className="text-lg font-semibold text-gray-900">Monatliche Übersicht {periodLabel}</h2>
+        <div className="flex items-center gap-2">
+          <h2 className="text-lg font-semibold text-gray-900">Monatliche Übersicht {periodLabel}</h2>
+          {locked && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-gray-200 px-2 py-0.5 text-xs font-semibold text-gray-700">
+              🔒 Gesperrt
+            </span>
+          )}
+        </div>
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm text-gray-600">{rows.length} Mitarbeiter</span>
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={toggleLock}
+              disabled={pending}
+              className={`rounded-md px-3 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50 ${
+                locked ? "bg-emerald-600" : "bg-gray-700"
+              }`}
+              title={locked ? "Monat entsperren" : "Monat sperren (nur für Admins sichtbar)"}
+            >
+              {locked ? "🔓 Entsperren" : "🔒 Sperren"}
+            </button>
+          )}
           <button
             type="button"
             onClick={exportPdf}
@@ -303,6 +338,7 @@ export default function MonthlyOverviewTable({
                           value={draft[k] ?? original}
                           onChange={(v) => setDraft((d) => ({ ...d, [k]: v }))}
                           onBlur={(v) => saveField(row.employeeId, f.key, v, original)}
+                          readOnly={locked}
                         />
                       </td>
                     );
@@ -326,8 +362,8 @@ export default function MonthlyOverviewTable({
                           <button
                             type="button"
                             onClick={() => removeFile(file.id)}
-                            disabled={pending}
-                            className="text-gray-400 hover:text-brand-red"
+                            disabled={pending || locked}
+                            className="text-gray-400 hover:text-brand-red disabled:opacity-40"
                             title="Entfernen"
                           >
                             ✕
@@ -350,7 +386,7 @@ export default function MonthlyOverviewTable({
                       <button
                         type="button"
                         onClick={() => fileInputs.current[row.employeeId]?.click()}
-                        disabled={pending}
+                        disabled={pending || locked}
                         className="rounded-md border border-gray-300 px-2 py-0.5 text-xs font-medium text-gray-700 hover:border-brand-red/50 hover:text-gray-900 disabled:opacity-50"
                       >
                         + Datei
@@ -364,7 +400,7 @@ export default function MonthlyOverviewTable({
                         <button
                           type="button"
                           onClick={() => toggleComplete(row.employeeId, isComplete)}
-                          disabled={pending}
+                          disabled={pending || locked}
                           className={`w-full rounded-md px-2 py-1 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50 ${
                             isComplete ? "bg-emerald-600" : "bg-brand-red"
                           }`}

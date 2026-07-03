@@ -134,6 +134,36 @@ export async function saveMonthlyField(
   );
 }
 
+/** Prüft, ob ein Monat gesperrt ist (Zeile vorhanden = gesperrt). */
+export async function isMonthLocked(year: number, month: number): Promise<boolean> {
+  const [rows] = await getPool().query<RowDataPacket[]>(
+    "SELECT 1 FROM monthly_overview_locks WHERE year = ? AND month = ? LIMIT 1",
+    [year, month]
+  );
+  return rows.length > 0;
+}
+
+/** Sperrt bzw. entsperrt einen Monat. */
+export async function setMonthLock(
+  year: number,
+  month: number,
+  locked: boolean,
+  userId: number | null
+): Promise<void> {
+  if (locked) {
+    await getPool().query(
+      `INSERT INTO monthly_overview_locks (year, month, locked_by) VALUES (?, ?, ?)
+       ON DUPLICATE KEY UPDATE locked_by = VALUES(locked_by), locked_at = CURRENT_TIMESTAMP`,
+      [year, month, userId]
+    );
+  } else {
+    await getPool().query(
+      "DELETE FROM monthly_overview_locks WHERE year = ? AND month = ?",
+      [year, month]
+    );
+  }
+}
+
 /** Setzt den Status „Unterlagen vollständig" je Mitarbeiter/Monat (Upsert). */
 export async function saveDocsComplete(
   year: number,
