@@ -25,6 +25,7 @@ export interface MonthlyOverviewRow {
   urlaubGesamt: string;
   ueberstunden: string;
   elternzeit: string;
+  note: string;
   docsComplete: boolean;
   krankmeldungen: KrankmeldungFile[];
 }
@@ -37,6 +38,7 @@ interface OverviewRow extends RowDataPacket {
   urlaub_gesamt: string | null;
   ueberstunden: string | null;
   elternzeit: string | null;
+  note: string | null;
   docs_complete: number | null;
 }
 
@@ -56,7 +58,7 @@ export async function getMonthlyOverview(year: number, month: number): Promise<M
   const pool = getPool();
 
   const [saved] = await pool.query<OverviewRow[]>(
-    `SELECT employee_id, krank, krank_gesamt, urlaub, urlaub_gesamt, ueberstunden, elternzeit, docs_complete
+    `SELECT employee_id, krank, krank_gesamt, urlaub, urlaub_gesamt, ueberstunden, elternzeit, note, docs_complete
        FROM monthly_overview WHERE year = ? AND month = ?`,
     [year, month]
   );
@@ -87,6 +89,7 @@ export async function getMonthlyOverview(year: number, month: number): Promise<M
       urlaubGesamt: s?.urlaub_gesamt ?? "",
       ueberstunden: s?.ueberstunden ?? "",
       elternzeit: s?.elternzeit ?? "",
+      note: s?.note ?? "",
       docsComplete: s?.docs_complete === 1,
       krankmeldungen: filesMap.get(e.id) ?? [],
     };
@@ -99,7 +102,8 @@ export type MonthlyField =
   | "urlaub"
   | "urlaub_gesamt"
   | "ueberstunden"
-  | "elternzeit";
+  | "elternzeit"
+  | "note";
 
 const FIELD_COLUMNS: Record<MonthlyField, string> = {
   krank: "krank",
@@ -108,6 +112,7 @@ const FIELD_COLUMNS: Record<MonthlyField, string> = {
   urlaub_gesamt: "urlaub_gesamt",
   ueberstunden: "ueberstunden",
   elternzeit: "elternzeit",
+  note: "note",
 };
 
 /** Speichert einen einzelnen Feldwert (Upsert je Mitarbeiter/Monat). */
@@ -120,7 +125,7 @@ export async function saveMonthlyField(
 ): Promise<void> {
   const col = FIELD_COLUMNS[field];
   if (!col) return;
-  const val = value.trim().slice(0, 255) || null;
+  const val = value.trim().slice(0, field === "note" ? 1000 : 255) || null;
   await getPool().query(
     `INSERT INTO monthly_overview (year, month, employee_id, ${col})
        VALUES (?, ?, ?, ?)

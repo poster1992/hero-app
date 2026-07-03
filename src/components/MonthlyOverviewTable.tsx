@@ -48,6 +48,7 @@ const FIELDS: { key: MonthlyField; label: string; prop: keyof MonthlyOverviewRow
   { key: "urlaub_gesamt", label: "Urlaub gesamt", prop: "urlaubGesamt" },
   { key: "ueberstunden", label: "Überstunden mit 40% Aufschlag", prop: "ueberstunden" },
   { key: "elternzeit", label: "Elternzeit/Sonderurlaub", prop: "elternzeit" },
+  { key: "note", label: "Notiz", prop: "note" },
 ];
 
 export default function MonthlyOverviewTable({

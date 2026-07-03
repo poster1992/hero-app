@@ -20,6 +20,7 @@ const VALID_FIELDS: MonthlyField[] = [
   "urlaub_gesamt",
   "ueberstunden",
   "elternzeit",
+  "note",
 ];
 
 function validPeriod(year: number, month: number, employeeId: number): boolean {
