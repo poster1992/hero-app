@@ -9,38 +9,67 @@ interface GraphQLResponse<T> {
   errors?: GraphQLError[];
 }
 
+/** HTTP-Status, die als vorübergehend (Gateway/Überlast) gelten und wiederholt werden. */
+const TRANSIENT_STATUS = new Set([429, 500, 502, 503, 504]);
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 export async function heroGraphQL<T>(
   query: string,
-  variables?: Record<string, unknown>
+  variables?: Record<string, unknown>,
+  retries = 3
 ): Promise<T> {
   const token = process.env.HERO_API_TOKEN;
   if (!token) {
     throw new Error("HERO_API_TOKEN is not configured");
   }
 
-  const res = await fetch(HERO_GRAPHQL_ENDPOINT, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ query, variables }),
-    cache: "no-store",
-  });
+  const body = JSON.stringify({ query, variables });
+  let lastError: Error | null = null;
 
-  if (!res.ok) {
-    throw new Error(`HERO API request failed: ${res.status} ${res.statusText}`);
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    // Timeout je Versuch, damit hängende Requests nicht die ganze Seite blockieren.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30_000);
+    let res: Response;
+    try {
+      res = await fetch(HERO_GRAPHQL_ENDPOINT, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body,
+        cache: "no-store",
+        signal: controller.signal,
+      });
+    } catch (e) {
+      // Netzwerkfehler/Timeout → als vorübergehend behandeln und erneut versuchen.
+      clearTimeout(timer);
+      lastError = e instanceof Error ? e : new Error("HERO API network error");
+      if (attempt < retries) {
+        await sleep(400 * (attempt + 1));
+        continue;
+      }
+      throw lastError;
+    }
+    clearTimeout(timer);
+
+    if (!res.ok) {
+      if (TRANSIENT_STATUS.has(res.status) && attempt < retries) {
+        await sleep(400 * (attempt + 1));
+        continue;
+      }
+      throw new Error(`HERO API request failed: ${res.status} ${res.statusText}`);
+    }
+
+    const json: GraphQLResponse<T> = await res.json();
+    if (json.errors?.length) {
+      throw new Error(json.errors.map((e) => e.message).join("; "));
+    }
+    if (!json.data) {
+      throw new Error("HERO API returned no data");
+    }
+    return json.data;
   }
 
-  const json: GraphQLResponse<T> = await res.json();
-
-  if (json.errors?.length) {
-    throw new Error(json.errors.map((e) => e.message).join("; "));
-  }
-  if (!json.data) {
-    throw new Error("HERO API returned no data");
-  }
-  return json.data;
+  throw lastError ?? new Error("HERO API request failed");
 }
 
 export type ReceiptType = "output" | "income";
