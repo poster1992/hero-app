@@ -14,12 +14,15 @@ import { getInvoiceStatus, getDocumentUrl } from "@/lib/invoices";
 
 export interface ProjectPhoto {
   filename: string;
-  /** Öffentlich signierte URL (24 h gültig), direkt im <img> nutzbar. */
-  url: string;
+  /** Kleines Thumbnail (fit_256) für die Galerie-Übersicht (schnell). */
+  thumbUrl: string;
+  /** Größeres Bild (fit_1024) für die Vollansicht. */
+  fullUrl: string;
+  /** Original zum Herunterladen. */
   downloadUrl: string;
 }
 
-/** Bilder (Fotos) eines Projekts aus den HERO-Dateien. */
+/** Bilder (Fotos) eines Projekts aus den HERO-Dateien (mit Thumbnails). */
 export async function getProjectPhotos(projectId: number): Promise<ProjectPhoto[]> {
   const data = await heroGraphQL<{
     project_match: {
@@ -30,25 +33,33 @@ export async function getProjectPhotos(projectId: number): Promise<ProjectPhoto[
             is_deleted: boolean | null;
             temporary_url: string | null;
             url_download: string | null;
+            thumbnails: { format: string | null; url: string | null }[] | null;
           }[]
         | null;
     } | null;
   }>(
     `query ProjectPhotos($id: Int) {
       project_match(project_match_id: $id) {
-        file_uploads { filename type is_deleted temporary_url url_download }
+        file_uploads { filename type is_deleted temporary_url url_download thumbnails { format url } }
       }
     }`,
     { id: projectId }
   );
   const files = data.project_match?.file_uploads ?? [];
+  const pick = (thumbs: { format: string | null; url: string | null }[] | null, fmt: string) =>
+    thumbs?.find((t) => t.format === fmt)?.url ?? null;
+
   return files
     .filter((f) => !f.is_deleted && (f.type ?? "").startsWith("image/") && f.temporary_url)
-    .map((f) => ({
-      filename: f.filename ?? "Foto",
-      url: f.temporary_url as string,
-      downloadUrl: f.url_download ?? (f.temporary_url as string),
-    }));
+    .map((f) => {
+      const full = f.temporary_url as string;
+      return {
+        filename: f.filename ?? "Foto",
+        thumbUrl: pick(f.thumbnails, "fit_256") ?? full,
+        fullUrl: pick(f.thumbnails, "fit_1024") ?? full,
+        downloadUrl: f.url_download ?? full,
+      };
+    });
 }
 
 export interface ProjectEmployeeDay {
