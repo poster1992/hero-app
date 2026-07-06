@@ -40,7 +40,7 @@ export async function getProjectPhotos(projectId: number): Promise<ProjectPhoto[
   }>(
     `query ProjectPhotos($id: Int) {
       project_match(project_match_id: $id) {
-        file_uploads { filename type is_deleted temporary_url url_download thumbnails { format url } }
+        file_uploads(first: 2000) { filename type is_deleted temporary_url url_download thumbnails { format url } }
       }
     }`,
     { id: projectId }
