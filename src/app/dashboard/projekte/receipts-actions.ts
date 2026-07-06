@@ -12,6 +12,45 @@ import {
 } from "@/lib/materials";
 import { getInvoiceStatus, getDocumentUrl } from "@/lib/invoices";
 
+export interface ProjectPhoto {
+  filename: string;
+  /** Öffentlich signierte URL (24 h gültig), direkt im <img> nutzbar. */
+  url: string;
+  downloadUrl: string;
+}
+
+/** Bilder (Fotos) eines Projekts aus den HERO-Dateien. */
+export async function getProjectPhotos(projectId: number): Promise<ProjectPhoto[]> {
+  const data = await heroGraphQL<{
+    project_match: {
+      file_uploads:
+        | {
+            filename: string | null;
+            type: string | null;
+            is_deleted: boolean | null;
+            temporary_url: string | null;
+            url_download: string | null;
+          }[]
+        | null;
+    } | null;
+  }>(
+    `query ProjectPhotos($id: Int) {
+      project_match(project_match_id: $id) {
+        file_uploads { filename type is_deleted temporary_url url_download }
+      }
+    }`,
+    { id: projectId }
+  );
+  const files = data.project_match?.file_uploads ?? [];
+  return files
+    .filter((f) => !f.is_deleted && (f.type ?? "").startsWith("image/") && f.temporary_url)
+    .map((f) => ({
+      filename: f.filename ?? "Foto",
+      url: f.temporary_url as string,
+      downloadUrl: f.url_download ?? (f.temporary_url as string),
+    }));
+}
+
 export interface ProjectEmployeeDay {
   /** yyyy-mm-dd */
   date: string;

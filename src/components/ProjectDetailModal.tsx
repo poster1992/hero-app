@@ -19,8 +19,10 @@ import {
   getProjectHoursByEmployee,
   getProjectCalculatedMaterials,
   getProjectBookedMaterials,
+  getProjectPhotos,
   type ProjectReceiptItem,
   type ProjectEmployeeHours,
+  type ProjectPhoto,
 } from "@/app/dashboard/projekte/receipts-actions";
 import {
   getProjectBelegArticles,
@@ -244,8 +246,13 @@ export default function ProjectDetailModal({
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
   const [emailing, setEmailing] = useState(false);
+  const [photos, setPhotos] = useState<ProjectPhoto[] | null>(null);
+  const [loadingPhotos, setLoadingPhotos] = useState(false);
+  const [showPhotos, setShowPhotos] = useState(false);
 
   useEffect(() => {
+    setPhotos(null);
+    setShowPhotos(false);
     if (!project) {
       setReceipts(null);
       setEmpHours(null);
@@ -392,6 +399,17 @@ export default function ProjectDetailModal({
 
   // Drucken: Dokumenttitel temporär umstellen, damit "HERO Dashboard" nicht in
   // der Browser-Druckkopfzeile erscheint.
+  const togglePhotos = () => {
+    if (!showPhotos && photos === null) {
+      setLoadingPhotos(true);
+      getProjectPhotos(p.id)
+        .then((ps) => setPhotos(ps))
+        .catch(() => setPhotos([]))
+        .finally(() => setLoadingPhotos(false));
+    }
+    setShowPhotos((v) => !v);
+  };
+
   const handlePrint = () => {
     const prev = document.title;
     document.title = `Projekt ${p.relativeId != null ? `Nr. ${p.relativeId} ` : ""}${p.name}`;
@@ -547,7 +565,18 @@ export default function ProjectDetailModal({
               {p.confirmationDate ? ` · AB ${dateFmt.format(new Date(p.confirmationDate))}` : ""}
             </p>
           </div>
-          <div className="no-print flex shrink-0 items-center gap-2">
+          <div className="no-print flex shrink-0 flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={togglePhotos}
+              className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
+                showPhotos
+                  ? "border-brand-red bg-brand-red/10 text-brand-red"
+                  : "border-gray-300 text-gray-700 hover:border-brand-red/50 hover:text-gray-900"
+              }`}
+            >
+              📷 Fotos{photos ? ` (${photos.length})` : ""}
+            </button>
             <button
               type="button"
               onClick={handlePrint}
@@ -574,6 +603,39 @@ export default function ProjectDetailModal({
         </div>
 
         <div className="print-scroll max-h-[75vh] overflow-y-auto px-6 py-5">
+          {/* Fotos */}
+          {showPhotos && (
+            <div className="mb-6 rounded-lg border border-gray-200 p-3">
+              <h3 className="mb-2 text-sm font-medium text-gray-700">Fotos zum Projekt</h3>
+              {loadingPhotos ? (
+                <p className="text-sm text-gray-500">Fotos werden geladen …</p>
+              ) : !photos || photos.length === 0 ? (
+                <p className="text-sm text-gray-500">Keine Fotos zu diesem Projekt.</p>
+              ) : (
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {photos.map((ph, i) => (
+                    <a
+                      key={i}
+                      href={ph.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={ph.filename}
+                      className="block overflow-hidden rounded-md border border-gray-200 transition-transform hover:scale-[1.02]"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={ph.url}
+                        alt={ph.filename}
+                        loading="lazy"
+                        className="h-28 w-full object-cover"
+                      />
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Kennzahlen */}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {[
