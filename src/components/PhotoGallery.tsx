@@ -3,6 +3,16 @@
 import { useEffect, useState } from "react";
 import type { ProjectPhoto } from "@/lib/hero-api";
 
+const dateFmt = new Intl.DateTimeFormat("de-DE", { dateStyle: "medium" });
+const dateTimeFmt = new Intl.DateTimeFormat("de-DE", { dateStyle: "medium", timeStyle: "short" });
+
+function fmtDate(iso: string | null, withTime = false): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return (withTime ? dateTimeFmt : dateFmt).format(d);
+}
+
 export default function PhotoGallery({ photos }: { photos: ProjectPhoto[] }) {
   const [open, setOpen] = useState<number | null>(null);
 
@@ -27,7 +37,7 @@ export default function PhotoGallery({ photos }: { photos: ProjectPhoto[] }) {
             key={p.id}
             type="button"
             onClick={() => setOpen(i)}
-            className="group relative aspect-square overflow-hidden rounded-lg border border-gray-300 bg-black/20"
+            className="group relative aspect-square overflow-hidden rounded-lg border border-gray-300 bg-black/20 text-left"
             title={p.filename}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -37,6 +47,11 @@ export default function PhotoGallery({ photos }: { photos: ProjectPhoto[] }) {
               loading="lazy"
               className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
             />
+            {/* Datum + Uploader direkt sichtbar (Overlay unten). */}
+            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/45 to-transparent px-2 pb-1.5 pt-6 text-[11px] leading-tight text-white">
+              {p.created && <div>📅 {fmtDate(p.created)}</div>}
+              {p.uploaderName && <div className="truncate">👤 {p.uploaderName}</div>}
+            </div>
           </button>
         ))}
       </div>
@@ -87,8 +102,10 @@ export default function PhotoGallery({ photos }: { photos: ProjectPhoto[] }) {
               alt={current.filename}
               className="max-h-[80vh] max-w-full rounded-lg object-contain"
             />
-            <div className="flex items-center gap-4 text-sm text-white/80">
-              <span>{current.filename}</span>
+            <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-sm text-white/80">
+              <span className="font-medium text-white">{current.filename}</span>
+              {current.created && <span>📅 {fmtDate(current.created, true)}</span>}
+              {current.uploaderName && <span>👤 {current.uploaderName}</span>}
               <a
                 href={current.fullUrl}
                 target="_blank"

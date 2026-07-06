@@ -1914,6 +1914,17 @@ export interface ProjectPhoto {
   thumbUrl: string;
   /** Signierte URL zum Originalbild. */
   fullUrl: string;
+  /** Name der Person, die das Foto hochgeladen hat (aus der Projekt-Historie). */
+  uploaderName: string | null;
+}
+
+interface RawHistory {
+  user: {
+    email: string | null;
+    partner: { full_name: string | null; first_name: string | null; last_name: string | null } | null;
+    employee: { first_name: string | null; last_name: string | null } | null;
+  } | null;
+  additional_file_uploads: { id: number }[] | null;
 }
 
 interface RawFileUpload {
@@ -1959,7 +1970,7 @@ export async function getProjectPhotos(
   imageCategory: string
 ): Promise<ProjectPhoto[]> {
   const data = await heroGraphQL<{
-    project_matches: { file_uploads: RawFileUpload[] | null }[] | null;
+    project_matches: { file_uploads: RawFileUpload[] | null; histories: RawHistory[] | null }[] | null;
   }>(
     `query ($ids: [Int]) {
       project_matches(ids: $ids) {
@@ -1973,11 +1984,38 @@ export async function getProjectPhotos(
           temporary_url(expires: 3600)
           thumbnails(formats: [fit_512]) { format url }
         }
+        histories(orderBy: "id", last: 400) {
+          user {
+            email
+            partner { full_name first_name last_name }
+            employee { first_name last_name }
+          }
+          additional_file_uploads { id }
+        }
       }
     }`,
     { ids: [projectMatchId] }
   );
-  const uploads = data.project_matches?.[0]?.file_uploads ?? [];
+  const pm = data.project_matches?.[0];
+  const uploads = pm?.file_uploads ?? [];
+
+  // Uploader je Datei aus der Historie ableiten (file_upload_id -> Personenname).
+  const uploaderById = new Map<number, string>();
+  for (const h of pm?.histories ?? []) {
+    const p = h.user?.partner;
+    const emp = h.user?.employee;
+    const name =
+      p?.full_name?.trim() ||
+      [p?.first_name, p?.last_name].filter(Boolean).join(" ").trim() ||
+      [emp?.first_name, emp?.last_name].filter(Boolean).join(" ").trim() ||
+      h.user?.email?.trim() ||
+      "";
+    if (!name) continue;
+    for (const f of h.additional_file_uploads ?? []) {
+      if (!uploaderById.has(f.id)) uploaderById.set(f.id, name);
+    }
+  }
+
   return uploads
     .filter((u) => (u.image_category ?? "") === imageCategory && u.temporary_url)
     .map((u) => {
@@ -1989,6 +2027,7 @@ export async function getProjectPhotos(
         size: u.size ?? null,
         thumbUrl: thumb,
         fullUrl: u.temporary_url!,
+        uploaderName: uploaderById.get(u.id) ?? null,
       };
     })
     .sort((a, b) => (b.created ?? "").localeCompare(a.created ?? ""));
