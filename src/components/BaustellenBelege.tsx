@@ -7,10 +7,20 @@ import {
   deleteBaustellenBelegAction,
   reocrBaustellenBelegAction,
   setBaustellenBelegPaidAction,
+  setBaustellenBelegAmountAction,
 } from "@/app/dashboard/baustellen/actions";
 import type { BaustellenBeleg } from "@/lib/baustellen-belege";
 
-const eur = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
+const amtFmt = new Intl.NumberFormat("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/** Deutsches/gemischtes Zahlenformat robust parsen ("1.234,56" | "1234,5" | "1234.5"). */
+function parseAmount(s: string): number | null {
+  const t = s.replace(/[€\s]/g, "").trim();
+  if (!t) return null;
+  const norm = t.includes(",") ? t.replace(/\./g, "").replace(",", ".") : t;
+  const v = Number(norm);
+  return Number.isFinite(v) && v >= 0 ? v : null;
+}
 
 const dateFmt = new Intl.DateTimeFormat("de-DE", { dateStyle: "medium", timeStyle: "short" });
 
@@ -51,6 +61,16 @@ export default function BaustellenBelege({
   const togglePaid = (id: number, current: boolean) => {
     startTransition(async () => {
       await setBaustellenBelegPaidAction(id, !current, baustelleId);
+      router.refresh();
+    });
+  };
+
+  const [amtDraft, setAmtDraft] = useState<Record<number, string>>({});
+  const saveAmount = (id: number, value: string, original: number | null) => {
+    const parsed = parseAmount(value);
+    if (parsed === original) return;
+    startTransition(async () => {
+      await setBaustellenBelegAmountAction(id, parsed, baustelleId);
       router.refresh();
     });
   };
@@ -181,9 +201,20 @@ export default function BaustellenBelege({
                 </p>
               </div>
               {ocrBadge(b)}
-              <span className="w-24 text-right text-sm font-semibold tabular-nums text-gray-900">
-                {b.amount != null ? eur.format(b.amount) : "—"}
-              </span>
+              <div className="flex items-center gap-1">
+                <input
+                  value={amtDraft[b.id] ?? (b.amount != null ? amtFmt.format(b.amount) : "")}
+                  onChange={(e) => setAmtDraft((p) => ({ ...p, [b.id]: e.target.value }))}
+                  onBlur={(e) => saveAmount(b.id, e.target.value, b.amount)}
+                  placeholder="Betrag"
+                  inputMode="decimal"
+                  className={`w-24 rounded-md border px-2 py-1 text-right text-sm font-semibold tabular-nums text-gray-900 outline-none focus:border-brand-red/60 ${
+                    b.amount == null ? "border-brand-red/60 bg-brand-red/5" : "border-gray-300"
+                  }`}
+                  title={b.amount == null ? "Kein Betrag erkannt – manuell eintragen" : "Betrag korrigieren"}
+                />
+                <span className="text-xs text-gray-500">€</span>
+              </div>
               <button
                 type="button"
                 onClick={() => togglePaid(b.id, b.isPaid)}

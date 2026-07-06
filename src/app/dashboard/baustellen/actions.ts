@@ -7,6 +7,7 @@ import {
   addBaustellenBeleg,
   deleteBaustellenBeleg,
   setBaustellenBelegPaid,
+  setBaustellenBelegAmount,
 } from "@/lib/baustellen-belege";
 import { ocrBaustellenBeleg } from "@/lib/baustellen-beleg-ocr";
 
@@ -54,6 +55,25 @@ export async function uploadBaustellenBelegAction(
     return { ok: true };
   } catch {
     return { ok: false, error: "Beleg konnte nicht gespeichert werden." };
+  }
+}
+
+/** Setzt/korrigiert den Betrag eines Belegs manuell. */
+export async function setBaustellenBelegAmountAction(
+  id: number,
+  amount: number | null,
+  baustelleId: number
+): Promise<{ ok: boolean }> {
+  if (!(await getSession())) return { ok: false };
+  if (!Number.isFinite(id) || id <= 0) return { ok: false };
+  const amt =
+    amount != null && Number.isFinite(amount) && amount >= 0 ? Math.round(amount * 100) / 100 : null;
+  try {
+    await setBaustellenBelegAmount(id, amt);
+    revalidatePath(`/dashboard/baustellen/${baustelleId}/belege`);
+    return { ok: true };
+  } catch {
+    return { ok: false };
   }
 }
 
