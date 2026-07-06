@@ -347,6 +347,28 @@ export async function setTaskStatus(
   await getPool().query("UPDATE tasks SET status = ? WHERE id = ?", [status, id]);
   const detail = `Status: ${taskStatusLabel(status)}${note ? ` – ${note}` : ""}`;
   await addHistory(id, byUserId, "status", detail);
+
+  // Erledigte Aufgaben ins HERO-Projektlogbuch schreiben (wenn Projekt zugeordnet).
+  if (status === "erledigt") {
+    try {
+      const pool = getPool();
+      const [rows] = await pool.query<RowDataPacket[]>(
+        `SELECT t.project_id, t.title, COALESCE(NULLIF(u.display_name, ''), u.username) AS by_name
+         FROM tasks t LEFT JOIN users u ON u.id = ? WHERE t.id = ? LIMIT 1`,
+        [byUserId, id]
+      );
+      const projectId = rows[0]?.project_id as number | null;
+      if (projectId) {
+        const title = (rows[0]?.title as string) ?? "";
+        const by = (rows[0]?.by_name as string) ?? "";
+        const text =
+          `Aufgabe erledigt: ${title}${note ? `\n${note}` : ""}${by ? `\n(${by})` : ""}`;
+        await writeProjectLogbook(projectId, text);
+      }
+    } catch {
+      // optional
+    }
+  }
 }
 
 /** Adds a free-text note (comment) to a task and logs it in the history. */
