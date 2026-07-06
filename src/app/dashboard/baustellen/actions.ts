@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { getSession } from "@/lib/session";
 import { getUserByUsername } from "@/lib/users";
 import { addBaustellenBeleg, deleteBaustellenBeleg } from "@/lib/baustellen-belege";
+import { ocrBaustellenBeleg } from "@/lib/baustellen-beleg-ocr";
 
 /** Lädt einen Beleg zu einem Baustellen-Ordner hoch (FormData: baustelleId, file). */
 export async function uploadBaustellenBelegAction(
@@ -30,7 +31,7 @@ export async function uploadBaustellenBelegAction(
   }
 
   try {
-    await addBaustellenBeleg(
+    const belegId = await addBaustellenBeleg(
       baustelleId,
       {
         buffer: Buffer.from(await f.arrayBuffer()),
@@ -39,11 +40,29 @@ export async function uploadBaustellenBelegAction(
       },
       uid
     );
-    revalidatePath(`/dashboard/baustellen/${baustelleId}`);
+    // OCR direkt mitlaufen lassen (eigenständig, nur dieser Beleg – best effort).
+    try {
+      await ocrBaustellenBeleg(belegId);
+    } catch {
+      // OCR-Fehler blockiert den Upload nicht.
+    }
+    revalidatePath(`/dashboard/baustellen/${baustelleId}/belege`);
     return { ok: true };
   } catch {
     return { ok: false, error: "Beleg konnte nicht gespeichert werden." };
   }
+}
+
+/** OCR für einen Beleg (erneut) ausführen. */
+export async function reocrBaustellenBelegAction(
+  id: number,
+  baustelleId: number
+): Promise<{ ok: boolean; error?: string }> {
+  if (!(await getSession())) return { ok: false, error: "Nicht angemeldet." };
+  if (!Number.isFinite(id) || id <= 0) return { ok: false };
+  const res = await ocrBaustellenBeleg(id);
+  revalidatePath(`/dashboard/baustellen/${baustelleId}/belege`);
+  return res;
 }
 
 /** Entfernt einen Beleg. */
@@ -55,7 +74,7 @@ export async function deleteBaustellenBelegAction(
   if (!Number.isFinite(id) || id <= 0) return { ok: false };
   try {
     await deleteBaustellenBeleg(id);
-    revalidatePath(`/dashboard/baustellen/${baustelleId}`);
+    revalidatePath(`/dashboard/baustellen/${baustelleId}/belege`);
     return { ok: true };
   } catch {
     return { ok: false };

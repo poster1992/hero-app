@@ -235,7 +235,10 @@ export default function Sidebar({
     label: b.label,
     icon: "kamera",
     module: "baustellen",
-    children: [{ href: `/dashboard/baustellen/${b.id}`, label: "Dokumentation" }],
+    children: [
+      { href: `/dashboard/baustellen/${b.id}`, label: "Dokumentation" },
+      { href: `/dashboard/baustellen/${b.id}/belege`, label: "Belege" },
+    ],
   }));
   const sourceItems: NavItem[] = (() => {
     const idx = NAV_ITEMS.findIndex((i) => i.module === "konfiguration");
@@ -422,7 +425,17 @@ export default function Sidebar({
               {showChildren && (
                 <div className="mt-1 ml-6 flex flex-col gap-0.5 border-l border-white/10 pl-3">
                   {item.children!.map((child) => {
-                    const childActive = pathname?.startsWith(child.href);
+                    // Aktiv ist der am spezifischsten passende Kindpunkt (längster Treffer),
+                    // damit z. B. „Belege" (Unterpfad) nicht „Dokumentation" mitmarkiert.
+                    const bestHref = item.children!.reduce<string | null>(
+                      (best, c) =>
+                        (pathname === c.href || pathname?.startsWith(c.href + "/")) &&
+                        (!best || c.href.length > best.length)
+                          ? c.href
+                          : best,
+                      null
+                    );
+                    const childActive = child.href === bestHref;
                     return (
                       <Link
                         key={child.href}

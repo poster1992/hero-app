@@ -1,9 +1,7 @@
 import { notFound } from "next/navigation";
 import { getBaustelle } from "@/lib/baustellen-docs";
 import { getProjectPhotos, type ProjectPhoto } from "@/lib/hero-api";
-import { listBaustellenBelege, type BaustellenBeleg } from "@/lib/baustellen-belege";
 import PhotoGallery from "@/components/PhotoGallery";
-import BaustellenBelege from "@/components/BaustellenBelege";
 
 export default async function BaustelleGalleryPage({
   params,
@@ -21,13 +19,6 @@ export default async function BaustelleGalleryPage({
     photos = await getProjectPhotos(baustelle.projectMatchId, baustelle.imageCategory);
   } catch (e) {
     error = e instanceof Error ? e.message : "Fotos konnten nicht geladen werden.";
-  }
-
-  let belege: BaustellenBeleg[] = [];
-  try {
-    belege = await listBaustellenBelege(baustelle.id);
-  } catch {
-    // optional – ohne Belege bleibt der Bereich leer.
   }
 
   return (
@@ -51,8 +42,6 @@ export default async function BaustelleGalleryPage({
       ) : (
         <PhotoGallery photos={photos} />
       )}
-
-      <BaustellenBelege baustelleId={baustelle.id} belege={belege} />
     </div>
   );
 }

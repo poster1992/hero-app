@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   uploadBaustellenBelegAction,
   deleteBaustellenBelegAction,
+  reocrBaustellenBelegAction,
 } from "@/app/dashboard/baustellen/actions";
 import type { BaustellenBeleg } from "@/lib/baustellen-belege";
 
@@ -20,14 +21,37 @@ function fmtSize(bytes: number | null): string {
 export default function BaustellenBelege({
   baustelleId,
   belege,
+  query = "",
 }: {
   baustelleId: number;
   belege: BaustellenBeleg[];
+  query?: string;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [q, setQ] = useState(query);
   const fileInput = useRef<HTMLInputElement>(null);
+
+  const runSearch = (value: string) => {
+    const params = value.trim() ? `?q=${encodeURIComponent(value.trim())}` : "";
+    router.push(`/dashboard/baustellen/${baustelleId}/belege${params}`);
+  };
+
+  const reocr = (id: number) => {
+    startTransition(async () => {
+      await reocrBaustellenBelegAction(id, baustelleId);
+      router.refresh();
+    });
+  };
+
+  const ocrBadge = (b: BaustellenBeleg) => {
+    if (b.ocrStatus === "pending") return <span className="text-xs text-gray-400">⏳ OCR läuft…</span>;
+    if (b.ocrStatus === "error") return <span className="text-xs text-brand-red">⚠ OCR-Fehler</span>;
+    if (b.hasOcr) return <span className="text-xs text-emerald-600">✓ Text erkannt</span>;
+    if (b.ocrStatus === "done") return <span className="text-xs text-gray-400">kein Text</span>;
+    return null;
+  };
 
   const upload = (files: FileList) => {
     setError(null);
@@ -88,9 +112,39 @@ export default function BaustellenBelege({
 
       {error && <p className="px-5 py-2 text-sm text-brand-red">{error}</p>}
 
+      <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 px-5 py-3">
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") runSearch(q);
+          }}
+          placeholder="In Belegen suchen (Volltext/OCR) …"
+          className="w-64 rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 outline-none focus:border-brand-red/60"
+        />
+        <button
+          type="button"
+          onClick={() => runSearch(q)}
+          className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:border-brand-red/50 hover:text-gray-900"
+        >
+          Suchen
+        </button>
+        {query && (
+          <button
+            type="button"
+            onClick={() => { setQ(""); runSearch(""); }}
+            className="text-sm text-gray-500 hover:text-gray-800"
+          >
+            zurücksetzen
+          </button>
+        )}
+      </div>
+
       {belege.length === 0 ? (
         <p className="px-5 py-8 text-center text-sm text-gray-500">
-          Noch keine Belege. Oben „Beleg hochladen" (PDF oder Foto).
+          {query
+            ? `Keine Belege gefunden für „${query}“.`
+            : "Noch keine Belege. Oben „Beleg hochladen“ (PDF oder Foto)."}
         </p>
       ) : (
         <ul className="divide-y divide-gray-100">
@@ -106,11 +160,23 @@ export default function BaustellenBelege({
               >
                 {b.fileName}
               </a>
+              {ocrBadge(b)}
               <span className="text-xs text-gray-500">
                 {fmtSize(b.size)}
                 {b.uploadedByName ? ` · ${b.uploadedByName}` : ""}
                 {b.uploadedAt ? ` · ${dateFmt.format(new Date(b.uploadedAt))}` : ""}
               </span>
+              {(b.ocrStatus === "error" || (b.ocrStatus === "done" && !b.hasOcr)) && (
+                <button
+                  type="button"
+                  onClick={() => reocr(b.id)}
+                  disabled={pending}
+                  className="rounded-md border border-gray-300 px-2 py-0.5 text-xs font-medium text-gray-700 hover:border-brand-red/50 disabled:opacity-50"
+                  title="OCR erneut ausführen"
+                >
+                  OCR
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => remove(b.id)}
