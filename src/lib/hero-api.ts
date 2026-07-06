@@ -176,6 +176,18 @@ export async function getReceiptsInRange(from: string, to: string): Promise<Rece
   return receipts;
 }
 
+/** Schreibt einen Logbuch-Eintrag (Notiz) zu einem Projekt in HERO. */
+export async function writeProjectLogbook(projectId: number, text: string): Promise<void> {
+  const note = text.trim();
+  if (!note) return;
+  await heroGraphQL(
+    `mutation AddLog($entry: LogbookEntryInput!) {
+      add_logbook_entry(logbook_entry: $entry) { id }
+    }`,
+    { entry: { target: "project_match", target_id: projectId, custom_text: note } }
+  );
+}
+
 export interface CompanyBank {
   name: string | null;
   iban: string | null;

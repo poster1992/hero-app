@@ -1,5 +1,6 @@
 import type { RowDataPacket } from "mysql2";
 import { getPool } from "./db";
+import { writeProjectLogbook } from "./hero-api";
 import {
   TASK_STATUSES,
   taskStatusLabel,
@@ -225,6 +226,29 @@ export async function createTask(input: {
     ]);
   }
   await addHistory(taskId, input.createdBy, "created", "Aufgabe erstellt");
+
+  // Ins HERO-Projektlogbuch schreiben (nur wenn ein Projekt zugeordnet ist).
+  if (input.projectId) {
+    try {
+      const ids = [input.createdBy, ...assignees];
+      const [urows] = await pool.query<RowDataPacket[]>(
+        "SELECT id, COALESCE(NULLIF(display_name, ''), username) AS name FROM users WHERE id IN (?)",
+        [ids.length > 0 ? ids : [0]]
+      );
+      const nameById = new Map<number, string>();
+      for (const u of urows) nameById.set(u.id as number, u.name as string);
+      const assigneeNames = assignees.map((a) => nameById.get(a) ?? `#${a}`).join(", ");
+      const lines = [`Aufgabe erstellt: ${input.title}`];
+      if (input.description) lines.push(input.description);
+      if (input.dueDate) lines.push(`Fällig: ${input.dueDate}`);
+      if (assigneeNames) lines.push(`Zugewiesen an: ${assigneeNames}`);
+      const creator = nameById.get(input.createdBy);
+      if (creator) lines.push(`Erstellt von: ${creator}`);
+      await writeProjectLogbook(input.projectId, lines.join("\n"));
+    } catch {
+      // Logbuch ist optional – Fehler hier darf die Aufgabe nicht scheitern lassen.
+    }
+  }
 }
 
 /** Marker embedded in a price-request task's description to tie it to an article. */
@@ -328,6 +352,25 @@ export async function setTaskStatus(
 /** Adds a free-text note (comment) to a task and logs it in the history. */
 export async function addTaskNote(id: number, byUserId: number, note: string): Promise<void> {
   await addHistory(id, byUserId, "note", note);
+
+  // Notiz zusätzlich ins HERO-Projektlogbuch schreiben (wenn Projekt zugeordnet).
+  try {
+    const pool = getPool();
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT t.project_id, t.title, COALESCE(NULLIF(u.display_name, ''), u.username) AS by_name
+       FROM tasks t LEFT JOIN users u ON u.id = ? WHERE t.id = ? LIMIT 1`,
+      [byUserId, id]
+    );
+    const projectId = rows[0]?.project_id as number | null;
+    if (projectId) {
+      const title = (rows[0]?.title as string) ?? "";
+      const by = (rows[0]?.by_name as string) ?? "";
+      const text = `Notiz zur Aufgabe „${title}": ${note}${by ? `\n(${by})` : ""}`;
+      await writeProjectLogbook(projectId, text);
+    }
+  } catch {
+    // optional
+  }
 }
 
 /** Forwards a task to another person (adds them as assignee) and logs it. */
