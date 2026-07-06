@@ -1,7 +1,13 @@
 import { notFound } from "next/navigation";
 import { getBaustelle } from "@/lib/baustellen-docs";
-import { listBaustellenBelege, type BaustellenBeleg } from "@/lib/baustellen-belege";
+import {
+  listBaustellenBelege,
+  getBaustellenBelegeStats,
+  type BaustellenBeleg,
+  type BaustellenBelegeStats,
+} from "@/lib/baustellen-belege";
 import BaustellenBelege from "@/components/BaustellenBelege";
+import BaustellenBelegeStatsView from "@/components/BaustellenBelegeStats";
 
 export default async function BaustelleBelegePage({
   params,
@@ -19,8 +25,12 @@ export default async function BaustelleBelegePage({
   const q = (Array.isArray(sp.q) ? sp.q[0] : sp.q)?.trim() ?? "";
 
   let belege: BaustellenBeleg[] = [];
+  let stats: BaustellenBelegeStats = { count: 0, total: 0, paidTotal: 0, openTotal: 0, bySupplier: [] };
   try {
-    belege = await listBaustellenBelege(baustelle.id, q);
+    [belege, stats] = await Promise.all([
+      listBaustellenBelege(baustelle.id, q),
+      getBaustellenBelegeStats(baustelle.id),
+    ]);
   } catch {
     // optional – ohne Belege bleibt der Bereich leer.
   }
@@ -34,6 +44,7 @@ export default async function BaustelleBelegePage({
         </p>
       </header>
 
+      <BaustellenBelegeStatsView stats={stats} />
       <BaustellenBelege baustelleId={baustelle.id} belege={belege} query={q} />
     </div>
   );

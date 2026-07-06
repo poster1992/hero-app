@@ -6,8 +6,11 @@ import {
   uploadBaustellenBelegAction,
   deleteBaustellenBelegAction,
   reocrBaustellenBelegAction,
+  setBaustellenBelegPaidAction,
 } from "@/app/dashboard/baustellen/actions";
 import type { BaustellenBeleg } from "@/lib/baustellen-belege";
+
+const eur = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
 
 const dateFmt = new Intl.DateTimeFormat("de-DE", { dateStyle: "medium", timeStyle: "short" });
 
@@ -41,6 +44,13 @@ export default function BaustellenBelege({
   const reocr = (id: number) => {
     startTransition(async () => {
       await reocrBaustellenBelegAction(id, baustelleId);
+      router.refresh();
+    });
+  };
+
+  const togglePaid = (id: number, current: boolean) => {
+    startTransition(async () => {
+      await setBaustellenBelegPaidAction(id, !current, baustelleId);
       router.refresh();
     });
   };
@@ -151,28 +161,47 @@ export default function BaustellenBelege({
           {belege.map((b) => (
             <li key={b.id} className="flex flex-wrap items-center gap-3 px-5 py-2.5">
               <span className="text-lg">{b.mime?.startsWith("image/") ? "🖼️" : "📄"}</span>
-              <a
-                href={`/api/baustellen-beleg?id=${b.id}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="min-w-0 flex-1 truncate text-sm font-medium text-brand-red hover:underline"
-                title={b.fileName}
-              >
-                {b.fileName}
-              </a>
+              <div className="min-w-0 flex-1">
+                <a
+                  href={`/api/baustellen-beleg?id=${b.id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block truncate text-sm font-medium text-brand-red hover:underline"
+                  title={b.fileName}
+                >
+                  {b.fileName}
+                </a>
+                <p className="truncate text-xs text-gray-500">
+                  {b.supplier ? b.supplier : "Lieferant unbekannt"}
+                  {b.belegDate ? ` · ${b.belegDate}` : ""}
+                  {" · "}
+                  {fmtSize(b.size)}
+                  {b.uploadedByName ? ` · ${b.uploadedByName}` : ""}
+                  {b.uploadedAt ? ` · ${dateFmt.format(new Date(b.uploadedAt))}` : ""}
+                </p>
+              </div>
               {ocrBadge(b)}
-              <span className="text-xs text-gray-500">
-                {fmtSize(b.size)}
-                {b.uploadedByName ? ` · ${b.uploadedByName}` : ""}
-                {b.uploadedAt ? ` · ${dateFmt.format(new Date(b.uploadedAt))}` : ""}
+              <span className="w-24 text-right text-sm font-semibold tabular-nums text-gray-900">
+                {b.amount != null ? eur.format(b.amount) : "—"}
               </span>
-              {(b.ocrStatus === "error" || (b.ocrStatus === "done" && !b.hasOcr)) && (
+              <button
+                type="button"
+                onClick={() => togglePaid(b.id, b.isPaid)}
+                disabled={pending}
+                className={`w-20 rounded-md px-2 py-1 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50 ${
+                  b.isPaid ? "bg-emerald-600" : "bg-brand-red"
+                }`}
+                title="Bezahlstatus umschalten"
+              >
+                {b.isPaid ? "Bezahlt" : "Offen"}
+              </button>
+              {(b.ocrStatus === "error" || b.amount == null) && b.ocrStatus !== "pending" && (
                 <button
                   type="button"
                   onClick={() => reocr(b.id)}
                   disabled={pending}
                   className="rounded-md border border-gray-300 px-2 py-0.5 text-xs font-medium text-gray-700 hover:border-brand-red/50 disabled:opacity-50"
-                  title="OCR erneut ausführen"
+                  title="OCR erneut ausführen (Lieferant/Betrag erkennen)"
                 >
                   OCR
                 </button>

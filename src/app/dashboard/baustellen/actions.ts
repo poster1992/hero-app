@@ -3,7 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { getSession } from "@/lib/session";
 import { getUserByUsername } from "@/lib/users";
-import { addBaustellenBeleg, deleteBaustellenBeleg } from "@/lib/baustellen-belege";
+import {
+  addBaustellenBeleg,
+  deleteBaustellenBeleg,
+  setBaustellenBelegPaid,
+} from "@/lib/baustellen-belege";
 import { ocrBaustellenBeleg } from "@/lib/baustellen-beleg-ocr";
 
 /** Lädt einen Beleg zu einem Baustellen-Ordner hoch (FormData: baustelleId, file). */
@@ -50,6 +54,23 @@ export async function uploadBaustellenBelegAction(
     return { ok: true };
   } catch {
     return { ok: false, error: "Beleg konnte nicht gespeichert werden." };
+  }
+}
+
+/** Setzt den Bezahlstatus eines Belegs (bezahlt/offen). */
+export async function setBaustellenBelegPaidAction(
+  id: number,
+  paid: boolean,
+  baustelleId: number
+): Promise<{ ok: boolean }> {
+  if (!(await getSession())) return { ok: false };
+  if (!Number.isFinite(id) || id <= 0) return { ok: false };
+  try {
+    await setBaustellenBelegPaid(id, paid);
+    revalidatePath(`/dashboard/baustellen/${baustelleId}/belege`);
+    return { ok: true };
+  } catch {
+    return { ok: false };
   }
 }
 
