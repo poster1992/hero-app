@@ -236,8 +236,8 @@ export default function Sidebar({
     icon: "kamera",
     module: "baustellen",
     children: [
-      { href: `/dashboard/baustellen/${b.id}`, label: "Dokumentation" },
-      { href: `/dashboard/baustellen/${b.id}/belege`, label: "Belege" },
+      { href: `/dashboard/baustellen/${b.id}`, label: "Dokumentation", module: "baustellen" },
+      { href: `/dashboard/baustellen/${b.id}/belege`, label: "Belege", module: "baustellen_belege" },
     ],
   }));
   const sourceItems: NavItem[] = (() => {
@@ -256,8 +256,8 @@ export default function Sidebar({
         : !c.module || allowedModules.includes(c.module)
     ),
   })).filter((item) => {
-    // Cockpit ist ein reiner Container: sichtbar, sobald mindestens ein Unterpunkt freigegeben ist.
-    if (item.module === "cockpit") return (item.children?.length ?? 0) > 0;
+    // Container-Menüs: sichtbar, sobald mindestens ein Unterpunkt freigegeben ist.
+    if (item.module === "cockpit" || item.module === "baustellen") return (item.children?.length ?? 0) > 0;
     return allowedModules.includes(item.module);
   });
 
