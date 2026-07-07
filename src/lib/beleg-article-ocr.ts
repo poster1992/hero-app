@@ -9,7 +9,7 @@ export const ARTICLE_OCR_MODEL = "claude-haiku-4-5";
 const PRICE = { in: 1, out: 5 }; // $ / 1 Mio Tokens (Haiku)
 const USD_EUR = 0.92;
 // Version der Extraktionslogik – Änderung invalidiert den Beleg-Cache.
-export const ARTICLE_OCR_VERSION = "v4-einheit";
+export const ARTICLE_OCR_VERSION = "v5-rabatt-scope";
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 /** Cache-Hash eines Belegdokuments für beleg_articles (inkl. Logik-Version). */
@@ -81,8 +81,13 @@ export async function extractBelegArticles(
               "'Menge'/'Anzahl', z.B. 54), unit_price = line_total / Anzahl. Verwende NIEMALS das Füllgewicht in kg (z.B. " +
               "eine Gewichtsspalte '1.080,000' oder einen kg-Grundpreis) als unit oder quantity – das '20 KG' im Namen ist " +
               "nur die Packungsgröße, NICHT die Menge. So ist z.B. 'Kiesel/Servoflex' immer je Sack, nicht mal kg mal Sack. " +
-              "global_discount = ein auf die GESAMTSUMME/alle Positionen wirkender Rabatt/Nachlass (z.B. 'Rabatt 3%' " +
-              "oder 'Nachlass 50,00 €'); gib percent ODER amount an, sonst beide null. " +
+              "global_discount = NUR ein Rabatt, der im SUMMEN-/FUSSBEREICH der Rechnung auf die GESAMTSUMME aller " +
+              "Positionen wirkt (z.B. unten 'Rabatt 3% auf Warenwert' oder 'Nachlass 50,00 €'); gib percent ODER amount an, " +
+              "sonst BEIDE null. SEHR WICHTIG: Ein Rabatt in %, der ZWISCHEN oder UNTER den Artikelzeilen steht (z.B. eine " +
+              "Zeile 'Rabatt 53,00- %' direkt unter einem Artikel), ist ein POSITIONSRABATT und gehört NUR zur darüber " +
+              "stehenden Position – er ist bereits in deren Positionssumme/Nettobetrag enthalten. Solche Positionsrabatte " +
+              "NIEMALS in global_discount eintragen (sonst würden ALLE anderen Positionen fälschlich verbilligt). " +
+              "global_discount NUR setzen, wenn der Rabatt eindeutig einmalig auf die Gesamtsumme angewendet wird. " +
               "WICHTIG: Skonto ist KEIN Rabatt (Skonto = Zahlungsrabatt) und darf NICHT abgezogen werden. " +
               "'Maut Zuschlag'/Frachtzuschlag ist KEIN Artikel und wird NICHT eingerechnet. " +
               "Nur echte Artikel-/Materialpositionen – KEINE Zwischensummen, Versand-/Frachtkosten, reine Rabattzeilen, " +
@@ -136,13 +141,22 @@ export async function extractBelegArticles(
       .filter((it) => it.name.trim().length > 0);
 
     // Gesamtrabatt (auf alle Positionen) proportional abziehen.
+    // Ein echter Gesamtrabatt (auf den ganzen Warenwert) ist erfahrungsgemäß klein
+    // (Skonto ausgenommen, meist 2–10 %). Ein großer "Gesamtrabatt" ist fast immer
+    // ein fälschlich global interpretierter Positionsrabatt (z.B. 53 % unter EINER
+    // Position) – der darf NICHT auf alle Positionen angewendet werden.
     const gd = parsed.global_discount;
     const sum = items.reduce((s, it) => s + it.lineTotal, 0);
     let factor = 1;
-    if (gd) {
-      if (typeof gd.percent === "number" && gd.percent > 0 && gd.percent < 100) {
+    if (gd && items.length > 0) {
+      if (typeof gd.percent === "number" && gd.percent > 0 && gd.percent <= 20) {
         factor = 1 - gd.percent / 100;
-      } else if (typeof gd.amount === "number" && gd.amount > 0 && sum > gd.amount) {
+      } else if (
+        typeof gd.amount === "number" &&
+        gd.amount > 0 &&
+        sum > gd.amount &&
+        gd.amount <= sum * 0.2
+      ) {
         factor = (sum - gd.amount) / sum;
       }
     }
