@@ -1589,10 +1589,13 @@ function toNumber(value: unknown): number {
  */
 function sumDraft(
   node: unknown,
-  acc: { minutes: number; material: number; laborCost: number }
+  acc: { minutes: number; material: number; laborCost: number },
+  // Menge der umschließenden Position (SupplyService), mit der die Material-
+  // menge (SupplyProduct.quantity = Menge je Positionseinheit) multipliziert wird.
+  serviceQty = 1
 ): void {
   if (Array.isArray(node)) {
-    for (const n of node) sumDraft(n, acc);
+    for (const n of node) sumDraft(n, acc, serviceQty);
     return;
   }
   if (node && typeof node === "object") {
@@ -1601,13 +1604,15 @@ function sumDraft(
       acc.minutes += obj.time_minutes;
     }
     if (obj.atType === "SupplyProduct") {
-      acc.material += toNumber(obj.base_price) * toNumber(obj.quantity);
+      acc.material += toNumber(obj.base_price) * toNumber(obj.quantity) * serviceQty;
     }
     // SupplyService.wage_base = planned labor cost (Kostenlohn) of that line.
     if (obj.atType === "SupplyService") {
       acc.laborCost += toNumber(obj.wage_base);
     }
-    for (const v of Object.values(obj)) sumDraft(v, acc);
+    // In eine SupplyService-Position wird deren Menge als Multiplikator vererbt.
+    const childQty = obj.atType === "SupplyService" ? toNumber(obj.quantity) || 1 : serviceQty;
+    for (const v of Object.values(obj)) sumDraft(v, acc, childQty);
   }
 }
 
@@ -1735,10 +1740,11 @@ export interface ProjectMaterialCalculation {
 /** Sammelt Materialpositionen (SupplyProduct) + geplante Minuten/Lohnkosten aus einem Entwurfsbaum. */
 function collectDraft(
   node: unknown,
-  acc: { minutes: number; laborCost: number; items: CalculatedMaterialItem[] }
+  acc: { minutes: number; laborCost: number; items: CalculatedMaterialItem[] },
+  serviceQty = 1
 ): void {
   if (Array.isArray(node)) {
-    for (const n of node) collectDraft(n, acc);
+    for (const n of node) collectDraft(n, acc, serviceQty);
     return;
   }
   if (node && typeof node === "object") {
@@ -1747,7 +1753,8 @@ function collectDraft(
       acc.minutes += obj.time_minutes;
     }
     if (obj.atType === "SupplyProduct") {
-      const quantity = toNumber(obj.quantity);
+      // Effektive Menge = Menge je Positionseinheit × Positionsmenge (SupplyService).
+      const quantity = toNumber(obj.quantity) * serviceQty;
       const ekPrice = toNumber(obj.base_price);
       acc.items.push({
         name: String(obj.name ?? obj.description ?? "Unbenannt"),
@@ -1762,7 +1769,8 @@ function collectDraft(
     if (obj.atType === "SupplyService") {
       acc.laborCost += toNumber(obj.wage_base);
     }
-    for (const v of Object.values(obj)) collectDraft(v, acc);
+    const childQty = obj.atType === "SupplyService" ? toNumber(obj.quantity) || 1 : serviceQty;
+    for (const v of Object.values(obj)) collectDraft(v, acc, childQty);
   }
 }
 
