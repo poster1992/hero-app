@@ -23,6 +23,7 @@ import {
   type ProjectEmployeeHours,
 } from "@/app/dashboard/projekte/receipts-actions";
 import ProjectPhotosButton from "@/components/ProjectPhotosButton";
+import ProjectDocumentsButton from "@/components/ProjectDocumentsButton";
 import {
   getProjectBelegArticles,
   getProjectMaterialMappings,
@@ -550,6 +551,7 @@ export default function ProjectDetailModal({
           </div>
           <div className="no-print flex shrink-0 flex-wrap items-center gap-2">
             <ProjectPhotosButton projectId={p.id} />
+            <ProjectDocumentsButton projectId={p.id} />
             <button
               type="button"
               onClick={handlePrint}

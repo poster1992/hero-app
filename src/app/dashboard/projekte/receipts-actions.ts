@@ -62,6 +62,58 @@ export async function getProjectPhotos(projectId: number): Promise<ProjectPhoto[
     });
 }
 
+export interface ProjectDocument {
+  filename: string;
+  /** MIME-Typ (z.B. application/pdf) oder null. */
+  type: string | null;
+  /** Öffentliche Signatur-URL zum Ansehen (24 h gültig). */
+  url: string;
+  /** URL zum Herunterladen. */
+  downloadUrl: string;
+}
+
+/** Alle Dokumente (Nicht-Bild-Dateien) eines Projekts aus den HERO-Dateien. */
+export async function getProjectDocuments(projectId: number): Promise<ProjectDocument[]> {
+  const data = await heroGraphQL<{
+    project_match: {
+      file_uploads:
+        | {
+            filename: string | null;
+            type: string | null;
+            is_deleted: boolean | null;
+            temporary_url: string | null;
+            url_download: string | null;
+          }[]
+        | null;
+    } | null;
+  }>(
+    `query ProjectDocuments($id: Int) {
+      project_match(project_match_id: $id) {
+        file_uploads(first: 2000) { filename type is_deleted temporary_url url_download }
+      }
+    }`,
+    { id: projectId }
+  );
+  const files = data.project_match?.file_uploads ?? [];
+  return files
+    .filter(
+      (f) =>
+        !f.is_deleted &&
+        !(f.type ?? "").startsWith("image/") &&
+        (f.temporary_url || f.url_download)
+    )
+    .map((f) => {
+      const view = (f.temporary_url || f.url_download) as string;
+      return {
+        filename: f.filename ?? "Dokument",
+        type: f.type,
+        url: view,
+        downloadUrl: f.url_download ?? view,
+      };
+    })
+    .sort((a, b) => a.filename.localeCompare(b.filename, "de"));
+}
+
 export interface ProjectEmployeeDay {
   /** yyyy-mm-dd */
   date: string;
