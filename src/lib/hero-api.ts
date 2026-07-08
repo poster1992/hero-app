@@ -568,6 +568,8 @@ export interface CalendarEventLite {
   end: string | null;
   allDay: boolean;
   partners: { id: number; name: string; role: string | null }[];
+  /** HERO project match id (to open the project), or null. */
+  projectId: number | null;
   projectRelativeId: number | null;
   projectName: string | null;
 }
@@ -588,7 +590,7 @@ export async function getCalendarEvents(from: string, to: string): Promise<Calen
         all_day: boolean | null;
         deleted: boolean | null;
         partners: { id: number; name: string | null; role: string | null }[] | null;
-        project_match: { relative_id: number | null; name: string | null } | null;
+        project_match: { id: number | null; relative_id: number | null; name: string | null } | null;
       }[];
     }>(
       `query CalendarEvents($start: DateTime, $end: DateTime, $first: Int, $offset: Int) {
@@ -600,7 +602,7 @@ export async function getCalendarEvents(from: string, to: string): Promise<Calen
           all_day
           deleted
           partners { id name role }
-          project_match { relative_id name }
+          project_match { id relative_id name }
         }
       }`,
       { start: from, end: to, first: pageSize, offset: page * pageSize }
@@ -619,6 +621,7 @@ export async function getCalendarEvents(from: string, to: string): Promise<Calen
           name: p.name ?? "Unbekannt",
           role: p.role ?? null,
         })),
+        projectId: e.project_match?.id ?? null,
         projectRelativeId: e.project_match?.relative_id ?? null,
         projectName: e.project_match?.name ?? null,
       });
@@ -647,7 +650,7 @@ export async function getCalendarEventsForProject(
         all_day: boolean | null;
         deleted: boolean | null;
         partners: { id: number; name: string | null; role: string | null }[] | null;
-        project_match: { relative_id: number | null; name: string | null } | null;
+        project_match: { id: number | null; relative_id: number | null; name: string | null } | null;
       }[];
     }>(
       `query CalendarEventsForProject($pid: Int, $first: Int, $offset: Int) {
@@ -659,7 +662,7 @@ export async function getCalendarEventsForProject(
           all_day
           deleted
           partners { id name role }
-          project_match { relative_id name }
+          project_match { id relative_id name }
         }
       }`,
       { pid: projectMatchId, first: pageSize, offset: page * pageSize }
@@ -678,6 +681,7 @@ export async function getCalendarEventsForProject(
           name: p.name ?? "Unbekannt",
           role: p.role ?? null,
         })),
+        projectId: e.project_match?.id ?? null,
         projectRelativeId: e.project_match?.relative_id ?? null,
         projectName: e.project_match?.name ?? null,
       });

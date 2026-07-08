@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { PlanboardDayData } from "@/lib/planning-data";
 import { absenceStyle } from "@/lib/planboard-colors";
 
@@ -127,25 +128,45 @@ export default function PlanboardDay({ data }: { data: PlanboardDayData }) {
                   {planned.placed.map(({ item: ev, lane }) => {
                     const left = pct(ev.startMin);
                     const width = Math.max(pct(ev.endMin) - left, 2);
-                    return (
-                      <div
-                        key={`p-${ev.id}`}
-                        style={{
-                          left: `${left}%`,
-                          width: `${width}%`,
-                          top: `${(absenceLanes + lane) * LANE_H + 0.15}rem`,
-                          height: `${LANE_H - 0.3}rem`,
-                        }}
-                        className="absolute overflow-hidden rounded-md bg-gray-500 px-1.5 py-0.5 text-white shadow-sm"
-                        title={`${ev.timeLabel} · ${ev.title}${
-                          ev.projectRelativeId != null ? ` · #${ev.projectRelativeId}` : ""
-                        }${ev.projectName ? ` ${ev.projectName}` : ""}`}
-                      >
+                    const clickable = ev.projectId != null && ev.projectId > 0;
+                    const style = {
+                      left: `${left}%`,
+                      width: `${width}%`,
+                      top: `${(absenceLanes + lane) * LANE_H + 0.15}rem`,
+                      height: `${LANE_H - 0.3}rem`,
+                    };
+                    const inner = (
+                      <>
                         <p className="truncate text-[11px] font-medium leading-tight">{ev.title}</p>
                         <p className="truncate text-[10px] leading-tight opacity-90">
                           {ev.timeLabel}
                           {ev.projectRelativeId != null ? ` · #${ev.projectRelativeId}` : ""}
                         </p>
+                      </>
+                    );
+                    const titleText = clickable
+                      ? "Projekt öffnen"
+                      : `${ev.timeLabel} · ${ev.title}${
+                          ev.projectRelativeId != null ? ` · #${ev.projectRelativeId}` : ""
+                        }${ev.projectName ? ` ${ev.projectName}` : ""}`;
+                    return clickable ? (
+                      <Link
+                        key={`p-${ev.id}`}
+                        href={`/dashboard/projekte?open=${ev.projectId}`}
+                        style={style}
+                        className="absolute block overflow-hidden rounded-md bg-gray-500 px-1.5 py-0.5 text-white shadow-sm transition-colors hover:bg-brand-red"
+                        title={titleText}
+                      >
+                        {inner}
+                      </Link>
+                    ) : (
+                      <div
+                        key={`p-${ev.id}`}
+                        style={style}
+                        className="absolute overflow-hidden rounded-md bg-gray-500 px-1.5 py-0.5 text-white shadow-sm"
+                        title={titleText}
+                      >
+                        {inner}
                       </div>
                     );
                   })}

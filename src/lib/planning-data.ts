@@ -333,6 +333,8 @@ export interface PlanboardCellEvent {
   title: string;
   /** e.g. "07:00–16:00" or "Ganztägig". */
   timeLabel: string;
+  /** HERO project match id (to open the project), or null. */
+  projectId: number | null;
   projectName: string | null;
   projectRelativeId: number | null;
   /** Planned hours of this appointment on this day (weekday-capped, like Auslastung). */
@@ -462,6 +464,7 @@ export async function getPlanboardWeek(weekMonday: Date): Promise<PlanboardWeek>
         id: ev.id,
         title: ev.title?.trim() || "Termin",
         timeLabel,
+        projectId: ev.projectId,
         projectName: ev.projectName,
         projectRelativeId: ev.projectRelativeId,
         hours,
@@ -536,6 +539,8 @@ function hhmmToMin(hhmm: string): number {
 export interface PlanboardDayEvent {
   id: number;
   title: string;
+  /** HERO project match id (to open the project), or null. */
+  projectId: number | null;
   projectName: string | null;
   projectRelativeId: number | null;
   /** Original time label, e.g. "07:00–16:00" or "Ganztägig". */
@@ -663,6 +668,7 @@ export async function getPlanboardDay(day: Date): Promise<PlanboardDayData> {
     const dayEvent: PlanboardDayEvent = {
       id: ev.id,
       title: ev.title?.trim() || "Termin",
+      projectId: ev.projectId,
       projectName: ev.projectName,
       projectRelativeId: ev.projectRelativeId,
       timeLabel,

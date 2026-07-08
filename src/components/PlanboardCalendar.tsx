@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { PlanboardWeek } from "@/lib/planning-data";
 import { absenceStyle } from "@/lib/planboard-colors";
 
@@ -14,7 +15,13 @@ const hoursFmt = (n: number) => `${round1(n).toLocaleString("de-DE")} h`;
  */
 export default function PlanboardCalendar({ week }: { week: PlanboardWeek }) {
   const { days, rows } = week;
+  const router = useRouter();
   const [sel, setSel] = useState<{ rowIdx: number; dayIdx: number } | null>(null);
+
+  /** Linksklick auf einen Termin mit Projekt öffnet das Projekt-Popup. */
+  const openProject = (projectId: number | null) => {
+    if (projectId != null && projectId > 0) router.push(`/dashboard/projekte?open=${projectId}`);
+  };
 
   useEffect(() => {
     if (!sel) return;
@@ -126,11 +133,24 @@ export default function PlanboardCalendar({ week }: { week: PlanboardWeek }) {
                     );
                   })}
                   <div className="flex flex-col gap-1">
-                    {cell.map((ev) => (
+                    {cell.map((ev) => {
+                      const clickable = ev.projectId != null && ev.projectId > 0;
+                      return (
                       <div
                         key={`${row.employeeId}-${days[i].date}-${ev.id}`}
-                        className="rounded-md border border-gray-300 bg-gray-100 p-1.5 shadow-sm"
-                        title={ev.projectName ?? ev.title}
+                        onClick={
+                          clickable
+                            ? (e) => {
+                                e.stopPropagation();
+                                openProject(ev.projectId);
+                              }
+                            : undefined
+                        }
+                        role={clickable ? "button" : undefined}
+                        title={clickable ? "Projekt öffnen" : ev.projectName ?? ev.title}
+                        className={`rounded-md border border-gray-300 bg-gray-100 p-1.5 shadow-sm ${
+                          clickable ? "cursor-pointer transition-colors hover:border-brand-red/50 hover:bg-brand-red/5" : ""
+                        }`}
                       >
                         <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-600">
                           {ev.timeLabel}
@@ -150,7 +170,8 @@ export default function PlanboardCalendar({ week }: { week: PlanboardWeek }) {
                           </p>
                         )}
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               ))}
