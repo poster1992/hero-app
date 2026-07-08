@@ -3,7 +3,6 @@ import Sidebar from "@/components/Sidebar";
 import GlobalSearch from "@/components/GlobalSearch";
 import PreviewBanner from "@/components/PreviewBanner";
 import DataChatWidget from "@/components/DataChatWidget";
-import IdleLogout from "@/components/IdleLogout";
 import WorkflowTrigger from "@/components/WorkflowTrigger";
 import { getSession, getEffectiveRole } from "@/lib/session";
 import { getAllowedModules } from "@/lib/role-store";
@@ -42,7 +41,6 @@ export default async function DashboardLayout({
 
   return (
     <div className="flex min-h-screen flex-col md:flex-row">
-      <IdleLogout />
       <WorkflowTrigger />
       <Sidebar allowedModules={allowedModules} taskNotifCount={taskNotifCount} baustellen={baustellen} />
       <main className="flex min-w-0 flex-1 flex-col bg-black">

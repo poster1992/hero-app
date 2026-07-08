@@ -1,35 +1,16 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState } from "react";
 import { login, type LoginState } from "./actions";
 
 const initialState: LoginState = {};
 
 export default function LoginPage() {
   const [state, formAction, pending] = useActionState(login, initialState);
-  const [timedOut, setTimedOut] = useState(false);
-
-  // Hinweis zeigen, wenn die letzte Sitzung wegen Inaktivität beendet wurde.
-  useEffect(() => {
-    try {
-      if (sessionStorage.getItem("hero_logout_reason") === "timeout") {
-        setTimedOut(true);
-        sessionStorage.removeItem("hero_logout_reason");
-      }
-    } catch {
-      // sessionStorage nicht verfügbar – Hinweis einfach weglassen.
-    }
-  }, []);
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-10 bg-black px-4">
       <div className="text-3xl font-semibold tracking-[0.3em] text-white">FLOORTEC</div>
-
-      {timedOut && (
-        <p className="-mb-6 max-w-sm text-center text-sm text-amber-400" aria-live="polite">
-          Du wurdest wegen 15 Minuten Inaktivität automatisch abgemeldet. Bitte erneut anmelden.
-        </p>
-      )}
 
       <form action={formAction} className="flex w-full max-w-sm flex-col gap-4">
         <div className="flex flex-col gap-1">
