@@ -327,15 +327,7 @@ export default function ReviewCustomersTable({
                       </td>
                       <td className="whitespace-nowrap px-4 py-2 text-gray-700">{r.city ?? "—"}</td>
                       <td className="px-4 py-2 text-gray-700">
-                        {hasEmail(r) ? (
-                          r.email
-                        ) : r.phone ? (
-                          <span className="text-gray-500" title="Keine E-Mail – telefonisch erreichbar">
-                            ☎ {r.phone}
-                          </span>
-                        ) : (
-                          <span className="text-gray-400">keine E-Mail</span>
-                        )}
+                        {hasEmail(r) ? r.email : <span className="text-gray-300">—</span>}
                       </td>
                       <td className="whitespace-nowrap px-4 py-2">
                         {sent ? (
