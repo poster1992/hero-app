@@ -223,9 +223,13 @@ function mergeMaterials(
 export default function ProjectDetailModal({
   project,
   onClose,
+  canFinance = true,
 }: {
   project: ProjectRow | null;
   onClose: () => void;
+  /** Darf der Nutzer Kosten/Ertrag/Belege sehen? Ohne dieses Recht wird eine
+   *  reduzierte Ansicht gezeigt (nur Auftrag/Rechnungen/Offen, Stunden, Material-Mengen). */
+  canFinance?: boolean;
 }) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -254,20 +258,29 @@ export default function ProjectDetailModal({
       return;
     }
     let cancelled = false;
-    setLoadingReceipts(true);
-    setLoadingHours(true);
     setLoadingCalcMat(true);
-    setReceipts(null);
-    setEmpHours(null);
     setCalcMat(null);
-    getProjectReceipts(project.id)
-      .then((r) => !cancelled && setReceipts(r))
-      .catch(() => !cancelled && setReceipts([]))
-      .finally(() => !cancelled && setLoadingReceipts(false));
-    getProjectHoursByEmployee(project.id)
-      .then((h) => !cancelled && setEmpHours(h))
-      .catch(() => !cancelled && setEmpHours([]))
-      .finally(() => !cancelled && setLoadingHours(false));
+    // Belege & Mitarbeiter-Stunden nur laden, wenn der Nutzer sie sehen darf
+    // (Finanz-Recht) – sonst gar nicht erst zum Client übertragen.
+    if (canFinance) {
+      setLoadingReceipts(true);
+      setLoadingHours(true);
+      setReceipts(null);
+      setEmpHours(null);
+      getProjectReceipts(project.id)
+        .then((r) => !cancelled && setReceipts(r))
+        .catch(() => !cancelled && setReceipts([]))
+        .finally(() => !cancelled && setLoadingReceipts(false));
+      getProjectHoursByEmployee(project.id)
+        .then((h) => !cancelled && setEmpHours(h))
+        .catch(() => !cancelled && setEmpHours([]))
+        .finally(() => !cancelled && setLoadingHours(false));
+    } else {
+      setReceipts([]);
+      setEmpHours([]);
+      setLoadingReceipts(false);
+      setLoadingHours(false);
+    }
     getProjectCalculatedMaterials(project.id)
       .then((m) => !cancelled && setCalcMat(m))
       .catch(() => !cancelled && setCalcMat({ hours: 0, materialTotal: 0, laborCost: 0, items: [] }))
@@ -301,7 +314,7 @@ export default function ProjectDetailModal({
     return () => {
       cancelled = true;
     };
-  }, [project]);
+  }, [project, canFinance]);
 
   useEffect(() => {
     if (!project) return;
@@ -580,17 +593,21 @@ export default function ProjectDetailModal({
         <div className="print-scroll max-h-[75vh] overflow-y-auto px-6 py-5">
           {/* Kennzahlen */}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {[
+            {([
               ["Auftrag (netto)", euro.format(p.confirmationNet)],
               ["Rechnungen (netto)", euro.format(p.invoiceNet)],
               ["Offen", euro.format(open)],
-              ["Ø Lohnsatz", rate > 0 ? `${euro.format(rate)}/h` : "—"],
-              ["Kalk. Material", euro.format(p.calcMaterial)],
-              ["Ist Material", euro.format(p.costNet)],
-              ["Ist Lagerware", euro.format(p.stockNet)],
+              ...(canFinance
+                ? ([
+                    ["Ø Lohnsatz", rate > 0 ? `${euro.format(rate)}/h` : "—"],
+                    ["Kalk. Material", euro.format(p.calcMaterial)],
+                    ["Ist Material", euro.format(p.costNet)],
+                    ["Ist Lagerware", euro.format(p.stockNet)],
+                  ] as [string, string][])
+                : []),
               ["Kalk. Stunden", `${hours.format(p.calcHours)} h`],
               ["Ist Stunden", `${hours.format(p.hours)} h`],
-            ].map(([label, val]) => (
+            ] as [string, string][]).map(([label, val]) => (
               <div key={label} className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
                 <p className="text-[11px] text-gray-500">{label}</p>
                 <p className="mt-0.5 text-sm font-semibold text-gray-900">{val}</p>
@@ -621,6 +638,7 @@ export default function ProjectDetailModal({
               </ResponsiveContainer>
             </div>
 
+            {canFinance && (
             <div className="lg:col-span-1">
               <h3 className="mb-2 text-sm font-medium text-gray-700">Soll / Ist (€)</h3>
               <ResponsiveContainer width="100%" height={200}>
@@ -639,6 +657,7 @@ export default function ProjectDetailModal({
                 </BarChart>
               </ResponsiveContainer>
             </div>
+            )}
 
             <div className="lg:col-span-1">
               <h3 className="mb-2 text-sm font-medium text-gray-700">Stunden</h3>
@@ -668,47 +687,54 @@ export default function ProjectDetailModal({
                 }`}
                 result={euro.format(open)}
               />
-              <Calc
-                label="Rest Material"
-                formula={`Kalk. ${euro.format(p.calcMaterial)} − Ist ${euro.format(p.costNet)} − Lager ${euro.format(p.stockNet)}`}
-                result={euro.format(restMaterial)}
-                tone={restMaterial < 0 ? "neg" : "pos"}
-              />
+              {canFinance && (
+                <Calc
+                  label="Rest Material"
+                  formula={`Kalk. ${euro.format(p.calcMaterial)} − Ist ${euro.format(p.costNet)} − Lager ${euro.format(p.stockNet)}`}
+                  result={euro.format(restMaterial)}
+                  tone={restMaterial < 0 ? "neg" : "pos"}
+                />
+              )}
               <Calc
                 label="Rest Stunden"
                 formula={`Kalk. ${hours.format(p.calcHours)} h − Ist ${hours.format(p.hours)} h`}
                 result={`${hours.format(restHours)} h`}
                 tone={restHours < 0 ? "neg" : "pos"}
               />
-              <Calc
-                label="Ø Lohnsatz"
-                formula={`Soll-Lohn ${euro.format(p.sollLabor)} ÷ Kalk. ${hours.format(p.calcHours)} h`}
-                result={rate > 0 ? `${euro.format(rate)}/h` : "—"}
-              />
-              <Calc
-                label="Ist Lohnkosten"
-                formula={`Ist-Stunden ${hours.format(p.hours)} h × Ø ${euro.format(rate)}/h`}
-                result={euro.format(istLabor)}
-              />
-              <Calc
-                label="Soll Ertrag"
-                formula={`Auftrag ${euro.format(p.confirmationNet)} − Kalk. Material ${euro.format(
-                  p.calcMaterial
-                )} − Soll-Lohn ${euro.format(p.sollLabor)}`}
-                result={euro.format(sollErtrag)}
-                tone={sollErtrag < 0 ? "neg" : "pos"}
-              />
-              <Calc
-                label="Ist Ertrag"
-                formula={`Rechnungen ${euro.format(p.invoiceNet)} − Ist Material ${euro.format(
-                  p.costNet
-                )} − Lager ${euro.format(p.stockNet)} − Ist-Lohn ${euro.format(istLabor)}`}
-                result={euro.format(istErtrag)}
-                tone={istErtrag < 0 ? "neg" : "pos"}
-              />
+              {canFinance && (
+                <>
+                  <Calc
+                    label="Ø Lohnsatz"
+                    formula={`Soll-Lohn ${euro.format(p.sollLabor)} ÷ Kalk. ${hours.format(p.calcHours)} h`}
+                    result={rate > 0 ? `${euro.format(rate)}/h` : "—"}
+                  />
+                  <Calc
+                    label="Ist Lohnkosten"
+                    formula={`Ist-Stunden ${hours.format(p.hours)} h × Ø ${euro.format(rate)}/h`}
+                    result={euro.format(istLabor)}
+                  />
+                  <Calc
+                    label="Soll Ertrag"
+                    formula={`Auftrag ${euro.format(p.confirmationNet)} − Kalk. Material ${euro.format(
+                      p.calcMaterial
+                    )} − Soll-Lohn ${euro.format(p.sollLabor)}`}
+                    result={euro.format(sollErtrag)}
+                    tone={sollErtrag < 0 ? "neg" : "pos"}
+                  />
+                  <Calc
+                    label="Ist Ertrag"
+                    formula={`Rechnungen ${euro.format(p.invoiceNet)} − Ist Material ${euro.format(
+                      p.costNet
+                    )} − Lager ${euro.format(p.stockNet)} − Ist-Lohn ${euro.format(istLabor)}`}
+                    result={euro.format(istErtrag)}
+                    tone={istErtrag < 0 ? "neg" : "pos"}
+                  />
+                </>
+              )}
             </div>
           </div>
 
+          {canFinance && (<>
           {/* Arbeitszeiten je Mitarbeiter */}
           <div className="mt-6">
             <div className="mb-1 flex items-baseline justify-between gap-2">
@@ -829,6 +855,8 @@ export default function ProjectDetailModal({
             )}
           </div>
 
+          </>)}
+
           {/* Material: Soll (Kalkulation) und Ist (gebuchte Ware) je Artikel nebeneinander */}
           <div className="mt-6">
             {(() => {
@@ -866,18 +894,21 @@ export default function ProjectDetailModal({
                       {loadingBelegMat && <span className="text-gray-400">Belege werden ausgelesen …</span>}
                       {rows.length > 0 && (
                         <span>
-                          {rows.length} Artikel · Soll {euro.format(sollTotal)} · Ist {euro.format(istTotal)}
+                          {rows.length} Artikel
+                          {canFinance ? ` · Soll ${euro.format(sollTotal)} · Ist ${euro.format(istTotal)}` : ""}
                         </span>
                       )}
-                      <button
-                        type="button"
-                        onClick={resetAssignment}
-                        disabled={resetting}
-                        title="Komplette Zuordnung löschen und Belege neu auslesen"
-                        className="rounded border border-gray-300 px-2 py-0.5 font-medium text-gray-600 transition-colors hover:border-brand-red/50 hover:text-brand-red disabled:opacity-50"
-                      >
-                        {resetting ? "Setze zurück …" : "Zuordnung zurücksetzen"}
-                      </button>
+                      {canFinance && (
+                        <button
+                          type="button"
+                          onClick={resetAssignment}
+                          disabled={resetting}
+                          title="Komplette Zuordnung löschen und Belege neu auslesen"
+                          className="rounded border border-gray-300 px-2 py-0.5 font-medium text-gray-600 transition-colors hover:border-brand-red/50 hover:text-brand-red disabled:opacity-50"
+                        >
+                          {resetting ? "Setze zurück …" : "Zuordnung zurücksetzen"}
+                        </button>
+                      )}
                     </div>
                   </div>
                   {hasUnmatched && sollRows.length > 0 && (
@@ -902,18 +933,18 @@ export default function ProjectDetailModal({
                         <thead>
                           <tr className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
                             <th rowSpan={2} className="px-3 py-2 align-bottom font-medium">Material</th>
-                            <th colSpan={2} className="border-l border-gray-200 px-3 py-1.5 text-center font-medium">
+                            <th colSpan={canFinance ? 2 : 1} className="border-l border-gray-200 px-3 py-1.5 text-center font-medium">
                               Soll (Kalkulation)
                             </th>
-                            <th colSpan={2} className="border-l border-gray-200 px-3 py-1.5 text-center font-medium">
+                            <th colSpan={canFinance ? 2 : 1} className="border-l border-gray-200 px-3 py-1.5 text-center font-medium">
                               Ist (Lager + Belege)
                             </th>
                           </tr>
                           <tr className="border-b border-gray-200 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
                             <th className="border-l border-gray-200 px-3 py-1.5 text-right font-medium">Menge</th>
-                            <th className="px-3 py-1.5 text-right font-medium">EK</th>
+                            {canFinance && <th className="px-3 py-1.5 text-right font-medium">EK</th>}
                             <th className="border-l border-gray-200 px-3 py-1.5 text-right font-medium">Menge</th>
-                            <th className="px-3 py-1.5 text-right font-medium">EK</th>
+                            {canFinance && <th className="px-3 py-1.5 text-right font-medium">EK</th>}
                           </tr>
                         </thead>
                         <tbody>
@@ -1011,28 +1042,34 @@ export default function ProjectDetailModal({
                                 <td className="border-l border-gray-100 px-3 py-2 text-right tabular-nums text-gray-600">
                                   {r.sollQty ? `${hours.format(r.sollQty)}${r.unit ? ` ${r.unit}` : ""}` : "—"}
                                 </td>
-                                <td className="px-3 py-2 text-right tabular-nums text-gray-700">
-                                  {r.sollEk ? euro.format(r.sollEk) : "—"}
-                                </td>
+                                {canFinance && (
+                                  <td className="px-3 py-2 text-right tabular-nums text-gray-700">
+                                    {r.sollEk ? euro.format(r.sollEk) : "—"}
+                                  </td>
+                                )}
                                 <td className="border-l border-gray-100 px-3 py-2 text-right tabular-nums text-gray-600">
                                   {r.istQty ? `${hours.format(r.istQty)}${r.unit ? ` ${r.unit}` : ""}` : "—"}
                                 </td>
-                                <td className="px-3 py-2 text-right tabular-nums text-gray-700">
-                                  {r.istValue ? euro.format(r.istValue) : "—"}
-                                </td>
+                                {canFinance && (
+                                  <td className="px-3 py-2 text-right tabular-nums text-gray-700">
+                                    {r.istValue ? euro.format(r.istValue) : "—"}
+                                  </td>
+                                )}
                               </tr>
                             );
                           })}
                         </tbody>
-                        <tfoot>
-                          <tr className="border-t border-gray-200 bg-gray-50 font-semibold text-gray-900">
-                            <td className="px-3 py-2 text-sm">Summe EK</td>
-                            <td className="border-l border-gray-200 px-3 py-2" />
-                            <td className="px-3 py-2 text-right text-sm tabular-nums">{euro.format(sollTotal)}</td>
-                            <td className="border-l border-gray-200 px-3 py-2" />
-                            <td className="px-3 py-2 text-right text-sm tabular-nums">{euro.format(istTotal)}</td>
-                          </tr>
-                        </tfoot>
+                        {canFinance && (
+                          <tfoot>
+                            <tr className="border-t border-gray-200 bg-gray-50 font-semibold text-gray-900">
+                              <td className="px-3 py-2 text-sm">Summe EK</td>
+                              <td className="border-l border-gray-200 px-3 py-2" />
+                              <td className="px-3 py-2 text-right text-sm tabular-nums">{euro.format(sollTotal)}</td>
+                              <td className="border-l border-gray-200 px-3 py-2" />
+                              <td className="px-3 py-2 text-right text-sm tabular-nums">{euro.format(istTotal)}</td>
+                            </tr>
+                          </tfoot>
+                        )}
                       </table>
                     </div>
                   )}

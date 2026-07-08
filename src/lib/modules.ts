@@ -11,6 +11,7 @@ export interface AppModule {
 export const MODULES: AppModule[] = [
   { key: "dashboard", label: "Dashboard" },
   { key: "projekte", label: "Projekte" },
+  { key: "projekte_finanzen", label: "Projekt-Finanzen (Kosten/Ertrag/Belege im Projekt-Popup)" },
   { key: "dokumente", label: "Dokumente" },
   { key: "lager", label: "Lager" },
   { key: "lager_ek", label: "Lager EK-Preise (sehen & pflegen)" },

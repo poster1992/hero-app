@@ -8,8 +8,22 @@ import {
 } from "@/lib/hero-api";
 import { getCostNetByProject } from "@/lib/invoices";
 import { getBookedStockTotalsByProject } from "@/lib/materials";
+import { getSession } from "@/lib/session";
+import { getAllowedModules } from "@/lib/role-store";
 
 export default async function ProjektePage() {
+  const session = await getSession();
+  // Finanz-Ansicht (Kosten/Ertrag/Belege) nur mit dem Recht „projekte_finanzen"
+  // – Administratoren sehen immer alles.
+  let canFinance = session?.role === "administrator";
+  if (!canFinance && session) {
+    try {
+      canFinance = (await getAllowedModules(session.role)).includes("projekte_finanzen");
+    } catch {
+      canFinance = false;
+    }
+  }
+
   let rows: ProjectRow[] | null = null;
   let error: string | null = null;
   try {
@@ -51,7 +65,7 @@ export default async function ProjektePage() {
         </div>
       )}
 
-      {rows && <ProjectsTable projects={rows} />}
+      {rows && <ProjectsTable projects={rows} canFinance={canFinance} />}
     </div>
   );
 }

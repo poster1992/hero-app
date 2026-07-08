@@ -59,7 +59,13 @@ const STATUS_FILTERS: { key: string; label: string; needles: string[] | null }[]
   { key: "nachkalkulation", label: "Nachkalkulation", needles: ["nachkalkulation"] },
 ];
 
-export default function ProjectsTable({ projects }: { projects: ProjectRow[] }) {
+export default function ProjectsTable({
+  projects,
+  canFinance = true,
+}: {
+  projects: ProjectRow[];
+  canFinance?: boolean;
+}) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [search, setSearch] = useState(searchParams.get("q") ?? "");
@@ -575,7 +581,7 @@ export default function ProjectsTable({ projects }: { projects: ProjectRow[] }) 
         )}
       </div>
 
-      <ProjectDetailModal project={detail} onClose={closeDetail} />
+      <ProjectDetailModal project={detail} onClose={closeDetail} canFinance={canFinance} />
       {taskProject && (
         <ProjectTaskModal
           projectId={taskProject.id}
