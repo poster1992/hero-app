@@ -84,6 +84,7 @@ export async function createReviewTaskAction(input: {
   customerId: number | string;
   name: string;
   email: string;
+  phone?: string;
   assignedTo: number[];
   dueDate: string;
 }): Promise<CreateReviewTaskOutcome> {
@@ -93,6 +94,7 @@ export async function createReviewTaskAction(input: {
   const customerId = String(input.customerId ?? "").trim();
   const email = String(input.email ?? "").trim();
   const name = String(input.name ?? "").trim();
+  const phone = String(input.phone ?? "").trim();
   const assignedTo = (input.assignedTo ?? []).filter((n) => Number.isFinite(n) && n > 0);
   const dueDate = String(input.dueDate ?? "").trim();
 
@@ -101,12 +103,16 @@ export async function createReviewTaskAction(input: {
 
   // Projekt-Schlüssel identisch zum Direktversand (Pro-Kunde-Sperre greift gemeinsam).
   const projectKey = `c:${customerId || email.toLowerCase()}`;
+  const contactLine = email
+    ? `E-Mail (Kundenstamm): ${email}`
+    : `Keine E-Mail hinterlegt – bitte telefonisch kontaktieren${phone ? `: ${phone}` : ""}.`;
   const description =
     `Kunde: ${name || "—"}\n` +
-    `E-Mail (Kundenstamm): ${email || "— keine hinterlegt —"}\n` +
-    `Bitte den Kunden kontaktieren, nach der Zufriedenheit fragen und anschließend über den Button die ` +
-    `Google-Bewertungs-Anfrage senden.\n` +
-    `[BEWERTUNG:${email}|${name}|${projectKey}]`;
+    (phone ? `Telefon: ${phone}\n` : "") +
+    `${contactLine}\n` +
+    `Bitte den Kunden kontaktieren, nach der Zufriedenheit fragen` +
+    (email ? ` und anschließend über den Button die Google-Bewertungs-Anfrage senden.` : `.`) +
+    `\n[BEWERTUNG:${email}|${name}|${projectKey}]`;
 
   const fd = new FormData();
   fd.set("title", `Kundenzufriedenheit erfragen: ${name || email}`);

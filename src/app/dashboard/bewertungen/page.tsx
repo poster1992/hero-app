@@ -48,23 +48,24 @@ export default async function BewertungenPage() {
       users.map((u) => [u.id, u.displayName || u.username])
     );
 
-    rows = customers
-      .filter((c) => (c.email ?? "").trim())
-      .map((c) => {
-        const byId = lookup.byCustomerId.get(String(c.id));
-        const byMail = c.email ? lookup.byEmail.get(c.email.trim().toLowerCase()) : undefined;
-        const info = byId ?? byMail;
-        return {
-          id: c.id,
-          name: c.name,
-          companyName: c.companyName,
-          email: c.email,
-          city: c.city,
-          categoryName: c.categoryName,
-          alreadySent: !!info,
-          sentAt: info?.sentAt ?? null,
-        };
-      });
+    // Alle Kunden anzeigen – auch ohne E-Mail (die kann man per Aufgabe/Anruf
+    // erreichen). Der E-Mail-Versand bleibt für sie in der Tabelle deaktiviert.
+    rows = customers.map((c) => {
+      const byId = lookup.byCustomerId.get(String(c.id));
+      const byMail = c.email ? lookup.byEmail.get(c.email.trim().toLowerCase()) : undefined;
+      const info = byId ?? byMail;
+      return {
+        id: c.id,
+        name: c.name,
+        companyName: c.companyName,
+        email: c.email,
+        phone: c.phone,
+        city: c.city,
+        categoryName: c.categoryName,
+        alreadySent: !!info,
+        sentAt: info?.sentAt ?? null,
+      };
+    });
 
     history = hist.map((h) => ({
       name: h.customerName,

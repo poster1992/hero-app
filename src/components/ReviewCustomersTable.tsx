@@ -12,11 +12,14 @@ export interface ReviewCustomerRow {
   name: string;
   companyName: string | null;
   email: string | null;
+  phone: string | null;
   city: string | null;
   categoryName: string | null;
   alreadySent: boolean;
   sentAt: string | null;
 }
+
+const hasEmail = (r: ReviewCustomerRow) => !!(r.email ?? "").trim();
 
 export interface ReviewHistoryDisplay {
   name: string | null;
@@ -57,6 +60,7 @@ export default function ReviewCustomersTable({
 }) {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>("offen");
+  const [onlyEmail, setOnlyEmail] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [sentIds, setSentIds] = useState<Set<number>>(new Set());
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
@@ -96,6 +100,7 @@ export default function ReviewCustomersTable({
         customerId: target.id,
         name: target.name,
         email: target.email ?? "",
+        phone: target.phone ?? "",
         assignedTo,
         dueDate: taskDue,
       });
@@ -117,15 +122,17 @@ export default function ReviewCustomersTable({
       const sent = r.alreadySent || sentIds.has(r.id);
       if (filter === "offen" && sent) return false;
       if (filter === "versendet" && !sent) return false;
+      if (onlyEmail && !hasEmail(r)) return false;
       if (!q) return true;
-      return [r.name, r.companyName ?? "", r.city ?? "", r.email ?? "", r.categoryName ?? ""]
+      return [r.name, r.companyName ?? "", r.city ?? "", r.email ?? "", r.phone ?? "", r.categoryName ?? ""]
         .join(" ")
         .toLowerCase()
         .includes(q);
     });
-  }, [rows, search, filter, sentIds]);
+  }, [rows, search, filter, onlyEmail, sentIds]);
 
-  const selectableFiltered = filtered.filter((r) => !isSent(r));
+  // Für den Sammelversand nur Kunden MIT E-Mail (per Mail erreichbar).
+  const selectableFiltered = filtered.filter((r) => !isSent(r) && hasEmail(r));
   const allSelected = selectableFiltered.length > 0 && selectableFiltered.every((r) => selected.has(r.id));
 
   const toggleAll = () => {
@@ -236,6 +243,15 @@ export default function ReviewCustomersTable({
             </button>
           ))}
         </div>
+        <label className="flex items-center gap-2 text-sm text-gray-600">
+          <input
+            type="checkbox"
+            checked={onlyEmail}
+            onChange={(e) => setOnlyEmail(e.target.checked)}
+            className="h-4 w-4 accent-brand-red"
+          />
+          nur mit E-Mail
+        </label>
         <button
           type="button"
           onClick={sendBulk}
@@ -297,7 +313,8 @@ export default function ReviewCustomersTable({
                           type="checkbox"
                           checked={selected.has(r.id)}
                           onChange={() => toggleOne(r.id)}
-                          disabled={sent}
+                          disabled={sent || !hasEmail(r)}
+                          title={!hasEmail(r) ? "Keine E-Mail – nur per Aufgabe/Anruf" : undefined}
                           aria-label={`${r.name} auswählen`}
                           className="h-4 w-4 accent-brand-red disabled:opacity-40"
                         />
@@ -309,7 +326,17 @@ export default function ReviewCustomersTable({
                         )}
                       </td>
                       <td className="whitespace-nowrap px-4 py-2 text-gray-700">{r.city ?? "—"}</td>
-                      <td className="px-4 py-2 text-gray-700">{r.email ?? "—"}</td>
+                      <td className="px-4 py-2 text-gray-700">
+                        {hasEmail(r) ? (
+                          r.email
+                        ) : r.phone ? (
+                          <span className="text-gray-500" title="Keine E-Mail – telefonisch erreichbar">
+                            ☎ {r.phone}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400">keine E-Mail</span>
+                        )}
+                      </td>
                       <td className="whitespace-nowrap px-4 py-2">
                         {sent ? (
                           <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
@@ -335,7 +362,8 @@ export default function ReviewCustomersTable({
                           <button
                             type="button"
                             onClick={() => sendOne(r)}
-                            disabled={sent || pending}
+                            disabled={sent || pending || !hasEmail(r)}
+                            title={!hasEmail(r) ? "Keine E-Mail hinterlegt – bitte Aufgabe (Anruf) erstellen" : undefined}
                             className="rounded-md bg-brand-red px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
                           >
                             {busyId === r.id ? "Sende …" : sent ? "Erledigt" : "Senden"}
@@ -406,7 +434,7 @@ export default function ReviewCustomersTable({
             <h3 className="text-lg font-semibold text-gray-900">Aufgabe: Kundenzufriedenheit erfragen</h3>
             <p className="mt-1 text-sm text-gray-600">
               Für <span className="font-medium text-gray-900">{taskFor.name}</span>
-              {taskFor.email ? <> · {taskFor.email}</> : null}
+              {taskFor.email ? <> · {taskFor.email}</> : taskFor.phone ? <> · ☎ {taskFor.phone}</> : null}
             </p>
 
             <div className="mt-4 flex flex-col gap-4">
