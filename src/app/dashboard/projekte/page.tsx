@@ -49,6 +49,18 @@ export default async function ProjektePage() {
       calcMaterial: calc.get(p.id)?.material ?? 0,
       sollLabor: calc.get(p.id)?.laborCost ?? 0,
     }));
+    // Ohne Finanz-Recht: sensible Kostenwerte gar nicht erst zum Client senden.
+    // (Auftrag/Rechnungen/Offen und Stunden bleiben; Material-Kosten, Lohn,
+    // Lagerware und der daraus abgeleitete Ertrag entfallen.)
+    if (!canFinance) {
+      rows = rows.map((r) => ({
+        ...r,
+        costNet: 0,
+        calcMaterial: 0,
+        sollLabor: 0,
+        stockNet: 0,
+      }));
+    }
   } catch (e) {
     error = e instanceof Error ? e.message : "Unbekannter Fehler beim Laden der Daten.";
   }

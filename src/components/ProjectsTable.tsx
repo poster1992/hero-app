@@ -355,18 +355,26 @@ export default function ProjectsTable({
                 <Th k="ab" label="AB" cls="text-right" />
                 <Th k="rec" label="REC" cls="text-right" />
                 <Th k="offen" label="Offen (netto)" cls="text-right" />
-                <Th k="calcMaterial" label="Kalk. Material" cls="border-l-2 border-gray-300 text-right" />
-                <Th k="istMaterial" label="Ist Material" cls="text-right" />
-                <Th k="stockNet" label="Ist Lagerware" cls="text-right" />
-                <Th k="restMaterial" label="Rest Material" cls="text-right" />
+                {canFinance && (
+                  <>
+                    <Th k="calcMaterial" label="Kalk. Material" cls="border-l-2 border-gray-300 text-right" />
+                    <Th k="istMaterial" label="Ist Material" cls="text-right" />
+                    <Th k="stockNet" label="Ist Lagerware" cls="text-right" />
+                    <Th k="restMaterial" label="Rest Material" cls="text-right" />
+                  </>
+                )}
                 <Th k="calcHours" label="Kalk. Stunden" cls="border-l-2 border-gray-300 text-right" />
                 <Th k="hours" label="Stunden" cls="text-right" />
                 <Th k="restHours" label="Rest Stunden" cls="text-right" />
-                <Th k="sollLabor" label="Soll Lohnkosten" cls="border-l-2 border-gray-300 text-right" />
-                <Th k="istLabor" label="Ist Lohnkosten" cls="text-right" />
-                <Th k="rate" label="Ø Lohnsatz" cls="text-right" />
-                <Th k="sollErtrag" label="Soll Ertrag" cls="border-l-2 border-gray-300 text-right" />
-                <Th k="istErtrag" label="Ist Ertrag" cls="text-right" />
+                {canFinance && (
+                  <>
+                    <Th k="sollLabor" label="Soll Lohnkosten" cls="border-l-2 border-gray-300 text-right" />
+                    <Th k="istLabor" label="Ist Lohnkosten" cls="text-right" />
+                    <Th k="rate" label="Ø Lohnsatz" cls="text-right" />
+                    <Th k="sollErtrag" label="Soll Ertrag" cls="border-l-2 border-gray-300 text-right" />
+                    <Th k="istErtrag" label="Ist Ertrag" cls="text-right" />
+                  </>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -418,28 +426,32 @@ export default function ProjectsTable({
                         ? currencyFormatter.format(0)
                         : "—"}
                   </td>
-                  <td className="border-l-2 border-gray-300 px-3 py-2 align-top text-right whitespace-nowrap text-gray-800">
-                    {p.calcMaterial !== 0 ? currencyFormatter.format(p.calcMaterial) : "—"}
-                  </td>
-                  <td className="px-3 py-2 align-top text-right whitespace-nowrap text-gray-800">
-                    {p.costNet !== 0 ? currencyFormatter.format(p.costNet) : "—"}
-                  </td>
-                  <td className="px-3 py-2 align-top text-right whitespace-nowrap text-gray-800">
-                    {p.stockNet !== 0 ? currencyFormatter.format(p.stockNet) : "—"}
-                  </td>
-                  <td
-                    className={`px-3 py-2 align-top text-right whitespace-nowrap font-medium ${
-                      p.calcMaterial === 0 && p.costNet === 0 && p.stockNet === 0
-                        ? "text-gray-500"
-                        : restMaterialOf(p) < 0
-                          ? "text-brand-red"
-                          : "text-emerald-600"
-                    }`}
-                  >
-                    {p.calcMaterial === 0 && p.costNet === 0 && p.stockNet === 0
-                      ? "—"
-                      : currencyFormatter.format(restMaterialOf(p))}
-                  </td>
+                  {canFinance && (
+                    <>
+                      <td className="border-l-2 border-gray-300 px-3 py-2 align-top text-right whitespace-nowrap text-gray-800">
+                        {p.calcMaterial !== 0 ? currencyFormatter.format(p.calcMaterial) : "—"}
+                      </td>
+                      <td className="px-3 py-2 align-top text-right whitespace-nowrap text-gray-800">
+                        {p.costNet !== 0 ? currencyFormatter.format(p.costNet) : "—"}
+                      </td>
+                      <td className="px-3 py-2 align-top text-right whitespace-nowrap text-gray-800">
+                        {p.stockNet !== 0 ? currencyFormatter.format(p.stockNet) : "—"}
+                      </td>
+                      <td
+                        className={`px-3 py-2 align-top text-right whitespace-nowrap font-medium ${
+                          p.calcMaterial === 0 && p.costNet === 0 && p.stockNet === 0
+                            ? "text-gray-500"
+                            : restMaterialOf(p) < 0
+                              ? "text-brand-red"
+                              : "text-emerald-600"
+                        }`}
+                      >
+                        {p.calcMaterial === 0 && p.costNet === 0 && p.stockNet === 0
+                          ? "—"
+                          : currencyFormatter.format(restMaterialOf(p))}
+                      </td>
+                    </>
+                  )}
                   <td className="border-l-2 border-gray-300 px-3 py-2 align-top text-right whitespace-nowrap text-gray-800">
                     {p.calcHours > 0 ? `${hoursFormatter.format(p.calcHours)} h` : "—"}
                   </td>
@@ -459,41 +471,45 @@ export default function ProjectsTable({
                       ? "—"
                       : `${hoursFormatter.format(p.calcHours - p.hours)} h`}
                   </td>
-                  <td className="border-l-2 border-gray-300 px-3 py-2 align-top text-right whitespace-nowrap text-gray-800">
-                    {p.sollLabor !== 0 ? currencyFormatter.format(p.sollLabor) : "—"}
-                  </td>
-                  <td className="px-3 py-2 align-top text-right whitespace-nowrap text-gray-800">
-                    {istLaborOf(p) > 0 ? currencyFormatter.format(istLaborOf(p)) : "—"}
-                  </td>
-                  <td className="px-3 py-2 align-top text-right whitespace-nowrap text-gray-700">
-                    {rateOf(p) > 0 ? `${currencyFormatter.format(rateOf(p))}/h` : "—"}
-                  </td>
-                  <td
-                    className={`border-l-2 border-gray-300 px-3 py-2 align-top text-right whitespace-nowrap font-medium ${
-                      p.confirmationNet === 0 && p.calcMaterial === 0 && p.sollLabor === 0
-                        ? "text-gray-500"
-                        : sollErtragOf(p) < 0
-                          ? "text-brand-red"
-                          : "text-emerald-600"
-                    }`}
-                  >
-                    {p.confirmationNet === 0 && p.calcMaterial === 0 && p.sollLabor === 0
-                      ? "—"
-                      : currencyFormatter.format(sollErtragOf(p))}
-                  </td>
-                  <td
-                    className={`px-3 py-2 align-top text-right whitespace-nowrap font-medium ${
-                      p.invoiceNet === 0 && p.costNet === 0 && p.stockNet === 0 && istLaborOf(p) === 0
-                        ? "text-gray-500"
-                        : istErtragOf(p) < 0
-                          ? "text-brand-red"
-                          : "text-emerald-600"
-                    }`}
-                  >
-                    {p.invoiceNet === 0 && p.costNet === 0 && p.stockNet === 0 && istLaborOf(p) === 0
-                      ? "—"
-                      : currencyFormatter.format(istErtragOf(p))}
-                  </td>
+                  {canFinance && (
+                    <>
+                      <td className="border-l-2 border-gray-300 px-3 py-2 align-top text-right whitespace-nowrap text-gray-800">
+                        {p.sollLabor !== 0 ? currencyFormatter.format(p.sollLabor) : "—"}
+                      </td>
+                      <td className="px-3 py-2 align-top text-right whitespace-nowrap text-gray-800">
+                        {istLaborOf(p) > 0 ? currencyFormatter.format(istLaborOf(p)) : "—"}
+                      </td>
+                      <td className="px-3 py-2 align-top text-right whitespace-nowrap text-gray-700">
+                        {rateOf(p) > 0 ? `${currencyFormatter.format(rateOf(p))}/h` : "—"}
+                      </td>
+                      <td
+                        className={`border-l-2 border-gray-300 px-3 py-2 align-top text-right whitespace-nowrap font-medium ${
+                          p.confirmationNet === 0 && p.calcMaterial === 0 && p.sollLabor === 0
+                            ? "text-gray-500"
+                            : sollErtragOf(p) < 0
+                              ? "text-brand-red"
+                              : "text-emerald-600"
+                        }`}
+                      >
+                        {p.confirmationNet === 0 && p.calcMaterial === 0 && p.sollLabor === 0
+                          ? "—"
+                          : currencyFormatter.format(sollErtragOf(p))}
+                      </td>
+                      <td
+                        className={`px-3 py-2 align-top text-right whitespace-nowrap font-medium ${
+                          p.invoiceNet === 0 && p.costNet === 0 && p.stockNet === 0 && istLaborOf(p) === 0
+                            ? "text-gray-500"
+                            : istErtragOf(p) < 0
+                              ? "text-brand-red"
+                              : "text-emerald-600"
+                        }`}
+                      >
+                        {p.invoiceNet === 0 && p.costNet === 0 && p.stockNet === 0 && istLaborOf(p) === 0
+                          ? "—"
+                          : currencyFormatter.format(istErtragOf(p))}
+                      </td>
+                    </>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -512,22 +528,26 @@ export default function ProjectsTable({
                 <td className="px-3 py-2 text-right whitespace-nowrap">
                   {currencyFormatter.format(openTotal)}
                 </td>
-                <td className="border-l-2 border-gray-300 px-3 py-2 text-right whitespace-nowrap">
-                  {currencyFormatter.format(calcMaterialTotal)}
-                </td>
-                <td className="px-3 py-2 text-right whitespace-nowrap">
-                  {currencyFormatter.format(costTotal)}
-                </td>
-                <td className="px-3 py-2 text-right whitespace-nowrap">
-                  {currencyFormatter.format(stockTotal)}
-                </td>
-                <td
-                  className={`px-3 py-2 text-right whitespace-nowrap ${
-                    calcMaterialTotal - costTotal - stockTotal < 0 ? "text-brand-red" : "text-emerald-600"
-                  }`}
-                >
-                  {currencyFormatter.format(calcMaterialTotal - costTotal - stockTotal)}
-                </td>
+                {canFinance && (
+                  <>
+                    <td className="border-l-2 border-gray-300 px-3 py-2 text-right whitespace-nowrap">
+                      {currencyFormatter.format(calcMaterialTotal)}
+                    </td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap">
+                      {currencyFormatter.format(costTotal)}
+                    </td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap">
+                      {currencyFormatter.format(stockTotal)}
+                    </td>
+                    <td
+                      className={`px-3 py-2 text-right whitespace-nowrap ${
+                        calcMaterialTotal - costTotal - stockTotal < 0 ? "text-brand-red" : "text-emerald-600"
+                      }`}
+                    >
+                      {currencyFormatter.format(calcMaterialTotal - costTotal - stockTotal)}
+                    </td>
+                  </>
+                )}
                 <td className="border-l-2 border-gray-300 px-3 py-2 text-right whitespace-nowrap">
                   {hoursFormatter.format(calcHoursTotal)} h
                 </td>
@@ -541,39 +561,43 @@ export default function ProjectsTable({
                 >
                   {hoursFormatter.format(calcHoursTotal - hoursTotal)} h
                 </td>
-                <td className="border-l-2 border-gray-300 px-3 py-2 text-right whitespace-nowrap">
-                  {currencyFormatter.format(sollLaborTotal)}
-                </td>
-                <td className="px-3 py-2 text-right whitespace-nowrap">
-                  {currencyFormatter.format(istLaborTotal)}
-                </td>
-                <td className="px-3 py-2 text-right whitespace-nowrap">
-                  {calcHoursTotal > 0
-                    ? `${currencyFormatter.format(sollLaborTotal / calcHoursTotal)}/h`
-                    : "—"}
-                </td>
-                {(() => {
-                  const sollErtragTotal = confirmationTotal - calcMaterialTotal - sollLaborTotal;
-                  const istErtragTotal = invoiceTotal - costTotal - stockTotal - istLaborTotal;
-                  return (
-                    <>
-                      <td
-                        className={`border-l-2 border-gray-300 px-3 py-2 text-right whitespace-nowrap ${
-                          sollErtragTotal < 0 ? "text-brand-red" : "text-emerald-600"
-                        }`}
-                      >
-                        {currencyFormatter.format(sollErtragTotal)}
-                      </td>
-                      <td
-                        className={`px-3 py-2 text-right whitespace-nowrap ${
-                          istErtragTotal < 0 ? "text-brand-red" : "text-emerald-600"
-                        }`}
-                      >
-                        {currencyFormatter.format(istErtragTotal)}
-                      </td>
-                    </>
-                  );
-                })()}
+                {canFinance && (
+                  <>
+                    <td className="border-l-2 border-gray-300 px-3 py-2 text-right whitespace-nowrap">
+                      {currencyFormatter.format(sollLaborTotal)}
+                    </td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap">
+                      {currencyFormatter.format(istLaborTotal)}
+                    </td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap">
+                      {calcHoursTotal > 0
+                        ? `${currencyFormatter.format(sollLaborTotal / calcHoursTotal)}/h`
+                        : "—"}
+                    </td>
+                    {(() => {
+                      const sollErtragTotal = confirmationTotal - calcMaterialTotal - sollLaborTotal;
+                      const istErtragTotal = invoiceTotal - costTotal - stockTotal - istLaborTotal;
+                      return (
+                        <>
+                          <td
+                            className={`border-l-2 border-gray-300 px-3 py-2 text-right whitespace-nowrap ${
+                              sollErtragTotal < 0 ? "text-brand-red" : "text-emerald-600"
+                            }`}
+                          >
+                            {currencyFormatter.format(sollErtragTotal)}
+                          </td>
+                          <td
+                            className={`px-3 py-2 text-right whitespace-nowrap ${
+                              istErtragTotal < 0 ? "text-brand-red" : "text-emerald-600"
+                            }`}
+                          >
+                            {currencyFormatter.format(istErtragTotal)}
+                          </td>
+                        </>
+                      );
+                    })()}
+                  </>
+                )}
               </tr>
             </tfoot>
           </table>
