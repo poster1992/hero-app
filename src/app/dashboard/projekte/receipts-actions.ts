@@ -22,32 +22,98 @@ export interface ProjectPhoto {
   downloadUrl: string;
   /** Hochlade-/Erstelldatum (ISO) oder null. */
   uploadedAt: string | null;
+  /** Wer die Datei hochgeladen hat (aus dem Projekt-Logbuch), oder null. */
+  uploadedBy: string | null;
+}
+
+const stripTags = (s: string | null): string =>
+  (s ?? "").replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").trim();
+
+/** Extrahiert die hochgeladenen Dateinamen aus einem Logbuch-Text (3 HERO-Formate). */
+function extractUploadedFilenames(text: string): string[] {
+  const clean = (s: string) => s.replace(/^[\s.·-]+|[\s.]+$/g, "").trim();
+  // Mehrere Bilder: „… hochgeladen:. - name1. - name2 …"
+  if (/hochgeladen:/i.test(text) && /\s-\s/.test(text)) {
+    const after = text.split(/hochgeladen:/i)[1] ?? "";
+    return after
+      .split(/\s-\s/)
+      .map(clean)
+      .filter((n) => /\.[A-Za-z0-9]{2,5}$/.test(n));
+  }
+  // Einzelbild: „… hochgeladen: name.jpeg."
+  const single = text.match(/hochgeladen:\s*(.+?)\.?\s*$/i);
+  if (single) return [clean(single[1])].filter(Boolean);
+  // Dokument: „name.pdf wurde hochgeladen."
+  const doc = text.match(/^(.+?)\s+wurde hochgeladen/i);
+  if (doc) return [clean(doc[1])].filter(Boolean);
+  return [];
+}
+
+/**
+ * Ordnet Dateinamen dem Uploader zu. HERO speichert den Uploader nicht an der
+ * Datei, protokolliert ihn aber im Logbuch (mehrere Textformate, siehe
+ * extractUploadedFilenames). Liefert eine Map dateiname(lowercase) → Uploader.
+ */
+async function getUploadAuthorsByFilename(projectId: number): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  try {
+    const data = await heroGraphQL<{
+      project_histories: {
+        custom_text: string | null;
+        user: { partner: { name: string | null } | null; email: string | null } | null;
+      }[];
+    }>(
+      `query UploadAuthors($id: Int) {
+        project_histories(project_match_id: $id, show_system_histories: false, orderBy: "id", first: 2000) {
+          custom_text
+          user { partner { name } email }
+        }
+      }`,
+      { id: projectId }
+    );
+    for (const h of data.project_histories ?? []) {
+      const text = stripTags(h.custom_text);
+      if (!/hochgeladen/i.test(text)) continue;
+      const author = h.user?.partner?.name || h.user?.email || null;
+      if (!author) continue;
+      for (const name of extractUploadedFilenames(text)) {
+        const key = name.toLowerCase();
+        if (key && !map.has(key)) map.set(key, author);
+      }
+    }
+  } catch {
+    // Uploader ist optional – ohne Logbuch bleibt er leer.
+  }
+  return map;
 }
 
 /** Bilder (Fotos) eines Projekts aus den HERO-Dateien (mit Thumbnails). */
 export async function getProjectPhotos(projectId: number): Promise<ProjectPhoto[]> {
-  const data = await heroGraphQL<{
-    project_match: {
-      file_uploads:
-        | {
-            filename: string | null;
-            type: string | null;
-            is_deleted: boolean | null;
-            created: string | null;
-            temporary_url: string | null;
-            url_download: string | null;
-            thumbnails: { format: string | null; url: string | null }[] | null;
-          }[]
-        | null;
-    } | null;
-  }>(
-    `query ProjectPhotos($id: Int) {
-      project_match(project_match_id: $id) {
-        file_uploads(first: 2000) { filename type is_deleted created temporary_url url_download thumbnails { format url } }
-      }
-    }`,
-    { id: projectId }
-  );
+  const [data, authors] = await Promise.all([
+    heroGraphQL<{
+      project_match: {
+        file_uploads:
+          | {
+              filename: string | null;
+              type: string | null;
+              is_deleted: boolean | null;
+              created: string | null;
+              temporary_url: string | null;
+              url_download: string | null;
+              thumbnails: { format: string | null; url: string | null }[] | null;
+            }[]
+          | null;
+      } | null;
+    }>(
+      `query ProjectPhotos($id: Int) {
+        project_match(project_match_id: $id) {
+          file_uploads(first: 2000) { filename type is_deleted created temporary_url url_download thumbnails { format url } }
+        }
+      }`,
+      { id: projectId }
+    ),
+    getUploadAuthorsByFilename(projectId),
+  ]);
   const files = data.project_match?.file_uploads ?? [];
   const pick = (thumbs: { format: string | null; url: string | null }[] | null, fmt: string) =>
     thumbs?.find((t) => t.format === fmt)?.url ?? null;
@@ -56,12 +122,14 @@ export async function getProjectPhotos(projectId: number): Promise<ProjectPhoto[
     .filter((f) => !f.is_deleted && (f.type ?? "").startsWith("image/") && f.temporary_url)
     .map((f) => {
       const full = f.temporary_url as string;
+      const name = f.filename ?? "Foto";
       return {
-        filename: f.filename ?? "Foto",
+        filename: name,
         thumbUrl: pick(f.thumbnails, "fit_256") ?? full,
         fullUrl: pick(f.thumbnails, "fit_1024") ?? full,
         downloadUrl: f.url_download ?? full,
         uploadedAt: f.created ?? null,
+        uploadedBy: authors.get(name.trim().toLowerCase()) ?? null,
       };
     })
     // Neueste zuerst.

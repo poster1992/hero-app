@@ -35,10 +35,18 @@ function stripHtml(s: string | null): string {
     .trim();
 }
 
+/** Titel automatischer System-Ereignisse (für die „Nur Notizen"-Ansicht ausgeblendet). */
+const SYSTEM_TITLE_RE =
+  /hochgeladen|eingetragen|zugewiesen|erstellt|geändert|geaendert|^status:|eingegangen|gelöscht|geloescht|verschoben|storniert|abgeschlossen/i;
+
 /**
  * Loads a project's logbook entries (newest first).
- * includeSystem=true zeigt das KOMPLETTE Logbuch inkl. System-Einträgen
- * (Projekt zugewiesen, Zeiten eingetragen, Dokumente …).
+ *
+ * HERO-Eigenheit: `show_system_histories: false` liefert das KOMPLETTE
+ * Aktivitäts-Log (Bild hochgeladen, Angebot erstellt, Zeiten, Kommentare …),
+ * `true` nur eine kleine Teilmenge. Wir holen daher immer das komplette Log.
+ * includeSystem=false blendet die automatischen System-Ereignisse aus und
+ * zeigt nur die manuellen Notizen/Kommentare.
  */
 export async function getProjectLogbook(projectId: number, includeSystem = true): Promise<LogbookEntry[]> {
   const data = await heroGraphQL<{
@@ -50,8 +58,8 @@ export async function getProjectLogbook(projectId: number, includeSystem = true)
       user: { partner: { name: string | null } | null; email: string | null } | null;
     }[];
   }>(
-    `query Logbook($id: Int, $sys: Boolean) {
-      project_histories(project_match_id: $id, show_system_histories: $sys, orderBy: "id", first: 300) {
+    `query Logbook($id: Int) {
+      project_histories(project_match_id: $id, show_system_histories: false, orderBy: "id", first: 2000) {
         id
         created
         custom_title
@@ -59,16 +67,20 @@ export async function getProjectLogbook(projectId: number, includeSystem = true)
         user { partner { name } email }
       }
     }`,
-    { id: projectId, sys: includeSystem }
+    { id: projectId }
   );
-  const entries = (data.project_histories ?? []).map((h) => ({
+  let entries = (data.project_histories ?? []).map((h) => ({
     id: h.id,
     date: h.created,
     title: stripHtml(h.custom_title),
     text: stripHtml(h.custom_text),
     author: h.user?.partner?.name || h.user?.email || null,
   }));
-  return entries.reverse();
+  entries.reverse(); // neueste zuerst (Query liefert aufsteigend nach id)
+  if (!includeSystem) {
+    entries = entries.filter((e) => !SYSTEM_TITLE_RE.test(e.title));
+  }
+  return entries;
 }
 
 export interface GlobalLogEntry {

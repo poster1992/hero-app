@@ -85,7 +85,9 @@ export default function ProjectPhotosButton({ projectId }: { projectId: number }
                 key={i}
                 type="button"
                 onClick={() => setLightbox(i)}
-                title={`${ph.filename}${ph.uploadedAt ? ` · ${fmtPhotoDate(ph.uploadedAt)}` : ""}`}
+                title={`${ph.filename}${ph.uploadedAt ? ` · ${fmtPhotoDate(ph.uploadedAt)}` : ""}${
+                  ph.uploadedBy ? ` · ${ph.uploadedBy}` : ""
+                }`}
                 className="group relative overflow-hidden rounded-md bg-white/5"
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -95,9 +97,11 @@ export default function ProjectPhotosButton({ projectId }: { projectId: number }
                   loading="lazy"
                   className="h-32 w-full object-cover transition-transform group-hover:scale-105"
                 />
-                {ph.uploadedAt && (
-                  <span className="absolute inset-x-0 bottom-0 bg-black/55 px-1.5 py-0.5 text-left text-[10px] font-medium text-white">
+                {(ph.uploadedAt || ph.uploadedBy) && (
+                  <span className="absolute inset-x-0 bottom-0 truncate bg-black/55 px-1.5 py-0.5 text-left text-[10px] font-medium text-white">
                     {fmtPhotoDate(ph.uploadedAt)}
+                    {ph.uploadedAt && ph.uploadedBy ? " · " : ""}
+                    {ph.uploadedBy ?? ""}
                   </span>
                 )}
               </button>
@@ -118,7 +122,8 @@ export default function ProjectPhotosButton({ projectId }: { projectId: number }
           >
             <span className="truncate text-sm">
               {photos[lightbox].filename}
-              {photos[lightbox].uploadedAt ? ` · ${fmtPhotoDate(photos[lightbox].uploadedAt)}` : ""} ·{" "}
+              {photos[lightbox].uploadedAt ? ` · ${fmtPhotoDate(photos[lightbox].uploadedAt)}` : ""}
+              {photos[lightbox].uploadedBy ? ` · ${photos[lightbox].uploadedBy}` : ""} ·{" "}
               {lightbox + 1}/{photos.length}
             </span>
             <div className="flex items-center gap-2">
