@@ -74,6 +74,8 @@ export default function ProjectsTable({ projects }: { projects: ProjectRow[] }) 
   // ?from=aufgaben → nach dem Schließen zurück zur Aufgabenseite.
   const autoOpenedRef = useRef(false);
   const fromAufgabenRef = useRef(false);
+  // Ziel-URL, zu der nach dem Schließen zurückgekehrt wird (z.B. die Arbeitsplanung).
+  const backUrlRef = useRef<string | null>(null);
   useEffect(() => {
     if (autoOpenedRef.current) return;
     const openId = Number(searchParams.get("open"));
@@ -83,14 +85,22 @@ export default function ProjectsTable({ projects }: { projects: ProjectRow[] }) 
         setDetail(p);
         autoOpenedRef.current = true;
         fromAufgabenRef.current = searchParams.get("from") === "aufgaben";
+        const back = searchParams.get("back");
+        // Nur interne Pfade zulassen (kein offener Redirect).
+        backUrlRef.current = back && back.startsWith("/") ? back : null;
       }
     }
   }, [searchParams, projects]);
 
-  // Schließt das Detail-Popup; kam es aus dem Prüf-Flow, zurück zu den Aufgaben.
+  // Schließt das Detail-Popup; kam es aus einem anderen Bereich (Aufgaben,
+  // Arbeitsplanung …), dorthin zurückkehren.
   const closeDetail = () => {
     setDetail(null);
-    if (fromAufgabenRef.current) {
+    if (backUrlRef.current) {
+      const target = backUrlRef.current;
+      backUrlRef.current = null;
+      router.push(target);
+    } else if (fromAufgabenRef.current) {
       fromAufgabenRef.current = false;
       router.push("/dashboard/aufgaben");
     }

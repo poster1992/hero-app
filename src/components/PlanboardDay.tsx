@@ -32,8 +32,9 @@ function assignLanes<T extends { startMin: number; endMin: number }>(
  * across the top. Planned appointments are drawn as coloured bars; recorded
  * working times (Ist) are stacked below them in grey on the same axis.
  */
-export default function PlanboardDay({ data }: { data: PlanboardDayData }) {
+export default function PlanboardDay({ data, backUrl }: { data: PlanboardDayData; backUrl?: string }) {
   const { rows, startHour, endHour } = data;
+  const backParam = backUrl ? `&back=${encodeURIComponent(backUrl)}` : "";
   const totalMin = (endHour - startHour) * 60;
   const winStart = startHour * 60;
   const hours = Array.from({ length: endHour - startHour }, (_, i) => startHour + i);
@@ -152,7 +153,7 @@ export default function PlanboardDay({ data }: { data: PlanboardDayData }) {
                     return clickable ? (
                       <Link
                         key={`p-${ev.id}`}
-                        href={`/dashboard/projekte?open=${ev.projectId}`}
+                        href={`/dashboard/projekte?open=${ev.projectId}${backParam}`}
                         style={style}
                         className="absolute block overflow-hidden rounded-md bg-gray-500 px-1.5 py-0.5 text-white shadow-sm transition-colors hover:bg-brand-red"
                         title={titleText}

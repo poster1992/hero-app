@@ -13,14 +13,17 @@ const hoursFmt = (n: number) => `${round1(n).toLocaleString("de-DE")} h`;
  * days across the top, each cell holding that employee's appointments.
  * Right-clicking a day cell opens a Plan/Ist detail popup for that employee.
  */
-export default function PlanboardCalendar({ week }: { week: PlanboardWeek }) {
+export default function PlanboardCalendar({ week, backUrl }: { week: PlanboardWeek; backUrl?: string }) {
   const { days, rows } = week;
   const router = useRouter();
   const [sel, setSel] = useState<{ rowIdx: number; dayIdx: number } | null>(null);
 
-  /** Linksklick auf einen Termin mit Projekt öffnet das Projekt-Popup. */
+  /** Linksklick auf einen Termin mit Projekt öffnet das Projekt-Popup;
+   *  beim Schließen kehrt man über `back` zur Arbeitsplanung zurück. */
   const openProject = (projectId: number | null) => {
-    if (projectId != null && projectId > 0) router.push(`/dashboard/projekte?open=${projectId}`);
+    if (projectId == null || projectId <= 0) return;
+    const back = backUrl ? `&back=${encodeURIComponent(backUrl)}` : "";
+    router.push(`/dashboard/projekte?open=${projectId}${back}`);
   };
 
   useEffect(() => {

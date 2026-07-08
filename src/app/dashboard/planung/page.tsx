@@ -198,8 +198,12 @@ export default async function PlanungPage({
         )}
 
         {view === "day"
-          ? planDayData && <PlanboardDay data={planDayData} />
-          : planboard && <PlanboardCalendar week={planboard} />}
+          ? planDayData && (
+              <PlanboardDay data={planDayData} backUrl={href(offset, view, weekOffset, dayOffset)} />
+            )
+          : planboard && (
+              <PlanboardCalendar week={planboard} backUrl={href(offset, view, weekOffset, dayOffset)} />
+            )}
       </section>
 
       {/* Auslastungstabelle vorerst ausgeblendet (SHOW_UTILIZATION). Code bleibt
