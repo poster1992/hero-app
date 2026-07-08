@@ -9,6 +9,7 @@ import {
   addNoteAction,
   taskButtonAction,
   loadPersonTasksAction,
+  loadCompletedTasksAction,
   sendReviewEmailAction,
   type CreateTaskState,
 } from "@/app/dashboard/aufgaben/actions";
@@ -16,7 +17,7 @@ import {
 /** Google-Bewertungslink (aus den Einstellungen) für den „E-Mail öffnen"-Button. */
 const ReviewUrlContext = createContext<string>("");
 import { decideReviewAction } from "@/app/dashboard/belege/review-actions";
-import { taskStatusLabel, isOverdue, type Task, type TaskStatus } from "@/lib/task-types";
+import { taskStatusLabel, isOverdue, type CompletedTaskEntry, type Task, type TaskStatus } from "@/lib/task-types";
 
 export interface ReviewTaskInfo {
   status: "offen" | "freigegeben" | "abgelehnt";
@@ -642,6 +643,24 @@ export default function TaskManager({
     }
   };
   const personName = users.find((u) => u.id === personId)?.name ?? "";
+
+  // Admin: an einem bestimmten Tag erledigte Aufgaben.
+  const [completedDate, setCompletedDate] = useState<string>("");
+  const [completedTasks, setCompletedTasks] = useState<CompletedTaskEntry[] | null>(null);
+  const [loadingCompleted, startLoadCompleted] = useTransition();
+  const selectCompletedDate = (date: string) => {
+    setCompletedDate(date);
+    if (date) {
+      setPersonId(0);
+      setPersonTasks(null);
+      startLoadCompleted(async () => {
+        setCompletedTasks(await loadCompletedTasksAction(date));
+      });
+    } else {
+      setCompletedTasks(null);
+    }
+  };
+
   const matchesFilter = (t: Task) => {
     if (statusFilter === "ueberfaellig") {
       if (!isOverdue(t.dueDate, t.status)) return false;
@@ -855,6 +874,29 @@ export default function TaskManager({
             ))}
           </select>
         )}
+        {isAdmin && (
+          <div className="flex items-center gap-1.5">
+            <input
+              type="date"
+              value={completedDate}
+              onChange={(e) => selectCompletedDate(e.target.value)}
+              title="An diesem Tag erledigte Aufgaben anzeigen"
+              className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-800 outline-none focus:border-brand-red/60"
+            />
+            {completedDate ? (
+              <button
+                type="button"
+                onClick={() => selectCompletedDate("")}
+                title="Tagesansicht schließen"
+                className="rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-500 hover:text-gray-900"
+              >
+                ✕
+              </button>
+            ) : (
+              <span className="text-xs text-gray-400">erledigt am Tag</span>
+            )}
+          </div>
+        )}
         <input
           type="text"
           value={search}
@@ -864,8 +906,67 @@ export default function TaskManager({
         />
       </div>
 
+      {/* Admin: an einem Tag erledigte Aufgaben */}
+      {isAdmin && completedDate && (
+        <section className="flex flex-col gap-3">
+          <h2 className="text-lg font-semibold text-gray-900">
+            Erledigt am{" "}
+            {(() => {
+              const [y, m, d] = completedDate.split("-");
+              return `${d}.${m}.${y}`;
+            })()}{" "}
+            <span className="text-sm font-normal text-gray-500">
+              ({(completedTasks ?? []).length})
+            </span>
+          </h2>
+          {loadingCompleted ? (
+            <p className="text-sm text-gray-400">Wird geladen …</p>
+          ) : (completedTasks ?? []).length === 0 ? (
+            <p className="text-sm text-gray-400">An diesem Tag wurde keine Aufgabe erledigt.</p>
+          ) : (
+            <div className="overflow-x-auto rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="text-xs uppercase tracking-wide text-gray-500 [&>th]:border-b [&>th]:border-gray-200 [&>th]:px-4 [&>th]:py-2.5">
+                    <th>Uhrzeit</th>
+                    <th>Aufgabe</th>
+                    <th>Projekt</th>
+                    <th>Erledigt von</th>
+                    <th>Zugewiesen</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(completedTasks ?? []).map((c) => (
+                    <tr key={c.taskId} className="border-b border-gray-100 last:border-0 align-top hover:bg-gray-50">
+                      <td className="whitespace-nowrap px-4 py-2 text-gray-600">
+                        {c.completedAt
+                          ? new Date(c.completedAt).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })
+                          : "—"}
+                      </td>
+                      <td className="px-4 py-2">
+                        <div className="font-medium text-gray-900">{c.title}</div>
+                        {c.note && <div className="text-xs text-gray-500">Notiz: {c.note}</div>}
+                      </td>
+                      <td className="px-4 py-2 text-gray-700">
+                        {c.projectName
+                          ? `${c.projectRelativeId != null ? `#${c.projectRelativeId} ` : ""}${c.projectName}`
+                          : "—"}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-2 text-gray-700">{c.completedByName ?? "—"}</td>
+                      <td className="px-4 py-2 text-gray-600">
+                        {c.assigneeNames.length > 0 ? c.assigneeNames.join(", ") : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
+
       {/* Admin: Aufgaben einer bestimmten Person */}
-      {isAdmin && personId > 0 && (
+      {isAdmin && !completedDate && personId > 0 && (
         <section className="flex flex-col gap-3">
           <h2 className="text-lg font-semibold text-gray-900">
             Aufgaben von {personName}{" "}
@@ -893,7 +994,7 @@ export default function TaskManager({
       )}
 
       {/* Admin: alle offenen Aufgaben */}
-      {isAdmin && personId === 0 && (
+      {isAdmin && !completedDate && personId === 0 && (
         <section className="flex flex-col gap-3">
           <h2 className="text-lg font-semibold text-gray-900">
             Alle offenen Aufgaben{" "}
@@ -916,8 +1017,8 @@ export default function TaskManager({
         </section>
       )}
 
-      {/* Eigene Listen ausblenden, wenn eine Person gefiltert ist (nur deren Aufgaben zeigen). */}
-      {personId === 0 && (
+      {/* Eigene Listen ausblenden, wenn eine Person gefiltert oder ein Tag gewählt ist. */}
+      {!completedDate && personId === 0 && (
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Mir zugewiesen */}
         <section className="flex flex-col gap-3">

@@ -4,6 +4,7 @@ import { writeProjectLogbook } from "./hero-api";
 import {
   TASK_STATUSES,
   taskStatusLabel,
+  type CompletedTaskEntry,
   type Task,
   type TaskAssignee,
   type TaskHistoryEntry,
@@ -12,7 +13,7 @@ import {
 
 // Re-export the client-safe symbols so existing server-side imports keep working.
 export { TASK_STATUSES, taskStatusLabel };
-export type { Task, TaskAssignee, TaskHistoryEntry, TaskStatus };
+export type { CompletedTaskEntry, Task, TaskAssignee, TaskHistoryEntry, TaskStatus };
 
 interface TaskRow extends RowDataPacket {
   id: number;
@@ -167,6 +168,79 @@ export async function listTasksForPerson(userId: number): Promise<Task[]> {
     [userId]
   );
   return hydrate(rows);
+}
+
+/**
+ * Alle Aufgaben, die an einem bestimmten Tag (yyyy-mm-dd) als „erledigt" markiert
+ * wurden – für die Admin-Tagesansicht. Quelle ist die Status-Historie; pro Aufgabe
+ * wird der jüngste Erledigt-Eintrag des Tages genommen (mehrfaches Erledigen an
+ * einem Tag zählt einmal).
+ */
+export async function listTasksCompletedOn(date: string): Promise<CompletedTaskEntry[]> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return [];
+  const pool = getPool();
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT h.task_id, h.detail, h.created_at,
+            COALESCE(NULLIF(u.display_name, ''), u.username) AS by_name,
+            t.title, t.project_name, t.project_relative_id
+     FROM task_history h
+     JOIN tasks t ON t.id = h.task_id
+     LEFT JOIN users u ON u.id = h.user_id
+     WHERE h.action = 'status'
+       AND h.detail LIKE 'Status: Erledigt%'
+       AND DATE(h.created_at) = ?
+     ORDER BY h.created_at DESC, h.id DESC`,
+    [date]
+  );
+
+  // Pro Aufgabe nur den jüngsten Erledigt-Eintrag des Tages behalten.
+  const seen = new Set<number>();
+  const entries: {
+    taskId: number;
+    title: string;
+    projectName: string | null;
+    projectRelativeId: number | null;
+    completedByName: string | null;
+    completedAt: string | null;
+    note: string | null;
+  }[] = [];
+  for (const r of rows) {
+    const taskId = r.task_id as number;
+    if (seen.has(taskId)) continue;
+    seen.add(taskId);
+    // detail = "Status: Erledigt" oder "Status: Erledigt – <Notiz>"
+    const detail = (r.detail as string | null) ?? "";
+    const m = detail.match(/^Status:\s*Erledigt\s*(?:[–-]\s*([\s\S]*))?$/);
+    const note = m && m[1] ? m[1].trim() : null;
+    entries.push({
+      taskId,
+      title: (r.title as string) ?? "",
+      projectName: (r.project_name as string | null) ?? null,
+      projectRelativeId: (r.project_relative_id as number | null) ?? null,
+      completedByName: (r.by_name as string | null) ?? null,
+      completedAt: r.created_at ? String(r.created_at) : null,
+      note,
+    });
+  }
+  if (entries.length === 0) return [];
+
+  // Zugewiesene Mitarbeiter je Aufgabe nachladen.
+  const ids = entries.map((e) => e.taskId);
+  const [assigneeRows] = await pool.query<AssigneeRow[]>(
+    `SELECT ta.task_id, u.id, COALESCE(NULLIF(u.display_name, ''), u.username) AS name
+     FROM task_assignees ta JOIN users u ON u.id = ta.user_id
+     WHERE ta.task_id IN (?)
+     ORDER BY name`,
+    [ids]
+  );
+  const namesByTask = new Map<number, string[]>();
+  for (const a of assigneeRows) {
+    const list = namesByTask.get(a.task_id) ?? [];
+    list.push(a.name);
+    namesByTask.set(a.task_id, list);
+  }
+
+  return entries.map((e) => ({ ...e, assigneeNames: namesByTask.get(e.taskId) ?? [] }));
 }
 
 /** All not-yet-completed tasks (administrator overview). */

@@ -35,6 +35,22 @@ export interface TaskHistoryEntry {
   at: string | null;
 }
 
+/** Eine an einem bestimmten Tag als „erledigt" markierte Aufgabe (Admin-Tagesansicht). */
+export interface CompletedTaskEntry {
+  taskId: number;
+  title: string;
+  projectName: string | null;
+  projectRelativeId: number | null;
+  /** Wer die Aufgabe an diesem Tag erledigt hat. */
+  completedByName: string | null;
+  /** Zeitpunkt der Erledigung (ISO/DB-String). */
+  completedAt: string | null;
+  /** Optionale Notiz, die beim Erledigen angegeben wurde. */
+  note: string | null;
+  /** Zugewiesene Mitarbeiter (Namen). */
+  assigneeNames: string[];
+}
+
 export interface Task {
   id: number;
   title: string;

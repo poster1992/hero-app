@@ -21,8 +21,10 @@ import {
   addTaskNote,
   getTaskById,
   listTasksForPerson,
+  listTasksCompletedOn,
   taskStatusLabel,
   TASK_STATUSES,
+  type CompletedTaskEntry,
   type Task,
   type TaskStatus,
 } from "@/lib/tasks";
@@ -454,6 +456,18 @@ export async function sendReviewEmailAction(formData: FormData): Promise<SendRev
   }
   revalidatePath(PATH);
   return { ok: true };
+}
+
+/** Admin: lädt alle an einem Tag (yyyy-mm-dd) erledigten Aufgaben. */
+export async function loadCompletedTasksAction(date: string): Promise<CompletedTaskEntry[]> {
+  const session = await getSession();
+  if (session?.role !== "administrator") return [];
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return [];
+  try {
+    return await listTasksCompletedOn(date);
+  } catch {
+    return [];
+  }
 }
 
 /** Admin: lädt alle Aufgaben einer bestimmten Person (zugewiesen oder erstellt). */
