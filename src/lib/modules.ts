@@ -38,6 +38,7 @@ export const MODULES: AppModule[] = [
   { key: "cockpit_artikel", label: "Artikel-Auswertung", group: "Cockpit" },
   { key: "cockpit_bestellliste", label: "Bestellliste", group: "Cockpit" },
   { key: "cockpit_mitarbeiterbewertung", label: "Mitarbeiterbewertung", group: "Cockpit" },
+  { key: "cockpit_bewertungen", label: "Kundenbewertungen (Google-Anfragen senden)", group: "Cockpit" },
   { key: "cockpit_arbeitsvertrag", label: "Arbeitsvertrag erstellen", group: "Cockpit" },
 ];
 
