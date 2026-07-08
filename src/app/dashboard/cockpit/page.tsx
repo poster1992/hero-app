@@ -68,7 +68,7 @@ export default async function DashboardPage({
     // Zähler optional
   }
 
-  const googleStats = await getGoogleReviewStats().catch(() => ({ rating: null, count: null, configured: false }));
+  const googleStats = await getGoogleReviewStats().catch(() => ({ rating: null, count: null, configured: false, error: undefined as string | undefined }));
 
   let volume: Awaited<ReturnType<typeof getOfferConfirmationVolume>> | null = null;
   try {
@@ -184,7 +184,13 @@ export default async function DashboardPage({
             ) : (
               <>
                 <p className="text-2xl font-semibold text-gray-400">—</p>
-                <p className="text-xs text-gray-400">unter Einstellungen konfigurieren</p>
+                {googleStats.configured && googleStats.error ? (
+                  <p className="max-w-[220px] text-xs text-red-500" title={googleStats.error}>
+                    {googleStats.error}
+                  </p>
+                ) : (
+                  <p className="text-xs text-gray-400">unter Einstellungen konfigurieren</p>
+                )}
               </>
             )}
           </div>
