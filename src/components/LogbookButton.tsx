@@ -22,10 +22,13 @@ export default function LogbookButton({
   projectId,
   projectName,
   projectRelativeId = null,
+  compact = true,
 }: {
   projectId: number;
   projectName: string;
   projectRelativeId?: number | null;
+  /** true = kleines Icon (Standard, z.B. Pipeline); false = gelabelter Button. */
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -304,18 +307,29 @@ export default function LogbookButton({
 
   return (
     <>
-      <button
-        type="button"
-        onClick={openLogbook}
-        title="Logbuch öffnen"
-        className="flex h-7 w-7 items-center justify-center rounded-md border border-gray-700 text-gray-400 transition-colors hover:border-brand-red/50 hover:text-brand-red"
-      >
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4">
-          <path d="M5 4a1 1 0 0 1 1-1h11a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4Z" />
-          <path d="M5 7H3.5M5 12H3.5M5 17H3.5" />
-          <path d="M9 8h5M9 12h5M9 16h3" />
-        </svg>
-      </button>
+      {compact ? (
+        <button
+          type="button"
+          onClick={openLogbook}
+          title="Logbuch öffnen"
+          className="flex h-7 w-7 items-center justify-center rounded-md border border-gray-700 text-gray-400 transition-colors hover:border-brand-red/50 hover:text-brand-red"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4">
+            <path d="M5 4a1 1 0 0 1 1-1h11a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4Z" />
+            <path d="M5 7H3.5M5 12H3.5M5 17H3.5" />
+            <path d="M9 8h5M9 12h5M9 16h3" />
+          </svg>
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={openLogbook}
+          title="Logbuch öffnen"
+          className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900"
+        >
+          📓 Logbuch
+        </button>
+      )}
 
       {open && mounted && createPortal(modal, document.body)}
     </>

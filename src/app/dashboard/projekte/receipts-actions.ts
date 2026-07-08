@@ -20,6 +20,8 @@ export interface ProjectPhoto {
   fullUrl: string;
   /** Original zum Herunterladen. */
   downloadUrl: string;
+  /** Hochlade-/Erstelldatum (ISO) oder null. */
+  uploadedAt: string | null;
 }
 
 /** Bilder (Fotos) eines Projekts aus den HERO-Dateien (mit Thumbnails). */
@@ -31,6 +33,7 @@ export async function getProjectPhotos(projectId: number): Promise<ProjectPhoto[
             filename: string | null;
             type: string | null;
             is_deleted: boolean | null;
+            created: string | null;
             temporary_url: string | null;
             url_download: string | null;
             thumbnails: { format: string | null; url: string | null }[] | null;
@@ -40,7 +43,7 @@ export async function getProjectPhotos(projectId: number): Promise<ProjectPhoto[
   }>(
     `query ProjectPhotos($id: Int) {
       project_match(project_match_id: $id) {
-        file_uploads(first: 2000) { filename type is_deleted temporary_url url_download thumbnails { format url } }
+        file_uploads(first: 2000) { filename type is_deleted created temporary_url url_download thumbnails { format url } }
       }
     }`,
     { id: projectId }
@@ -58,8 +61,11 @@ export async function getProjectPhotos(projectId: number): Promise<ProjectPhoto[
         thumbUrl: pick(f.thumbnails, "fit_256") ?? full,
         fullUrl: pick(f.thumbnails, "fit_1024") ?? full,
         downloadUrl: f.url_download ?? full,
+        uploadedAt: f.created ?? null,
       };
-    });
+    })
+    // Neueste zuerst.
+    .sort((a, b) => (b.uploadedAt ?? "").localeCompare(a.uploadedAt ?? ""));
 }
 
 export interface ProjectDocument {

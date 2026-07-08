@@ -24,6 +24,7 @@ import {
 } from "@/app/dashboard/projekte/receipts-actions";
 import ProjectPhotosButton from "@/components/ProjectPhotosButton";
 import ProjectDocumentsButton from "@/components/ProjectDocumentsButton";
+import LogbookButton from "@/components/LogbookButton";
 import {
   getProjectBelegArticles,
   getProjectMaterialMappings,
@@ -565,6 +566,12 @@ export default function ProjectDetailModal({
           <div className="no-print flex shrink-0 flex-wrap items-center gap-2">
             <ProjectPhotosButton projectId={p.id} />
             <ProjectDocumentsButton projectId={p.id} />
+            <LogbookButton
+              projectId={p.id}
+              projectName={p.name}
+              projectRelativeId={p.relativeId}
+              compact={false}
+            />
             <button
               type="button"
               onClick={handlePrint}

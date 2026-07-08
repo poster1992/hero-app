@@ -4,6 +4,13 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { getProjectPhotos, type ProjectPhoto } from "@/app/dashboard/projekte/receipts-actions";
 
+const photoDateFmt = new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
+function fmtPhotoDate(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "" : photoDateFmt.format(d);
+}
+
 export default function ProjectPhotosButton({ projectId }: { projectId: number }) {
   const [mounted, setMounted] = useState(false);
   const [open, setOpen] = useState(false);
@@ -78,7 +85,7 @@ export default function ProjectPhotosButton({ projectId }: { projectId: number }
                 key={i}
                 type="button"
                 onClick={() => setLightbox(i)}
-                title={ph.filename}
+                title={`${ph.filename}${ph.uploadedAt ? ` · ${fmtPhotoDate(ph.uploadedAt)}` : ""}`}
                 className="group relative overflow-hidden rounded-md bg-white/5"
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -88,6 +95,11 @@ export default function ProjectPhotosButton({ projectId }: { projectId: number }
                   loading="lazy"
                   className="h-32 w-full object-cover transition-transform group-hover:scale-105"
                 />
+                {ph.uploadedAt && (
+                  <span className="absolute inset-x-0 bottom-0 bg-black/55 px-1.5 py-0.5 text-left text-[10px] font-medium text-white">
+                    {fmtPhotoDate(ph.uploadedAt)}
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -105,7 +117,9 @@ export default function ProjectPhotosButton({ projectId }: { projectId: number }
             onClick={(e) => e.stopPropagation()}
           >
             <span className="truncate text-sm">
-              {photos[lightbox].filename} · {lightbox + 1}/{photos.length}
+              {photos[lightbox].filename}
+              {photos[lightbox].uploadedAt ? ` · ${fmtPhotoDate(photos[lightbox].uploadedAt)}` : ""} ·{" "}
+              {lightbox + 1}/{photos.length}
             </span>
             <div className="flex items-center gap-2">
               <a
