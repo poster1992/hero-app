@@ -43,12 +43,14 @@ function cleanDescription(description: string | null): string {
   return (description ?? "").replace(/\s*\[[A-Z]+:[^\]]*\]/g, "").trim();
 }
 
-/** Extracts the customer email + name from a satisfaction-call task's [BEWERTUNG:email|name] marker. */
+/** Extracts the customer email + name from a satisfaction-call task's [BEWERTUNG:email|name|projectKey] marker. */
 function reviewEmailInfo(description: string | null): { email: string; name: string } | null {
   const m = description?.match(/\[BEWERTUNG:([^\]]*)\]/);
   if (!m) return null;
-  const [email, ...rest] = m[1].split("|");
-  return { email: (email ?? "").trim(), name: rest.join("|").trim() };
+  // Marker-Format: email|kunde|projectKey – der Name ist nur der zweite Teil
+  // (der projectKey darf nicht in die Mail-Anrede geraten).
+  const parts = m[1].split("|");
+  return { email: (parts[0] ?? "").trim(), name: (parts[1] ?? "").trim() };
 }
 
 interface UserOption {

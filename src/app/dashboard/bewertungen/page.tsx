@@ -6,7 +6,9 @@ import { getCustomers } from "@/lib/hero-api";
 import {
   getReviewSentLookup,
   listReviewEmailHistory,
+  countReviewEmailsSent,
 } from "@/lib/review-emails";
+import { listAssignableUsers } from "@/app/dashboard/logbook-actions";
 import ReviewCustomersTable, {
   type ReviewCustomerRow,
   type ReviewHistoryDisplay,
@@ -20,17 +22,27 @@ export default async function BewertungenPage() {
   const allowed = await getAllowedModules(user.role);
   if (!allowed.includes("cockpit_bewertungen")) redirect("/dashboard");
 
+  const year = new Date().getFullYear();
   let rows: ReviewCustomerRow[] = [];
   let history: ReviewHistoryDisplay[] = [];
+  let assignableUsers: { id: number; name: string }[] = [];
+  let sentTotal = 0;
+  let sentYear = 0;
   let error: string | null = null;
 
   try {
-    const [customers, lookup, hist, users] = await Promise.all([
+    const [customers, lookup, hist, users, assignable, total, thisYear] = await Promise.all([
       getCustomers(),
       getReviewSentLookup(),
       listReviewEmailHistory(),
       listUsers().catch(() => []),
+      listAssignableUsers().catch(() => []),
+      countReviewEmailsSent().catch(() => 0),
+      countReviewEmailsSent(year).catch(() => 0),
     ]);
+    assignableUsers = assignable;
+    sentTotal = total;
+    sentYear = thisYear;
 
     const userName = new Map<number, string>(
       users.map((u) => [u.id, u.displayName || u.username])
@@ -75,13 +87,36 @@ export default async function BewertungenPage() {
         </p>
       </header>
 
+      {/* Kennzahl: versendete Zufriedenheitsumfragen (wie in der Unternehmensübersicht) */}
+      <div className="flex flex-wrap gap-4">
+        <div className="flex min-w-[220px] items-center gap-4 rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
+          <span className="text-3xl" aria-hidden>
+            ✉️
+          </span>
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
+              Zufriedenheitsumfragen versendet
+            </p>
+            <p className="text-2xl font-semibold text-gray-900">
+              {sentTotal}
+              <span className="ml-2 text-sm font-normal text-gray-500">gesamt</span>
+            </p>
+            <p className="text-xs text-gray-500">
+              davon {sentYear} in {year}
+            </p>
+          </div>
+        </div>
+      </div>
+
       {error && (
         <div className="rounded-md border border-brand-red/30 bg-brand-red/10 p-4 text-sm text-red-700">
           Fehler beim Laden der Daten: {error}
         </div>
       )}
 
-      {!error && <ReviewCustomersTable rows={rows} history={history} />}
+      {!error && (
+        <ReviewCustomersTable rows={rows} history={history} assignableUsers={assignableUsers} />
+      )}
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { getSession } from "@/lib/session";
 import { getUserByUsername } from "@/lib/users";
 import { getAllowedModules } from "@/lib/role-store";
 import { sendReviewMail } from "@/lib/review-mail";
+import { createTaskAction } from "@/app/dashboard/aufgaben/actions";
 import {
   wasReviewEmailSentToCustomer,
   markReviewEmailSent,
@@ -64,6 +65,57 @@ export async function sendReviewToCustomerAction(input: {
   } catch {
     /* Protokoll ist best-effort – Mail ist raus. */
   }
+
+  revalidatePath(PATH);
+  return { ok: true };
+}
+
+export interface CreateReviewTaskOutcome {
+  ok: boolean;
+  error?: string;
+}
+
+/**
+ * Legt aus der Kundenliste eine Aufgabe „Kundenzufriedenheit erfragen" an.
+ * Die Aufgabe trägt den [BEWERTUNG:…]-Marker, sodass in der Aufgabe direkt der
+ * „Bewertung senden"-Button erscheint (mit derselben Pro-Kunde-Sperre).
+ */
+export async function createReviewTaskAction(input: {
+  customerId: number | string;
+  name: string;
+  email: string;
+  assignedTo: number[];
+  dueDate: string;
+}): Promise<CreateReviewTaskOutcome> {
+  const user = await requireAccess();
+  if (!user) return { ok: false, error: "Keine Berechtigung." };
+
+  const customerId = String(input.customerId ?? "").trim();
+  const email = String(input.email ?? "").trim();
+  const name = String(input.name ?? "").trim();
+  const assignedTo = (input.assignedTo ?? []).filter((n) => Number.isFinite(n) && n > 0);
+  const dueDate = String(input.dueDate ?? "").trim();
+
+  if (assignedTo.length === 0) return { ok: false, error: "Bitte mindestens einen Mitarbeiter auswählen." };
+  if (!dueDate) return { ok: false, error: "Bitte ein Fälligkeitsdatum angeben." };
+
+  // Projekt-Schlüssel identisch zum Direktversand (Pro-Kunde-Sperre greift gemeinsam).
+  const projectKey = `c:${customerId || email.toLowerCase()}`;
+  const description =
+    `Kunde: ${name || "—"}\n` +
+    `E-Mail (Kundenstamm): ${email || "— keine hinterlegt —"}\n` +
+    `Bitte den Kunden kontaktieren, nach der Zufriedenheit fragen und anschließend über den Button die ` +
+    `Google-Bewertungs-Anfrage senden.\n` +
+    `[BEWERTUNG:${email}|${name}|${projectKey}]`;
+
+  const fd = new FormData();
+  fd.set("title", `Kundenzufriedenheit erfragen: ${name || email}`);
+  fd.set("description", description);
+  for (const uid of assignedTo) fd.append("assignedTo", String(uid));
+  fd.set("dueDate", dueDate);
+
+  const res = await createTaskAction({}, fd);
+  if (res.error) return { ok: false, error: res.error };
 
   revalidatePath(PATH);
   return { ok: true };

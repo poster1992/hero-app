@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import {
   sendReviewToCustomerAction,
   sendReviewBulkAction,
+  createReviewTaskAction,
 } from "@/app/dashboard/bewertungen/actions";
 
 export interface ReviewCustomerRow {
@@ -24,6 +25,11 @@ export interface ReviewHistoryDisplay {
   sentBy: string | null;
 }
 
+interface AssignableUser {
+  id: number;
+  name: string;
+}
+
 type Filter = "offen" | "versendet" | "alle";
 
 const dateFmt = new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
@@ -33,12 +39,21 @@ function fmtDate(iso: string | null): string {
   return Number.isNaN(d.getTime()) ? "—" : dateFmt.format(d);
 }
 
+/** yyyy-mm-dd in +days Tagen (Standard-Fälligkeit). */
+function defaultDueDate(days = 7): string {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 export default function ReviewCustomersTable({
   rows,
   history,
+  assignableUsers,
 }: {
   rows: ReviewCustomerRow[];
   history: ReviewHistoryDisplay[];
+  assignableUsers: AssignableUser[];
 }) {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>("offen");
@@ -48,6 +63,51 @@ export default function ReviewCustomersTable({
   const [busyId, setBusyId] = useState<number | null>(null);
   const [pending, startTransition] = useTransition();
   const [showHistory, setShowHistory] = useState(false);
+
+  // Aufgabe-Modal
+  const [taskFor, setTaskFor] = useState<ReviewCustomerRow | null>(null);
+  const [taskAssignees, setTaskAssignees] = useState<Set<number>>(new Set());
+  const [taskDue, setTaskDue] = useState<string>(defaultDueDate());
+  const [taskBusy, setTaskBusy] = useState(false);
+  const [taskErr, setTaskErr] = useState<string | null>(null);
+
+  const openTaskModal = (r: ReviewCustomerRow) => {
+    setTaskFor(r);
+    setTaskAssignees(new Set());
+    setTaskDue(defaultDueDate());
+    setTaskErr(null);
+  };
+  const submitTask = () => {
+    if (!taskFor || taskBusy) return;
+    const assignedTo = [...taskAssignees];
+    if (assignedTo.length === 0) {
+      setTaskErr("Bitte mindestens einen Mitarbeiter auswählen.");
+      return;
+    }
+    if (!taskDue) {
+      setTaskErr("Bitte ein Fälligkeitsdatum angeben.");
+      return;
+    }
+    setTaskBusy(true);
+    setTaskErr(null);
+    const target = taskFor;
+    startTransition(async () => {
+      const res = await createReviewTaskAction({
+        customerId: target.id,
+        name: target.name,
+        email: target.email ?? "",
+        assignedTo,
+        dueDate: taskDue,
+      });
+      setTaskBusy(false);
+      if (res.ok) {
+        setTaskFor(null);
+        setMsg({ kind: "ok", text: `Aufgabe „Kundenzufriedenheit erfragen" für ${target.name} erstellt.` });
+      } else {
+        setTaskErr(res.error ?? "Aufgabe konnte nicht erstellt werden.");
+      }
+    });
+  };
 
   const isSent = (r: ReviewCustomerRow) => r.alreadySent || sentIds.has(r.id);
 
@@ -262,14 +322,25 @@ export default function ReviewCustomersTable({
                         )}
                       </td>
                       <td className="whitespace-nowrap px-4 py-2 text-right">
-                        <button
-                          type="button"
-                          onClick={() => sendOne(r)}
-                          disabled={sent || pending}
-                          className="rounded-md bg-brand-red px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-                        >
-                          {busyId === r.id ? "Sende …" : sent ? "Erledigt" : "Senden"}
-                        </button>
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => openTaskModal(r)}
+                            disabled={pending}
+                            title="Aufgabe Kundenzufriedenheit erfragen erstellen"
+                            className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            Aufgabe
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => sendOne(r)}
+                            disabled={sent || pending}
+                            className="rounded-md bg-brand-red px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            {busyId === r.id ? "Sende …" : sent ? "Erledigt" : "Senden"}
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -321,6 +392,89 @@ export default function ReviewCustomersTable({
           </div>
         )}
       </div>
+
+      {/* Aufgabe-Modal */}
+      {taskFor && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={() => !taskBusy && setTaskFor(null)}
+        >
+          <div
+            className="w-full max-w-md rounded-xl bg-white p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-semibold text-gray-900">Aufgabe: Kundenzufriedenheit erfragen</h3>
+            <p className="mt-1 text-sm text-gray-600">
+              Für <span className="font-medium text-gray-900">{taskFor.name}</span>
+              {taskFor.email ? <> · {taskFor.email}</> : null}
+            </p>
+
+            <div className="mt-4 flex flex-col gap-4">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Zuweisen an</label>
+                {assignableUsers.length === 0 ? (
+                  <p className="text-sm text-gray-500">Keine Mitarbeiter verfügbar.</p>
+                ) : (
+                  <div className="flex max-h-44 flex-col gap-1 overflow-y-auto rounded-lg border border-gray-300 p-2">
+                    {assignableUsers.map((u) => (
+                      <label key={u.id} className="flex items-center gap-2 rounded px-2 py-1 text-sm text-gray-800 hover:bg-gray-100">
+                        <input
+                          type="checkbox"
+                          checked={taskAssignees.has(u.id)}
+                          onChange={() =>
+                            setTaskAssignees((prev) => {
+                              const n = new Set(prev);
+                              if (n.has(u.id)) n.delete(u.id);
+                              else n.add(u.id);
+                              return n;
+                            })
+                          }
+                          className="h-4 w-4 accent-brand-red"
+                        />
+                        {u.name}
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label htmlFor="taskDue" className="mb-1 block text-sm font-medium text-gray-700">
+                  Fällig am
+                </label>
+                <input
+                  id="taskDue"
+                  type="date"
+                  value={taskDue}
+                  onChange={(e) => setTaskDue(e.target.value)}
+                  className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-brand-red focus:outline-none"
+                />
+              </div>
+
+              {taskErr && <p className="text-sm text-red-600">{taskErr}</p>}
+            </div>
+
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setTaskFor(null)}
+                disabled={taskBusy}
+                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+              >
+                Abbrechen
+              </button>
+              <button
+                type="button"
+                onClick={submitTask}
+                disabled={taskBusy}
+                className="rounded-lg bg-brand-red px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+              >
+                {taskBusy ? "Erstelle …" : "Aufgabe erstellen"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
