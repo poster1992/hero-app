@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getSession } from "@/lib/session";
-import { createRole, deleteRole, setRolePermissions } from "@/lib/role-store";
+import { createRole, deleteRole, renameRole, setRolePermissions } from "@/lib/role-store";
 import { MODULE_KEYS } from "@/lib/modules";
 
 const PATH = "/dashboard/gruppen";
@@ -30,6 +30,17 @@ export async function createGroupAction(
 
   revalidatePath(PATH);
   return { success: `Gruppe „${label}“ angelegt.` };
+}
+
+/** Ändert die Bezeichnung einer Gruppe (Schlüssel bleibt erhalten). */
+export async function renameGroupAction(key: string, label: string): Promise<GroupState> {
+  if (!(await ensureAdmin())) return { error: "Kein Zugriff." };
+  const k = String(key ?? "").trim();
+  if (!k) return { error: "Gruppe nicht gefunden." };
+  const res = await renameRole(k, String(label ?? ""));
+  if (!res.ok) return { error: res.error ?? "Umbenennen fehlgeschlagen." };
+  revalidatePath(PATH);
+  return { success: "Bezeichnung geändert." };
 }
 
 export async function deleteGroupAction(formData: FormData): Promise<void> {

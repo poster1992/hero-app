@@ -84,6 +84,23 @@ export async function createRole(label: string): Promise<string | null> {
   return key;
 }
 
+/**
+ * Ändert die Bezeichnung (label) einer Gruppe. Der role_key bleibt unverändert,
+ * sodass Benutzerzuweisungen und Rechte erhalten bleiben.
+ */
+export async function renameRole(key: string, label: string): Promise<{ ok: boolean; error?: string }> {
+  const clean = label.trim();
+  if (!clean) return { ok: false, error: "Bitte einen Gruppennamen angeben." };
+  const pool = getPool();
+  const [rows] = await pool.query<RowDataPacket[]>(
+    "SELECT role_key FROM roles WHERE role_key = ? LIMIT 1",
+    [key]
+  );
+  if (rows.length === 0) return { ok: false, error: "Gruppe nicht gefunden." };
+  await pool.query("UPDATE roles SET label = ? WHERE role_key = ?", [clean.slice(0, 191), key]);
+  return { ok: true };
+}
+
 /** Deletes a role. Refuses to delete 'administrator' or roles still assigned to users. */
 export async function deleteRole(key: string): Promise<{ ok: boolean; error?: string }> {
   if (key === "administrator") return { ok: false, error: "Diese Gruppe kann nicht gelöscht werden." };
