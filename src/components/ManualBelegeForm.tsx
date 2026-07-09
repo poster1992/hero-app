@@ -31,7 +31,8 @@ type SumTyp =
   | "palettecad"
   | "activite"
   | "herosoftware"
-  | "circle";
+  | "circle"
+  | "etges";
 
 /** Bezeichnung des summierten Betrags je erkanntem Typ (für die Meldung). */
 const KIND_AMOUNT_LABEL: Record<string, string> = {
@@ -42,6 +43,7 @@ const KIND_AMOUNT_LABEL: Record<string, string> = {
   activite: "Endbetrag",
   herosoftware: "Total",
   circle: "Total TTC",
+  etges: "Gesamtbetrag brutto",
 };
 
 /** Subset of a manual receipt needed to prefill the edit form. */
@@ -292,6 +294,7 @@ export default function ManualBelegeForm({
                     <option value="activite">Typ: Activité (Miete/NK)</option>
                     <option value="herosoftware">Typ: Hero-Software</option>
                     <option value="circle">Typ: Circle (Tankkosten)</option>
+                    <option value="etges">Typ: Etges &amp; Dächer</option>
                   </select>
                   {isSumType && (
                     <button
