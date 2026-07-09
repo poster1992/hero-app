@@ -147,7 +147,7 @@ export async function updateBelegAction(
   return { success: "Beleg aktualisiert." };
 }
 
-export type BelegSumKind = "lohn" | "bgl";
+export type BelegSumKind = "lohn" | "bgl" | "mixvoip";
 
 export interface BelegSumResult {
   ok: boolean;
@@ -167,13 +167,29 @@ export interface BelegSumResult {
   description?: string;
   /** true, wenn es sich (laut Matricule/Immatriculation) um Fahrzeug-Leasing handelt. */
   isVehicle?: boolean;
+  /** Vorzuschlagendes Konto (Nummer), z. B. "4595" oder "4920". */
+  accountNumber?: string;
+  /** Fallback-Kontoname, falls die Nummer nicht in der HERO-Kontenliste ist. */
+  accountName?: string;
   error?: string;
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-/** Prompt + Bezeichnung des zu summierenden Betrags je Belegtyp. */
-const SUM_CONFIG: Record<BelegSumKind, { label: string; prompt: string }> = {
+/** Prompt + Konfiguration je Belegtyp. */
+const SUM_CONFIG: Record<
+  BelegSumKind,
+  {
+    label: string;
+    prompt: string;
+    /** Fester HERO-Suchbegriff für den Lieferanten (sonst OCR-Name). */
+    supplierSearch?: string;
+    /** Vorzuschlagendes Konto. */
+    account?: { number: string; name: string };
+    /** Konto nur setzen, wenn ein Fahrzeug erkannt wurde (Matricule). */
+    accountNeedsVehicle?: boolean;
+  }
+> = {
   lohn: {
     label: "Total Brutto",
     prompt:
@@ -184,7 +200,24 @@ const SUM_CONFIG: Record<BelegSumKind, { label: string; prompt: string }> = {
       "Lass KEINE Seite aus und erfinde keine. Antworte AUSSCHLIESSLICH mit JSON: " +
       '{"seiten": [ … ]}. Punkt als Dezimaltrennzeichen, KEINE Tausenderpunkte. Nur JSON.',
   },
+  mixvoip: {
+    label: "Grand Total",
+    supplierSearch: "Mixvoip",
+    account: { number: "4920", name: "Telefon" },
+    prompt:
+      "Dies ist eine Mixvoip-Telefonrechnung (Luxemburg; evtl. mehrere Rechnungen je PDF). Gib pro " +
+      "RECHNUNG genau ein Objekt in seiten:[{betrag, steuersatz}] zurück. betrag = der zu zahlende " +
+      "BRUTTO-Gesamtbetrag inkl. MwSt (Label z. B. „Grand Total\", „Total incl. VAT\", „Montant à payer\", " +
+      "„Total TTC\") – NICHT der Netto-/HT-Wert. steuersatz = MwSt/TVA-Satz in Prozent als Zahl. Gib " +
+      "zusätzlich auf oberster Ebene an: belegdatum (Rechnungsdatum YYYY-MM-DD oder null), lieferant " +
+      "(Rechnungssteller oder null), beschreibung (kurz, z. B. „Telefon\" + Abrechnungszeitraum Monat/Jahr). " +
+      'Antworte AUSSCHLIESSLICH mit JSON: {"seiten": [ … ], "belegdatum": …, "lieferant": …, ' +
+      '"beschreibung": …}. Punkt als Dezimaltrennzeichen, KEINE Tausenderpunkte. Nur JSON.',
+  },
   bgl: {
+    supplierSearch: "BNP Paribas Lease",
+    account: { number: "4595", name: "Leasing/Mietwagen" },
+    accountNeedsVehicle: true,
     label: "Total TTC à payer",
     prompt:
       "Dies ist eine (evtl. mehrseitige) BNP Paribas Lease / BGL-Leasingrechnung. Gehe das Dokument " +
@@ -226,7 +259,8 @@ export async function computeBelegSumAction(formData: FormData): Promise<BelegSu
     return { ok: false, error: "OCR ist nicht konfiguriert (ANTHROPIC_API_KEY fehlt)." };
   }
   const kindRaw = String(formData.get("kind") ?? "");
-  const kind: BelegSumKind = kindRaw === "bgl" ? "bgl" : "lohn";
+  const kind: BelegSumKind =
+    kindRaw === "bgl" ? "bgl" : kindRaw === "mixvoip" ? "mixvoip" : "lohn";
   const cfg = SUM_CONFIG[kind];
 
   const upload = formData.get("file");
@@ -259,6 +293,7 @@ export async function computeBelegSumAction(formData: FormData): Promise<BelegSu
       seiten?: { betrag?: unknown; steuersatz?: unknown; matricule?: unknown }[];
       belegdatum?: unknown;
       lieferant?: unknown;
+      beschreibung?: unknown;
     };
     const seiten = parsed.seiten ?? [];
     const values = seiten.map((s) => toNum(s?.betrag)).filter((n) => n > 0);
@@ -281,31 +316,56 @@ export async function computeBelegSumAction(formData: FormData): Promise<BelegSu
     const dRaw = String(parsed.belegdatum ?? "").trim();
     if (/^\d{4}-\d{2}-\d{2}$/.test(dRaw)) date = dRaw;
 
-    // Matricule(n) als Beschreibung (mehrere Fahrzeuge → zusammengefügt, dedupliziert).
-    let description: string | undefined;
+    // Beschreibung: BGL → Matricule(n) (dedupliziert); sonst das Feld „beschreibung".
     const matricules: string[] = [];
     for (const s of seiten) {
       const m = String(s?.matricule ?? "").trim();
       if (m && m.toLowerCase() !== "null" && !matricules.includes(m)) matricules.push(m);
     }
+    let description: string | undefined;
     if (matricules.length > 0) description = matricules.join(", ").slice(0, 250);
+    else {
+      const b = String(parsed.beschreibung ?? "").trim();
+      if (b && b.toLowerCase() !== "null") description = b.slice(0, 250);
+    }
     // Fahrzeug erkannt, wenn eine Matricule/Immatriculation vorhanden ist.
     const isVehicle = kind === "bgl" && matricules.length > 0;
 
-    // Lieferant: bevorzugt der kanonische HERO-Name (Suche), sonst der aus dem Beleg gelesene.
+    // Lieferant: bevorzugt der kanonische HERO-Name (fester Suchbegriff je Typ, sonst OCR-Name).
     let supplier: string | undefined;
     const ocrSupplier = String(parsed.lieferant ?? "").trim();
-    if (ocrSupplier) {
-      supplier = ocrSupplier;
+    const searchTerm = cfg.supplierSearch || ocrSupplier;
+    if (ocrSupplier) supplier = ocrSupplier;
+    if (searchTerm) {
       try {
-        const heroName = await findContactNameBySearch(ocrSupplier);
+        const heroName = await findContactNameBySearch(searchTerm);
         if (heroName) supplier = heroName;
       } catch {
         /* HERO-Auflösung optional – dann bleibt der OCR-Name */
       }
     }
 
-    return { ok: true, total, count: values.length, values: values.map(round2), vatRate, date, supplier, description, isVehicle };
+    // Kontovorschlag (BGL nur bei Fahrzeug).
+    let accountNumber: string | undefined;
+    let accountName: string | undefined;
+    if (cfg.account && (!cfg.accountNeedsVehicle || isVehicle)) {
+      accountNumber = cfg.account.number;
+      accountName = cfg.account.name;
+    }
+
+    return {
+      ok: true,
+      total,
+      count: values.length,
+      values: values.map(round2),
+      vatRate,
+      date,
+      supplier,
+      description,
+      isVehicle,
+      accountNumber,
+      accountName,
+    };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "OCR fehlgeschlagen." };
   }

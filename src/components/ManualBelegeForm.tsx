@@ -55,21 +55,20 @@ export default function ManualBelegeForm({
   const dateInputRef = useRef<HTMLInputElement>(null);
   const supplierInputRef = useRef<HTMLInputElement>(null);
   const descInputRef = useRef<HTMLInputElement>(null);
-  const [belegTyp, setBelegTyp] = useState<"" | "lohn" | "bgl">("");
+  const [belegTyp, setBelegTyp] = useState<"" | "lohn" | "bgl" | "mixvoip">("");
   const [sumBusy, startSum] = useTransition();
   const [sumMsg, setSumMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const sumLabel = belegTyp === "bgl" ? "Total TTC" : "Total Brutto";
+  const sumLabel = belegTyp === "bgl" ? "Total TTC" : belegTyp === "mixvoip" ? "Grand Total" : "Total Brutto";
 
-  // BGL: Konto „4595 Leasing/Mietwagen" vorauswählen (echtes HERO-Konto, sonst Fallback).
-  const applyBglAccount = () => {
-    const match =
-      accounts.find((a) => a.number === "4595") ?? { number: "4595", name: "Leasing/Mietwagen" };
+  // Konto vorauswählen (echtes HERO-Konto anhand Nummer, sonst Fallbackname).
+  const applyAccount = (number: string, name?: string) => {
+    const match = accounts.find((a) => a.number === number) ?? { number, name: name ?? number };
     setAccount(match);
     setAccountQuery("");
   };
 
   const runSum = () => {
-    if (belegTyp !== "lohn" && belegTyp !== "bgl") return;
+    if (belegTyp !== "lohn" && belegTyp !== "bgl" && belegTyp !== "mixvoip") return;
     const file = fileInputRef.current?.files?.[0] ?? null;
     if (!file) {
       setSumMsg({ ok: false, text: "Bitte zuerst die Datei auswählen." });
@@ -89,18 +88,28 @@ export default function ManualBelegeForm({
         if (res.date && dateInputRef.current) dateInputRef.current.value = res.date;
         if (res.supplier && supplierInputRef.current) supplierInputRef.current.value = res.supplier;
         if (res.description && descInputRef.current) descInputRef.current.value = res.description;
-        // Konto 4595 (Leasing/Mietwagen) nur bei erkanntem Fahrzeug (Matricule vorhanden).
-        if (res.isVehicle) applyBglAccount();
+        // Konto vorschlagen (BGL nur bei erkanntem Fahrzeug – von der Action entschieden).
+        if (res.accountNumber) applyAccount(res.accountNumber, res.accountName);
+        const unit =
+          belegTyp === "mixvoip"
+            ? res.count === 1
+              ? "Rechnung"
+              : "Rechnungen"
+            : res.count === 1
+              ? "Seite"
+              : "Seiten";
         setSumMsg({
           ok: true,
           text:
-            `${res.count} ${res.count === 1 ? "Seite" : "Seiten"} · Summe ${sumLabel} ${res.total.toLocaleString(
+            `${res.count} ${unit} · Summe ${sumLabel} ${res.total.toLocaleString(
               "de-DE",
               { minimumFractionDigits: 2, maximumFractionDigits: 2 }
             )} €` +
             (res.vatRate != null ? ` · MwSt ${res.vatRate} %` : "") +
             (res.date ? ` · Datum ${res.date.split("-").reverse().join(".")}` : "") +
-            (res.isVehicle ? " · Konto 4595 (Fahrzeug)" : ""),
+            (res.accountNumber
+              ? ` · Konto ${res.accountNumber}${res.isVehicle ? " (Fahrzeug)" : ""}`
+              : ""),
         });
       } else {
         setSumMsg({ ok: false, text: res.error ?? "OCR fehlgeschlagen." });
@@ -205,17 +214,18 @@ export default function ManualBelegeForm({
                   <select
                     value={belegTyp}
                     onChange={(e) => {
-                      setBelegTyp(e.target.value as "" | "lohn" | "bgl");
+                      setBelegTyp(e.target.value as "" | "lohn" | "bgl" | "mixvoip");
                       setSumMsg(null);
                     }}
-                    title="Für mehrseitige Sammelbelege: Summe je Seite automatisch aus dem PDF berechnen"
+                    title="Automatisch aus dem PDF ausfüllen (Summe, MwSt, Datum, Lieferant, Konto)"
                     className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 outline-none focus:border-brand-red/60"
                   >
                     <option value="">Typ: Standard</option>
                     <option value="lohn">Typ: Lohn</option>
                     <option value="bgl">Typ: BGL-Leasing</option>
+                    <option value="mixvoip">Typ: Mixvoip</option>
                   </select>
-                  {(belegTyp === "lohn" || belegTyp === "bgl") && (
+                  {(belegTyp === "lohn" || belegTyp === "bgl" || belegTyp === "mixvoip") && (
                     <button
                       type="button"
                       onClick={runSum}
