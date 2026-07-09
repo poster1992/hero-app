@@ -51,6 +51,7 @@ export default function ManualBelegeForm({
   // OCR-Summe je Seite (Lohn: „Total Brutto", BGL: „Total TTC à payer").
   const fileInputRef = useRef<HTMLInputElement>(null);
   const grossInputRef = useRef<HTMLInputElement>(null);
+  const vatInputRef = useRef<HTMLInputElement>(null);
   const [belegTyp, setBelegTyp] = useState<"" | "lohn" | "bgl">("");
   const [sumBusy, startSum] = useTransition();
   const [sumMsg, setSumMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -71,12 +72,16 @@ export default function ManualBelegeForm({
       const res = await computeBelegSumAction(fd);
       if (res.ok && res.total != null) {
         if (grossInputRef.current) grossInputRef.current.value = res.total.toFixed(2).replace(".", ",");
+        if (res.vatRate != null && vatInputRef.current) {
+          vatInputRef.current.value = String(res.vatRate).replace(".", ",");
+        }
         setSumMsg({
           ok: true,
-          text: `${res.count} ${res.count === 1 ? "Seite" : "Seiten"} · Summe ${sumLabel} ${res.total.toLocaleString(
-            "de-DE",
-            { minimumFractionDigits: 2, maximumFractionDigits: 2 }
-          )} €`,
+          text:
+            `${res.count} ${res.count === 1 ? "Seite" : "Seiten"} · Summe ${sumLabel} ${res.total.toLocaleString(
+              "de-DE",
+              { minimumFractionDigits: 2, maximumFractionDigits: 2 }
+            )} €` + (res.vatRate != null ? ` · MwSt ${res.vatRate} %` : ""),
         });
       } else {
         setSumMsg({ ok: false, text: res.error ?? "OCR fehlgeschlagen." });
@@ -249,6 +254,7 @@ export default function ManualBelegeForm({
               <div>
                 <label className="mb-1 block text-sm text-gray-600">MwSt-Satz %</label>
                 <input
+                  ref={vatInputRef}
                   name="vatRate"
                   type="text"
                   inputMode="decimal"

@@ -156,6 +156,8 @@ export interface BelegSumResult {
   count?: number;
   /** Einzelwerte (für die Kontrolle). */
   values?: number[];
+  /** Erkannter MwSt-/TVA-Satz in % (nur BGL), oder undefined. */
+  vatRate?: number;
   error?: string;
 }
 
@@ -177,11 +179,14 @@ const SUM_CONFIG: Record<BelegSumKind, { label: string; prompt: string }> = {
     label: "Total TTC à payer",
     prompt:
       "Dies ist eine (evtl. mehrseitige) BNP Paribas Lease / BGL-Leasingrechnung. Gehe das Dokument " +
-      "SEITE FÜR SEITE durch. Gib für JEDE Seite genau ein Objekt zurück: {seite: Zahl, betrag: Zahl|null}. " +
+      "SEITE FÜR SEITE durch. Gib für JEDE Seite genau ein Objekt zurück: " +
+      "{seite: Zahl, betrag: Zahl|null, steuersatz: Zahl|null}. " +
       "betrag = der auf dieser Seite ausgewiesene, zu zahlende BRUTTO-Gesamtbetrag – i. d. R. beschriftet " +
       "mit „Total TTC à payer\" (auch „Total TTC\", „Net à payer\", „Montant total TTC\"). NICHT der " +
-      "HTVA-/Netto-Wert, NICHT nur die TVA. Wenn keiner vorhanden: null. Lass KEINE Seite aus. Antworte " +
-      'AUSSCHLIESSLICH mit JSON: {"seiten": [ … ]}. Punkt als Dezimaltrennzeichen, KEINE Tausenderpunkte. Nur JSON.',
+      "HTVA-/Netto-Wert, NICHT nur die TVA. steuersatz = der ausgewiesene TVA-/MwSt-Satz in Prozent als " +
+      "Zahl (z. B. 17 für „TVA 17 %\"); wenn nicht erkennbar: null. Wenn kein Betrag vorhanden: null. " +
+      'Lass KEINE Seite aus. Antworte AUSSCHLIESSLICH mit JSON: {"seiten": [ … ]}. Punkt als ' +
+      "Dezimaltrennzeichen, KEINE Tausenderpunkte. Nur JSON.",
   },
 };
 
@@ -237,13 +242,24 @@ export async function computeBelegSumAction(formData: FormData): Promise<BelegSu
       tb && tb.type === "text"
         ? tb.text.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim()
         : "{}";
-    const parsed = JSON.parse(raw) as { seiten?: { betrag?: unknown }[] };
-    const values = (parsed.seiten ?? []).map((s) => toNum(s?.betrag)).filter((n) => n > 0);
+    const parsed = JSON.parse(raw) as { seiten?: { betrag?: unknown; steuersatz?: unknown }[] };
+    const seiten = parsed.seiten ?? [];
+    const values = seiten.map((s) => toNum(s?.betrag)).filter((n) => n > 0);
     if (values.length === 0) {
       return { ok: false, error: `Es wurden keine „${cfg.label}"-Werte erkannt. Bitte Betrag manuell eintragen.` };
     }
     const total = round2(values.reduce((s, n) => s + n, 0));
-    return { ok: true, total, count: values.length, values: values.map(round2) };
+
+    // Häufigsten Steuersatz bestimmen (nur relevant, wenn im Beleg ausgewiesen – v. a. BGL).
+    let vatRate: number | undefined;
+    const rates = seiten.map((s) => toNum(s?.steuersatz)).filter((n) => n > 0 && n < 100);
+    if (rates.length > 0) {
+      const freq = new Map<number, number>();
+      for (const r of rates) freq.set(r, (freq.get(r) ?? 0) + 1);
+      vatRate = [...freq.entries()].sort((a, b) => b[1] - a[1])[0][0];
+    }
+
+    return { ok: true, total, count: values.length, values: values.map(round2), vatRate };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "OCR fehlgeschlagen." };
   }
