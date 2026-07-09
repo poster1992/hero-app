@@ -193,19 +193,22 @@ export async function computeLohnBruttoAction(formData: FormData): Promise<LohnS
     ? { type: "image" as const, source: { type: "base64" as const, media_type: mime as "image/png", data: dataB64 } }
     : { type: "document" as const, source: { type: "base64" as const, media_type: "application/pdf" as const, data: dataB64 } };
 
+  // Seite-für-Seite strukturiert extrahieren – das ist deutlich zuverlässiger,
+  // als nur „gib mir alle Zahlen" (das überspringt/verwechselt sonst Werte).
   const prompt =
-    "Dies ist eine mehrseitige Lohnabrechnung bzw. ein Lohnjournal. Auf jeder Seite (bzw. je " +
-    "Mitarbeiter) steht ein Betrag mit der Bezeichnung „Total Brutto\" (Bruttolohn). Extrahiere ALLE " +
-    "diese „Total Brutto\"-Beträge – genau einen pro Seite/Mitarbeiter. Antworte AUSSCHLIESSLICH mit " +
-    'JSON: {"werte": number[]}. Nutze Punkt als Dezimaltrennzeichen und KEINE Tausenderpunkte. Gib ' +
-    "ausschließlich die „Total Brutto\"-Werte aus – KEINE Netto-, Abzugs-, Zwischen- oder Gesamtsummen. " +
-    "Keine Erklärung, nur JSON.";
+    "Dies ist ein mehrseitiges Lohnjournal (in der Regel eine Seite je Mitarbeiter). Gehe das " +
+    "Dokument SEITE FÜR SEITE durch. Gib für JEDE Seite genau ein Objekt zurück: " +
+    "{seite: Zahl, name: string, total_brutto: Zahl|null}. total_brutto = der exakt mit " +
+    "„Total Brutto\" bezeichnete Betrag dieser Seite (NICHT Bruttogehalt, NICHT Netto, NICHT " +
+    "Auszahlung; wenn auf der Seite kein „Total Brutto\" steht: null). Lass KEINE Seite aus und " +
+    'erfinde keine. Antworte AUSSCHLIESSLICH mit JSON: {"seiten": [ … ]}. Punkt als ' +
+    "Dezimaltrennzeichen, KEINE Tausenderpunkte. Keine Erklärung, nur JSON.";
 
   try {
     const client = new Anthropic({ maxRetries: 2, timeout: 120_000 });
     const res = await client.messages.create({
       model: "claude-haiku-4-5",
-      max_tokens: 4000,
+      max_tokens: 6000,
       messages: [{ role: "user", content: [block, { type: "text", text: prompt }] }],
     });
     const tb = res.content.find((b) => b.type === "text");
@@ -213,8 +216,8 @@ export async function computeLohnBruttoAction(formData: FormData): Promise<LohnS
       tb && tb.type === "text"
         ? tb.text.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim()
         : "{}";
-    const parsed = JSON.parse(raw) as { werte?: unknown[] };
-    const values = (parsed.werte ?? []).map(toNum).filter((n) => n > 0);
+    const parsed = JSON.parse(raw) as { seiten?: { total_brutto?: unknown }[] };
+    const values = (parsed.seiten ?? []).map((s) => toNum(s?.total_brutto)).filter((n) => n > 0);
     if (values.length === 0) {
       return { ok: false, error: "Es wurden keine „Total Brutto\"-Werte erkannt. Bitte Betrag manuell eintragen." };
     }
