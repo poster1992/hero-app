@@ -29,6 +29,8 @@ export default function BelegeChecklist({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [newLabel, setNewLabel] = useState("");
+  // Beim Öffnen zunächst minimiert darstellen.
+  const [open, setOpen] = useState(false);
 
   const doneCount = items.filter((i) => i.done).length;
 
@@ -48,14 +50,29 @@ export default function BelegeChecklist({
 
   return (
     <div className="rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
-      <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
-        <h2 className="text-lg font-medium text-gray-900">Monatliche Checkliste {periodLabel}</h2>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className={`flex w-full items-center justify-between gap-3 px-5 py-4 text-left transition-colors hover:bg-gray-50 ${
+          open ? "border-b border-gray-200" : ""
+        }`}
+      >
+        <h2 className="flex items-center gap-2 text-lg font-medium text-gray-900">
+          <span
+            className={`text-gray-400 transition-transform ${open ? "rotate-90" : ""}`}
+            aria-hidden
+          >
+            ▶
+          </span>
+          Monatliche Checkliste {periodLabel}
+        </h2>
         <p className="text-sm text-gray-600">
           {doneCount} / {items.length} erledigt
         </p>
-      </div>
+      </button>
 
-      {items.length === 0 ? (
+      {!open ? null : items.length === 0 ? (
         <p className="px-5 py-6 text-center text-sm text-gray-500">
           Noch keine Checklisten-Punkte. Unten einen wiederkehrenden Beleg hinzufügen.
         </p>
@@ -97,6 +114,7 @@ export default function BelegeChecklist({
         </ul>
       )}
 
+      {open && (
       <div className="flex items-center gap-2 border-t border-gray-200 px-5 py-3">
         <input
           type="text"
@@ -120,6 +138,7 @@ export default function BelegeChecklist({
           Hinzufügen
         </button>
       </div>
+      )}
     </div>
   );
 }
