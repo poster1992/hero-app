@@ -16,7 +16,9 @@ export type BelegSumKind =
   | "fliesenzentrum"
   | "etbkenn"
   | "kiesel"
-  | "moselbaustoff";
+  | "moselbaustoff"
+  | "postdeep"
+  | "johanntrierweiler";
 
 export interface BelegSumResult {
   ok: boolean;
@@ -71,6 +73,8 @@ export const KIND_LABEL: Record<BelegSumKind, string> = {
   etbkenn: "ETB Kenn",
   kiesel: "Kiesel",
   moselbaustoff: "Mosel Baustoff",
+  postdeep: "Post Telecom / DEEP",
+  johanntrierweiler: "Johann Trierweiler",
 };
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -202,6 +206,27 @@ const SUM_CONFIG: Record<
     supplierSearch: "Mosel Baustoff",
     account: { number: "3000", name: "Wareneingang / Material" },
     prompt: materialInvoicePrompt("Mosel Baustoff", "Baustoffhandel"),
+  },
+  johanntrierweiler: {
+    label: "Gesamtbetrag brutto",
+    supplierSearch: "Trierweiler",
+    account: { number: "4530", name: "Laufende Kfz-Betriebskosten" },
+    prompt: materialInvoicePrompt("Johann Trierweiler", "Kfz-Reparaturen/Werkstatt"),
+  },
+  postdeep: {
+    label: "Total TTC",
+    supplierSearch: "Post Telecom",
+    account: { number: "4920", name: "Telefon" },
+    prompt:
+      "Dies ist eine Telefon-/Telekommunikationsrechnung von Post Telecom / DEEP (Luxemburg). Das PDF " +
+      "enthält GENAU EINE Rechnung (evtl. mehrseitig). Gib in seiten GENAU EIN Objekt {betrag, steuersatz} " +
+      "zurück. betrag = der zu zahlende BRUTTO-Gesamtbetrag inkl. MwSt der ganzen Rechnung (Label z. B. " +
+      "„Total TTC\", „Montant total à payer\", „Grand Total\", „Total incl. VAT\", „Gesamtbetrag\") – NICHT " +
+      "der Netto-/HT-Wert, NICHT eine Seiten-Zwischensumme. steuersatz = MwSt/TVA-Satz in Prozent als Zahl. " +
+      "Gib zusätzlich auf oberster Ebene an: belegdatum (Rechnungsdatum YYYY-MM-DD oder null), lieferant " +
+      "(Rechnungssteller oder null), beschreibung (kurz, z. B. „Telefon\" + Abrechnungszeitraum Monat/Jahr). " +
+      'Antworte AUSSCHLIESSLICH mit JSON: {"seiten": [ EIN Objekt ], "belegdatum": …, "lieferant": …, ' +
+      '"beschreibung": …}. Punkt als Dezimaltrennzeichen, KEINE Tausenderpunkte. Nur JSON.',
   },
   circle: {
     label: "Total TTC",
@@ -345,6 +370,8 @@ export async function extractBeleg(input: {
                   "niederer (Niederer – Materiallieferant), raabkarcher (Raab Karcher – Baustoffhandel), " +
                   "fliesenzentrum (Fliesen-Zentrum Deutschland – Fliesenhandel), etbkenn (ETB Kenn – Baustoffe), " +
                   "kiesel (Kiesel – Bauchemie/Verlegewerkstoffe), moselbaustoff (Mosel Baustoff – Baustoffhandel), " +
+                  "postdeep (Post Telecom / DEEP – Telefonrechnung Luxemburg), " +
+                  "johanntrierweiler (Johann Trierweiler – Kfz-Reparaturen/Werkstatt), " +
                   "lohn (Lohnabrechnung/Lohnjournal), oder unbekannt. Nur das eine Wort, keine Erklärung.",
               },
             ],
@@ -354,7 +381,7 @@ export async function extractBeleg(input: {
       const ctb = cls.content.find((b) => b.type === "text");
       const word = ctb && ctb.type === "text" ? ctb.text.trim().toLowerCase().replace(/[^a-z]/g, "") : "";
       const detected = (
-        ["circle", "mixvoip", "bgl", "palettecad", "herosoftware", "activite", "etges", "niederer", "raabkarcher", "fliesenzentrum", "etbkenn", "kiesel", "moselbaustoff", "lohn"] as BelegSumKind[]
+        ["circle", "mixvoip", "bgl", "palettecad", "herosoftware", "activite", "etges", "niederer", "raabkarcher", "fliesenzentrum", "etbkenn", "kiesel", "moselbaustoff", "postdeep", "johanntrierweiler", "lohn"] as BelegSumKind[]
       ).find((k) => word === k);
       if (!detected) {
         return {

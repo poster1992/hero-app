@@ -38,7 +38,9 @@ type SumTyp =
   | "fliesenzentrum"
   | "etbkenn"
   | "kiesel"
-  | "moselbaustoff";
+  | "moselbaustoff"
+  | "postdeep"
+  | "johanntrierweiler";
 
 /** Bezeichnung des summierten Betrags je erkanntem Typ (für die Meldung). */
 const KIND_AMOUNT_LABEL: Record<string, string> = {
@@ -56,6 +58,8 @@ const KIND_AMOUNT_LABEL: Record<string, string> = {
   etbkenn: "Gesamtbetrag brutto",
   kiesel: "Gesamtbetrag brutto",
   moselbaustoff: "Gesamtbetrag brutto",
+  postdeep: "Total TTC",
+  johanntrierweiler: "Gesamtbetrag brutto",
 };
 
 /** Subset of a manual receipt needed to prefill the edit form. */
@@ -294,6 +298,8 @@ export function ManualBelegeFormFields({
                     <option value="etbkenn">Typ: ETB Kenn</option>
                     <option value="kiesel">Typ: Kiesel</option>
                     <option value="moselbaustoff">Typ: Mosel Baustoff</option>
+                    <option value="postdeep">Typ: Post Telecom / DEEP</option>
+                    <option value="johanntrierweiler">Typ: Johann Trierweiler (Kfz)</option>
                   </select>
                   {isSumType && (
                     <button

@@ -225,7 +225,7 @@ export async function computeBelegSumAction(formData: FormData): Promise<BelegSu
   if (!(await getSession())) return { ok: false, error: "Nicht angemeldet." };
 
   const kindRaw = String(formData.get("kind") ?? "");
-  const allowed: BelegSumKind[] = ["bgl", "mixvoip", "palettecad", "activite", "herosoftware", "circle", "etges", "niederer", "raabkarcher", "fliesenzentrum", "etbkenn", "kiesel", "moselbaustoff"];
+  const allowed: BelegSumKind[] = ["bgl", "mixvoip", "palettecad", "activite", "herosoftware", "circle", "etges", "niederer", "raabkarcher", "fliesenzentrum", "etbkenn", "kiesel", "moselbaustoff", "postdeep", "johanntrierweiler"];
   const kind: BelegSumKind | "auto" =
     kindRaw === "auto" ? "auto" : allowed.includes(kindRaw as BelegSumKind) ? (kindRaw as BelegSumKind) : "lohn";
 
