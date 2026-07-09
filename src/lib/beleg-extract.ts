@@ -32,7 +32,8 @@ export type BelegSumKind =
   | "idealfliesen"
   | "garagelosch"
   | "reifenkruetten"
-  | "henrichbaustoff";
+  | "henrichbaustoff"
+  | "buschmannwerbung";
 
 export interface BelegSumResult {
   ok: boolean;
@@ -103,6 +104,7 @@ export const KIND_LABEL: Record<BelegSumKind, string> = {
   garagelosch: "Garage Losch",
   reifenkruetten: "Reifen Krütten",
   henrichbaustoff: "Henrich Baustoffzentrum",
+  buschmannwerbung: "Buschmann Werbung",
 };
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -317,14 +319,20 @@ const SUM_CONFIG: Record<
   reifenkruetten: {
     label: "Gesamtbetrag brutto",
     supplierSearch: "Krütten",
-    account: { number: "3000", name: "Wareneingang / Material" },
-    prompt: materialInvoicePrompt("Reifen Wolfgang Krütten", "Reifen / Material"),
+    account: { number: "4530", name: "Laufende Kfz-Betriebskosten" },
+    prompt: materialInvoicePrompt("Reifen Wolfgang Krütten", "Reifen / Kfz-Kosten"),
   },
   henrichbaustoff: {
     label: "Gesamtbetrag brutto",
     supplierSearch: "Henrich Baustoff",
     account: { number: "3000", name: "Wareneingang / Material" },
     prompt: materialInvoicePrompt("Henrich Baustoffzentrum", "Baustoffe / Materialeinkauf"),
+  },
+  buschmannwerbung: {
+    label: "Gesamtbetrag brutto",
+    supplierSearch: "Buschmann Werbung",
+    account: { number: "4530", name: "Laufende Kfz-Betriebskosten" },
+    prompt: materialInvoicePrompt("Buschmann Werbung", "Fahrzeugbeschriftung / Kfz-Kosten"),
   },
   postdeep: {
     label: "Total TTC",
@@ -493,6 +501,7 @@ export async function extractBeleg(input: {
                   "ibod (Ibod – Materialeinkauf), eon (E.On – Stromlieferung), " +
                   "idealfliesen (Idealfliesen – Subunternehmer), garagelosch (Garage Losch – Kfz-Reparatur), " +
                   "reifenkruetten (Reifen Krütten – Reifen), henrichbaustoff (Henrich Baustoffzentrum – Baustoffe), " +
+                  "buschmannwerbung (Buschmann Werbung – Fahrzeugbeschriftung/Kfz), " +
                   "lohn (Lohnabrechnung/Lohnjournal), oder unbekannt. Nur das eine Wort, keine Erklärung.",
               },
             ],
@@ -502,7 +511,7 @@ export async function extractBeleg(input: {
       const ctb = cls.content.find((b) => b.type === "text");
       const word = ctb && ctb.type === "text" ? ctb.text.trim().toLowerCase().replace(/[^a-z]/g, "") : "";
       const detected = (
-        ["circle", "mixvoip", "bgl", "palettecad", "herosoftware", "activite", "etges", "niederer", "raabkarcher", "fliesenzentrum", "etbkenn", "kiesel", "moselbaustoff", "postdeep", "johanntrierweiler", "akemi", "maroldt", "hieronimi", "kennerbeton", "bureaucaisse", "sigre", "carlgeisen", "wohlwert", "ibod", "eon", "idealfliesen", "garagelosch", "reifenkruetten", "henrichbaustoff", "lohn"] as BelegSumKind[]
+        ["circle", "mixvoip", "bgl", "palettecad", "herosoftware", "activite", "etges", "niederer", "raabkarcher", "fliesenzentrum", "etbkenn", "kiesel", "moselbaustoff", "postdeep", "johanntrierweiler", "akemi", "maroldt", "hieronimi", "kennerbeton", "bureaucaisse", "sigre", "carlgeisen", "wohlwert", "ibod", "eon", "idealfliesen", "garagelosch", "reifenkruetten", "henrichbaustoff", "buschmannwerbung", "lohn"] as BelegSumKind[]
       ).find((k) => word === k);
       if (!detected) {
         return {
