@@ -61,6 +61,7 @@ const NAV_ITEMS: NavItem[] = [
       { href: "/dashboard/bestellliste", label: "Bestellliste", module: "cockpit_bestellliste" },
       { href: "/dashboard/mitarbeiterbewertung", label: "Mitarbeiterbewertung", module: "cockpit_mitarbeiterbewertung" },
       { href: "/dashboard/bewertungen", label: "Kundenbewertungen", module: "cockpit_bewertungen" },
+      { href: "/dashboard/fahrzeuge", label: "Fahrzeuge", module: "cockpit_fahrzeuge" },
       { href: "/dashboard/arbeitsvertrag", label: "Arbeitsvertrag erstellen", module: "cockpit_arbeitsvertrag" },
     ],
   },

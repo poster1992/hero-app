@@ -5,8 +5,10 @@ services:
     env_file: .env
     environment:
       - BELEGE_DIR=/app/data/belege
+      - FAHRZEUG_DIR=/app/data/fahrzeuge
     volumes:
       - belege:/app/data/belege
+      - fahrzeuge:/app/data/fahrzeuge
     expose:
       - "3000"
 
@@ -28,5 +30,6 @@ services:
 
 volumes:
   belege:
+  fahrzeuge:
   caddy_data:
   caddy_config:
