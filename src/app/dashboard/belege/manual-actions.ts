@@ -147,7 +147,7 @@ export async function updateBelegAction(
   return { success: "Beleg aktualisiert." };
 }
 
-export type BelegSumKind = "lohn" | "bgl" | "mixvoip" | "palettecad";
+export type BelegSumKind = "lohn" | "bgl" | "mixvoip" | "palettecad" | "activite";
 
 export interface BelegSumResult {
   ok: boolean;
@@ -199,6 +199,22 @@ const SUM_CONFIG: Record<
       "dieser Seite (NICHT Bruttogehalt, NICHT Netto, NICHT Auszahlung; wenn keiner vorhanden: null). " +
       "Lass KEINE Seite aus und erfinde keine. Antworte AUSSCHLIESSLICH mit JSON: " +
       '{"seiten": [ … ]}. Punkt als Dezimaltrennzeichen, KEINE Tausenderpunkte. Nur JSON.',
+  },
+  activite: {
+    label: "Endbetrag",
+    supplierSearch: "Activite Lensterbierg",
+    // Konto wird dynamisch je Rechnungstyp gesetzt (Miete 4210 / Nebenkosten 4240).
+    prompt:
+      "Das PDF enthält GENAU EINE Rechnung von Activité Lensterbierg (Vermieter). Gib in seiten GENAU " +
+      "EIN Objekt {betrag, steuersatz, typ} zurück. betrag = der EINE finale, zu zahlende Endbetrag der " +
+      "Rechnung: bei einer MIETRECHNUNG der Wert „Gesamt\" (inkl. MwSt UND inkl. der Nebenkosten-" +
+      "Vorauszahlung); bei einer NEBENKOSTENABRECHNUNG der Schluss-Saldo („Nachzahlung\" positiv; ein " +
+      "Guthaben „zu Ihren Gunsten\" NEGATIV). Gib KEINE Zwischen-, Energie- oder Teilsummen aus. " +
+      "typ = „miete\" oder „nebenkosten\" oder „sonstiges\". steuersatz = der Haupt-MwSt-Satz in Prozent " +
+      "als Zahl. Zusätzlich auf oberster Ebene: belegdatum (YYYY-MM-DD oder null), lieferant, beschreibung " +
+      '(kurze Leistungsbezeichnung inkl. Objekt/Monat). Antworte AUSSCHLIESSLICH mit JSON: {"seiten": ' +
+      '[ EIN Objekt ], "belegdatum": …, "lieferant": …, "beschreibung": …}. Punkt als Dezimaltrennzeichen, ' +
+      "KEINE Tausenderpunkte. Nur JSON.",
   },
   palettecad: {
     label: "Gesamtbetrag inkl. USt.",
@@ -276,7 +292,7 @@ export async function computeBelegSumAction(formData: FormData): Promise<BelegSu
     return { ok: false, error: "OCR ist nicht konfiguriert (ANTHROPIC_API_KEY fehlt)." };
   }
   const kindRaw = String(formData.get("kind") ?? "");
-  const allowedKinds: BelegSumKind[] = ["bgl", "mixvoip", "palettecad"];
+  const allowedKinds: BelegSumKind[] = ["bgl", "mixvoip", "palettecad", "activite"];
   const kind: BelegSumKind = allowedKinds.includes(kindRaw as BelegSumKind)
     ? (kindRaw as BelegSumKind)
     : "lohn";
@@ -309,13 +325,14 @@ export async function computeBelegSumAction(formData: FormData): Promise<BelegSu
         ? tb.text.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim()
         : "{}";
     const parsed = JSON.parse(raw) as {
-      seiten?: { betrag?: unknown; steuersatz?: unknown; matricule?: unknown }[];
+      seiten?: { betrag?: unknown; steuersatz?: unknown; matricule?: unknown; typ?: unknown }[];
       belegdatum?: unknown;
       lieferant?: unknown;
       beschreibung?: unknown;
     };
     const seiten = parsed.seiten ?? [];
-    const values = seiten.map((s) => toNum(s?.betrag)).filter((n) => n > 0);
+    // Nicht-Null-Beträge (bei Activité kann ein NK-Guthaben negativ sein).
+    const values = seiten.map((s) => toNum(s?.betrag)).filter((n) => n !== 0);
     if (values.length === 0) {
       return { ok: false, error: `Es wurden keine „${cfg.label}"-Werte erkannt. Bitte Betrag manuell eintragen.` };
     }
@@ -364,10 +381,19 @@ export async function computeBelegSumAction(formData: FormData): Promise<BelegSu
       }
     }
 
-    // Kontovorschlag (BGL nur bei Fahrzeug).
+    // Kontovorschlag. Activité: dynamisch je Rechnungstyp; sonst statisch (BGL nur bei Fahrzeug).
     let accountNumber: string | undefined;
     let accountName: string | undefined;
-    if (cfg.account && (!cfg.accountNeedsVehicle || isVehicle)) {
+    if (kind === "activite") {
+      const isNK = seiten.some((s) => String(s?.typ ?? "").toLowerCase().includes("nebenkosten"));
+      if (isNK) {
+        accountNumber = "4240";
+        accountName = "Strom, Wasser, Gas";
+      } else {
+        accountNumber = "4210";
+        accountName = "Miete / Pacht";
+      }
+    } else if (cfg.account && (!cfg.accountNeedsVehicle || isVehicle)) {
       accountNumber = cfg.account.number;
       accountName = cfg.account.name;
     }

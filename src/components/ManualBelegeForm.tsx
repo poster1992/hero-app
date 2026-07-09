@@ -55,7 +55,9 @@ export default function ManualBelegeForm({
   const dateInputRef = useRef<HTMLInputElement>(null);
   const supplierInputRef = useRef<HTMLInputElement>(null);
   const descInputRef = useRef<HTMLInputElement>(null);
-  const [belegTyp, setBelegTyp] = useState<"" | "lohn" | "bgl" | "mixvoip" | "palettecad">("");
+  const [belegTyp, setBelegTyp] = useState<
+    "" | "lohn" | "bgl" | "mixvoip" | "palettecad" | "activite"
+  >("");
   const [sumBusy, startSum] = useTransition();
   const [sumMsg, setSumMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const sumLabel =
@@ -65,8 +67,15 @@ export default function ManualBelegeForm({
         ? "Grand Total"
         : belegTyp === "palettecad"
           ? "Gesamtbetrag"
-          : "Total Brutto";
-  const isSumType = belegTyp === "lohn" || belegTyp === "bgl" || belegTyp === "mixvoip" || belegTyp === "palettecad";
+          : belegTyp === "activite"
+            ? "Endbetrag"
+            : "Total Brutto";
+  const isSumType =
+    belegTyp === "lohn" ||
+    belegTyp === "bgl" ||
+    belegTyp === "mixvoip" ||
+    belegTyp === "palettecad" ||
+    belegTyp === "activite";
 
   // Konto vorauswählen (echtes HERO-Konto anhand Nummer, sonst Fallbackname).
   const applyAccount = (number: string, name?: string) => {
@@ -98,7 +107,8 @@ export default function ManualBelegeForm({
         if (res.description && descInputRef.current) descInputRef.current.value = res.description;
         // Konto vorschlagen (BGL nur bei erkanntem Fahrzeug – von der Action entschieden).
         if (res.accountNumber) applyAccount(res.accountNumber, res.accountName);
-        const perInvoice = belegTyp === "mixvoip" || belegTyp === "palettecad";
+        const perInvoice =
+          belegTyp === "mixvoip" || belegTyp === "palettecad" || belegTyp === "activite";
         const unit = perInvoice
           ? res.count === 1
             ? "Rechnung"
@@ -222,7 +232,9 @@ export default function ManualBelegeForm({
                   <select
                     value={belegTyp}
                     onChange={(e) => {
-                      setBelegTyp(e.target.value as "" | "lohn" | "bgl" | "mixvoip" | "palettecad");
+                      setBelegTyp(
+                        e.target.value as "" | "lohn" | "bgl" | "mixvoip" | "palettecad" | "activite"
+                      );
                       setSumMsg(null);
                     }}
                     title="Automatisch aus dem PDF ausfüllen (Summe, MwSt, Datum, Lieferant, Konto)"
@@ -233,6 +245,7 @@ export default function ManualBelegeForm({
                     <option value="bgl">Typ: BGL-Leasing</option>
                     <option value="mixvoip">Typ: Mixvoip</option>
                     <option value="palettecad">Typ: Palette CAD</option>
+                    <option value="activite">Typ: Activité (Miete/NK)</option>
                   </select>
                   {isSumType && (
                     <button
