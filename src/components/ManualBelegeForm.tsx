@@ -54,6 +54,7 @@ export default function ManualBelegeForm({
   const vatInputRef = useRef<HTMLInputElement>(null);
   const dateInputRef = useRef<HTMLInputElement>(null);
   const supplierInputRef = useRef<HTMLInputElement>(null);
+  const descInputRef = useRef<HTMLInputElement>(null);
   const [belegTyp, setBelegTyp] = useState<"" | "lohn" | "bgl">("");
   const [sumBusy, startSum] = useTransition();
   const [sumMsg, setSumMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -79,6 +80,7 @@ export default function ManualBelegeForm({
         }
         if (res.date && dateInputRef.current) dateInputRef.current.value = res.date;
         if (res.supplier && supplierInputRef.current) supplierInputRef.current.value = res.supplier;
+        if (res.description && descInputRef.current) descInputRef.current.value = res.description;
         setSumMsg({
           ok: true,
           text:
@@ -238,6 +240,7 @@ export default function ManualBelegeForm({
               <div className="lg:col-span-3">
                 <label className="mb-1 block text-sm text-gray-600">Beschreibung</label>
                 <input
+                  ref={descInputRef}
                   name="description"
                   type="text"
                   defaultValue={receipt?.description ?? ""}

@@ -163,6 +163,8 @@ export interface BelegSumResult {
   date?: string;
   /** Lieferant – bevorzugt der kanonische HERO-Name (nur BGL). */
   supplier?: string;
+  /** Beschreibung – bei BGL die Matricule(n)/Kennzeichen. */
+  description?: string;
   error?: string;
 }
 
@@ -185,7 +187,9 @@ const SUM_CONFIG: Record<BelegSumKind, { label: string; prompt: string }> = {
     prompt:
       "Dies ist eine (evtl. mehrseitige) BNP Paribas Lease / BGL-Leasingrechnung. Gehe das Dokument " +
       "SEITE FÜR SEITE durch. Gib für JEDE Seite genau ein Objekt zurück: " +
-      "{seite: Zahl, betrag: Zahl|null, steuersatz: Zahl|null}. " +
+      "{seite: Zahl, betrag: Zahl|null, steuersatz: Zahl|null, matricule: string|null}. " +
+      "matricule = die auf dieser Seite ausgewiesene „Matricule\"/„Immatriculation\" (Fahrzeug-Kennzeichen, " +
+      "z. B. „WZ 5168\"); wenn nicht vorhanden: null. " +
       "betrag = der auf dieser Seite ausgewiesene, zu zahlende BRUTTO-Gesamtbetrag – i. d. R. beschriftet " +
       "mit „Total TTC à payer\" (auch „Total TTC\", „Net à payer\", „Montant total TTC\"). NICHT der " +
       "HTVA-/Netto-Wert, NICHT nur die TVA. steuersatz = der ausgewiesene TVA-/MwSt-Satz in Prozent als " +
@@ -250,7 +254,7 @@ export async function computeBelegSumAction(formData: FormData): Promise<BelegSu
         ? tb.text.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim()
         : "{}";
     const parsed = JSON.parse(raw) as {
-      seiten?: { betrag?: unknown; steuersatz?: unknown }[];
+      seiten?: { betrag?: unknown; steuersatz?: unknown; matricule?: unknown }[];
       belegdatum?: unknown;
       lieferant?: unknown;
     };
@@ -275,6 +279,15 @@ export async function computeBelegSumAction(formData: FormData): Promise<BelegSu
     const dRaw = String(parsed.belegdatum ?? "").trim();
     if (/^\d{4}-\d{2}-\d{2}$/.test(dRaw)) date = dRaw;
 
+    // Matricule(n) als Beschreibung (mehrere Fahrzeuge → zusammengefügt, dedupliziert).
+    let description: string | undefined;
+    const matricules: string[] = [];
+    for (const s of seiten) {
+      const m = String(s?.matricule ?? "").trim();
+      if (m && m.toLowerCase() !== "null" && !matricules.includes(m)) matricules.push(m);
+    }
+    if (matricules.length > 0) description = matricules.join(", ").slice(0, 250);
+
     // Lieferant: bevorzugt der kanonische HERO-Name (Suche), sonst der aus dem Beleg gelesene.
     let supplier: string | undefined;
     const ocrSupplier = String(parsed.lieferant ?? "").trim();
@@ -288,7 +301,7 @@ export async function computeBelegSumAction(formData: FormData): Promise<BelegSu
       }
     }
 
-    return { ok: true, total, count: values.length, values: values.map(round2), vatRate, date, supplier };
+    return { ok: true, total, count: values.length, values: values.map(round2), vatRate, date, supplier, description };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "OCR fehlgeschlagen." };
   }
