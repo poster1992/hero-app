@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition, useActionState } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition, useActionState } from "react";
 import {
   createVehicleAction,
   updateVehicleAction,
@@ -217,15 +217,56 @@ function VehiclePanel({
   const [editState, editAction] = useActionState<VehicleActionState, FormData>(updateVehicleAction, {});
   const [showEdit, setShowEdit] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dropRef = useRef<HTMLDivElement>(null);
 
-  const addFiles = (files: FileList | File[]) => {
+  const addFiles = useCallback((files: FileList | File[]) => {
     const list = Array.from(files);
     if (list.length === 0) return;
     setPending((prev) => [
       ...prev,
       ...list.map((file, i) => ({ key: `${Date.now()}-${i}-${file.name}`, file, label: baseName(file.name) })),
     ]);
-  };
+  }, []);
+
+  // Drag & Drop über native Listener (zuverlässiger als React-Synthetic-Events).
+  useEffect(() => {
+    const el = dropRef.current;
+    if (!el) return;
+    const onEnter = (e: DragEvent) => {
+      e.preventDefault();
+      setDragOver(true);
+    };
+    const onOver = (e: DragEvent) => {
+      e.preventDefault();
+      if (e.dataTransfer) {
+        try {
+          e.dataTransfer.dropEffect = "copy";
+        } catch {
+          /* egal */
+        }
+      }
+      setDragOver(true);
+    };
+    const onLeave = (e: DragEvent) => {
+      if (!el.contains(e.relatedTarget as Node | null)) setDragOver(false);
+    };
+    const onDrop = (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setDragOver(false);
+      addFiles(filesFromDataTransfer(e.dataTransfer));
+    };
+    el.addEventListener("dragenter", onEnter);
+    el.addEventListener("dragover", onOver);
+    el.addEventListener("dragleave", onLeave);
+    el.addEventListener("drop", onDrop);
+    return () => {
+      el.removeEventListener("dragenter", onEnter);
+      el.removeEventListener("dragover", onOver);
+      el.removeEventListener("dragleave", onLeave);
+      el.removeEventListener("drop", onDrop);
+    };
+  }, [addFiles]);
 
   const uploadAll = async () => {
     if (pending.length === 0 || uploading) return;
@@ -298,32 +339,9 @@ function VehiclePanel({
         </form>
       )}
 
-      {/* Upload-Zone */}
+      {/* Upload-Zone (Drag & Drop via native Listener, siehe useEffect) */}
       <div
-        onDragEnter={(e) => {
-          e.preventDefault();
-          setDragOver(true);
-        }}
-        onDragOver={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          try {
-            e.dataTransfer.dropEffect = "copy";
-          } catch {
-            /* manche Browser erlauben das Setzen nicht */
-          }
-          setDragOver(true);
-        }}
-        onDragLeave={(e) => {
-          // Nur zurücksetzen, wenn die Maus die Zone wirklich verlässt (nicht bei Kindelementen).
-          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragOver(false);
-        }}
-        onDrop={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          setDragOver(false);
-          addFiles(filesFromDataTransfer(e.dataTransfer));
-        }}
+        ref={dropRef}
         onClick={() => fileInputRef.current?.click()}
         role="button"
         tabIndex={0}
