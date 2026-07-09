@@ -501,6 +501,21 @@ export interface CustomerSummary {
   categoryName: string | null;
 }
 
+/** Findet den kanonischen HERO-Kontaktnamen zu einem Suchbegriff (bester Treffer), oder null. */
+export async function findContactNameBySearch(search: string): Promise<string | null> {
+  const s = search.trim();
+  if (!s) return null;
+  const data = await heroGraphQL<{
+    contacts: { company_name: string | null; full_name: string | null }[] | null;
+  }>(
+    `query FindContact($s: String) { contacts(search: $s, first: 1) { company_name full_name } }`,
+    { s }
+  );
+  const c = data.contacts?.[0];
+  if (!c) return null;
+  return c.company_name?.trim() || c.full_name?.trim() || null;
+}
+
 /** All contacts (customers/suppliers), paginated. */
 export async function getCustomers(): Promise<CustomerSummary[]> {
   const pageSize = 200;

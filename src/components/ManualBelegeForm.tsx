@@ -52,6 +52,8 @@ export default function ManualBelegeForm({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const grossInputRef = useRef<HTMLInputElement>(null);
   const vatInputRef = useRef<HTMLInputElement>(null);
+  const dateInputRef = useRef<HTMLInputElement>(null);
+  const supplierInputRef = useRef<HTMLInputElement>(null);
   const [belegTyp, setBelegTyp] = useState<"" | "lohn" | "bgl">("");
   const [sumBusy, startSum] = useTransition();
   const [sumMsg, setSumMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -75,13 +77,17 @@ export default function ManualBelegeForm({
         if (res.vatRate != null && vatInputRef.current) {
           vatInputRef.current.value = String(res.vatRate).replace(".", ",");
         }
+        if (res.date && dateInputRef.current) dateInputRef.current.value = res.date;
+        if (res.supplier && supplierInputRef.current) supplierInputRef.current.value = res.supplier;
         setSumMsg({
           ok: true,
           text:
             `${res.count} ${res.count === 1 ? "Seite" : "Seiten"} · Summe ${sumLabel} ${res.total.toLocaleString(
               "de-DE",
               { minimumFractionDigits: 2, maximumFractionDigits: 2 }
-            )} €` + (res.vatRate != null ? ` · MwSt ${res.vatRate} %` : ""),
+            )} €` +
+            (res.vatRate != null ? ` · MwSt ${res.vatRate} %` : "") +
+            (res.date ? ` · Datum ${res.date.split("-").reverse().join(".")}` : ""),
         });
       } else {
         setSumMsg({ ok: false, text: res.error ?? "OCR fehlgeschlagen." });
@@ -216,11 +222,12 @@ export default function ManualBelegeForm({
               </div>
               <div>
                 <label className="mb-1 block text-sm text-gray-600">Belegdatum</label>
-                <input name="date" type="date" defaultValue={receipt?.date ?? ""} className={inputClass} />
+                <input ref={dateInputRef} name="date" type="date" defaultValue={receipt?.date ?? ""} className={inputClass} />
               </div>
               <div>
                 <label className="mb-1 block text-sm text-gray-600">Lieferant</label>
                 <input
+                  ref={supplierInputRef}
                   name="supplier"
                   type="text"
                   defaultValue={receipt?.supplier ?? ""}

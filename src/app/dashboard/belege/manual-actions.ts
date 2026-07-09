@@ -3,6 +3,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { revalidatePath } from "next/cache";
 import { getSession } from "@/lib/session";
+import { findContactNameBySearch } from "@/lib/hero-api";
 import { getUserByUsername } from "@/lib/users";
 import {
   createManualReceipt,
@@ -158,6 +159,10 @@ export interface BelegSumResult {
   values?: number[];
   /** Erkannter MwSt-/TVA-Satz in % (nur BGL), oder undefined. */
   vatRate?: number;
+  /** Belegdatum (yyyy-mm-dd), aus dem Beleg gelesen (nur BGL). */
+  date?: string;
+  /** Lieferant – bevorzugt der kanonische HERO-Name (nur BGL). */
+  supplier?: string;
   error?: string;
 }
 
@@ -185,8 +190,10 @@ const SUM_CONFIG: Record<BelegSumKind, { label: string; prompt: string }> = {
       "mit „Total TTC à payer\" (auch „Total TTC\", „Net à payer\", „Montant total TTC\"). NICHT der " +
       "HTVA-/Netto-Wert, NICHT nur die TVA. steuersatz = der ausgewiesene TVA-/MwSt-Satz in Prozent als " +
       "Zahl (z. B. 17 für „TVA 17 %\"); wenn nicht erkennbar: null. Wenn kein Betrag vorhanden: null. " +
-      'Lass KEINE Seite aus. Antworte AUSSCHLIESSLICH mit JSON: {"seiten": [ … ]}. Punkt als ' +
-      "Dezimaltrennzeichen, KEINE Tausenderpunkte. Nur JSON.",
+      "Gib zusätzlich auf oberster Ebene an: belegdatum = das Rechnungsdatum im Format YYYY-MM-DD (oder " +
+      "null); lieferant = der Name des Rechnungsstellers/Lieferanten oben auf der Rechnung (oder null). " +
+      'Lass KEINE Seite aus. Antworte AUSSCHLIESSLICH mit JSON: {"seiten": [ … ], "belegdatum": …, ' +
+      '"lieferant": …}. Punkt als Dezimaltrennzeichen, KEINE Tausenderpunkte. Nur JSON.',
   },
 };
 
@@ -242,7 +249,11 @@ export async function computeBelegSumAction(formData: FormData): Promise<BelegSu
       tb && tb.type === "text"
         ? tb.text.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim()
         : "{}";
-    const parsed = JSON.parse(raw) as { seiten?: { betrag?: unknown; steuersatz?: unknown }[] };
+    const parsed = JSON.parse(raw) as {
+      seiten?: { betrag?: unknown; steuersatz?: unknown }[];
+      belegdatum?: unknown;
+      lieferant?: unknown;
+    };
     const seiten = parsed.seiten ?? [];
     const values = seiten.map((s) => toNum(s?.betrag)).filter((n) => n > 0);
     if (values.length === 0) {
@@ -259,7 +270,25 @@ export async function computeBelegSumAction(formData: FormData): Promise<BelegSu
       vatRate = [...freq.entries()].sort((a, b) => b[1] - a[1])[0][0];
     }
 
-    return { ok: true, total, count: values.length, values: values.map(round2), vatRate };
+    // Belegdatum (yyyy-mm-dd) übernehmen, wenn plausibel.
+    let date: string | undefined;
+    const dRaw = String(parsed.belegdatum ?? "").trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dRaw)) date = dRaw;
+
+    // Lieferant: bevorzugt der kanonische HERO-Name (Suche), sonst der aus dem Beleg gelesene.
+    let supplier: string | undefined;
+    const ocrSupplier = String(parsed.lieferant ?? "").trim();
+    if (ocrSupplier) {
+      supplier = ocrSupplier;
+      try {
+        const heroName = await findContactNameBySearch(ocrSupplier);
+        if (heroName) supplier = heroName;
+      } catch {
+        /* HERO-Auflösung optional – dann bleibt der OCR-Name */
+      }
+    }
+
+    return { ok: true, total, count: values.length, values: values.map(round2), vatRate, date, supplier };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "OCR fehlgeschlagen." };
   }
