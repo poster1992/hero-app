@@ -14,6 +14,13 @@ interface AccountOption {
   name: string;
 }
 
+export interface ProjectOption {
+  id: number;
+  relativeId: number | null;
+  name: string;
+  customerName?: string | null;
+}
+
 /** Belegtyp für die automatische PDF-Auswertung ("" = aus, "auto" = automatisch erkennen). */
 type SumTyp =
   | ""
@@ -48,13 +55,18 @@ export interface EditableReceipt {
   accountNumber: string | null;
   accountName: string | null;
   fileName: string | null;
+  projectId: number | null;
+  projectRelativeId: number | null;
+  projectName: string | null;
 }
 
 export default function ManualBelegeForm({
   accounts,
+  projects,
   receipt,
 }: {
   accounts: AccountOption[];
+  projects: ProjectOption[];
   /** When set, the form edits this receipt instead of creating a new one. */
   receipt?: EditableReceipt;
 }) {
@@ -68,6 +80,16 @@ export default function ManualBelegeForm({
   const [account, setAccount] = useState<AccountOption | null>(
     receipt?.accountNumber
       ? { number: receipt.accountNumber, name: receipt.accountName ?? "" }
+      : null
+  );
+  const [projectQuery, setProjectQuery] = useState("");
+  const [project, setProject] = useState<ProjectOption | null>(
+    receipt?.projectId
+      ? {
+          id: receipt.projectId,
+          relativeId: receipt.projectRelativeId,
+          name: receipt.projectName ?? `Projekt ${receipt.projectRelativeId ?? receipt.projectId}`,
+        }
       : null
   );
 
@@ -156,6 +178,8 @@ export default function ManualBelegeForm({
       if (!isEdit) {
         setAccount(null);
         setAccountQuery("");
+        setProject(null);
+        setProjectQuery("");
       }
     }, 0);
     return () => clearTimeout(t);
@@ -167,6 +191,17 @@ export default function ManualBelegeForm({
     return accounts
       .filter((a) => {
         const hay = `${a.number} ${a.name}`.toLowerCase();
+        return words.every((w) => hay.includes(w));
+      })
+      .slice(0, 12);
+  })();
+
+  const projectMatches = (() => {
+    const words = projectQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (words.length === 0 || project) return [];
+    return projects
+      .filter((p) => {
+        const hay = `${p.relativeId ?? ""} ${p.name} ${p.customerName ?? ""}`.toLowerCase();
         return words.every((w) => hay.includes(w));
       })
       .slice(0, 12);
@@ -375,6 +410,73 @@ export default function ManualBelegeForm({
                               className="block w-full px-3 py-2 text-left text-sm hover:bg-gray-100"
                             >
                               <span className="text-gray-500">{a.number}</span> {a.name}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="sm:col-span-2 lg:col-span-3">
+                <label className="mb-1 block text-sm text-gray-600">Projekt (optional)</label>
+                {/* trägt die Projektzuordnung ins Formular: "id|relativeId|name" */}
+                <input
+                  type="hidden"
+                  name="project"
+                  value={project ? `${project.id}|${project.relativeId ?? ""}|${project.name}` : ""}
+                />
+                {project ? (
+                  <div className="flex items-center justify-between rounded-md border border-gray-300 px-3 py-2 text-sm">
+                    <span className="text-gray-900">
+                      {project.relativeId != null && (
+                        <span className="text-gray-500">#{project.relativeId} </span>
+                      )}
+                      {project.name}
+                      {project.customerName ? (
+                        <span className="text-gray-500"> · {project.customerName}</span>
+                      ) : null}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setProject(null);
+                        setProjectQuery("");
+                      }}
+                      className="text-xs text-gray-400 hover:text-gray-700"
+                    >
+                      ✕ entfernen
+                    </button>
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={projectQuery}
+                      onChange={(e) => setProjectQuery(e.target.value)}
+                      placeholder="Projekt suchen (Nr., Name oder Kunde) …"
+                      className={inputClass}
+                    />
+                    {projectMatches.length > 0 && (
+                      <ul className="absolute z-20 mt-1 max-h-60 w-full overflow-y-auto rounded-md border border-gray-200 bg-white shadow-lg">
+                        {projectMatches.map((p) => (
+                          <li key={p.id}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setProject(p);
+                                setProjectQuery("");
+                              }}
+                              className="block w-full px-3 py-2 text-left text-sm hover:bg-gray-100"
+                            >
+                              {p.relativeId != null && (
+                                <span className="text-gray-500">#{p.relativeId} </span>
+                              )}
+                              {p.name}
+                              {p.customerName ? (
+                                <span className="text-gray-500"> · {p.customerName}</span>
+                              ) : null}
                             </button>
                           </li>
                         ))}

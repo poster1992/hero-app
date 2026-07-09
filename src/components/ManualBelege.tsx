@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { listManualReceipts } from "@/lib/manual-receipts";
 import { listChecklist } from "@/lib/belege-checklist";
-import { getBookAccounts } from "@/lib/hero-api";
+import { getBookAccounts, getProjects } from "@/lib/hero-api";
 import { setBelegPaidAction } from "@/app/dashboard/belege/manual-actions";
 import ManualBelegeForm from "@/components/ManualBelegeForm";
 import DeleteBelegButton from "@/components/DeleteBelegButton";
@@ -36,12 +36,14 @@ export default async function ManualBelege({
   let receipts: Awaited<ReturnType<typeof listManualReceipts>> = [];
   let accounts: Awaited<ReturnType<typeof getBookAccounts>> = [];
   let checklist: Awaited<ReturnType<typeof listChecklist>> = [];
+  let projects: Awaited<ReturnType<typeof getProjects>> = [];
   let error: string | null = null;
   try {
-    [receipts, accounts, checklist] = await Promise.all([
+    [receipts, accounts, checklist, projects] = await Promise.all([
       listManualReceipts(year),
       getBookAccounts(),
       listChecklist(year, month),
+      getProjects().catch(() => []),
     ]);
   } catch (e) {
     error = e instanceof Error ? e.message : "Manuelle Belege konnten nicht geladen werden.";
@@ -72,7 +74,7 @@ export default async function ManualBelege({
           >
             📥 Posteingang (Sammel-Upload)
           </Link>
-          <ManualBelegeForm accounts={accounts} />
+          <ManualBelegeForm accounts={accounts} projects={projects} />
         </div>
       </header>
 
@@ -103,6 +105,7 @@ export default async function ManualBelege({
                 <th className="px-4 py-2 font-semibold">Lieferant</th>
                 <th className="px-4 py-2 font-semibold">Beschreibung</th>
                 <th className="px-4 py-2 font-semibold">Konto</th>
+                <th className="px-4 py-2 font-semibold">Projekt</th>
                 <th className="px-4 py-2 text-right font-semibold">Netto</th>
                 <th className="px-4 py-2 text-right font-semibold">MwSt</th>
                 <th className="px-4 py-2 text-right font-semibold">Brutto</th>
@@ -132,6 +135,22 @@ export default async function ManualBelege({
                   <td className="px-4 py-2 text-gray-600">{r.description ?? "—"}</td>
                   <td className="px-4 py-2 text-gray-700">
                     {r.accountNumber ? `${r.accountNumber} ${r.accountName ?? ""}` : "—"}
+                  </td>
+                  <td className="px-4 py-2 text-gray-700">
+                    {r.projectId ? (
+                      <a
+                        href={`/dashboard/projekte/${r.projectId}?${new URLSearchParams({
+                          ...(r.projectName ? { name: r.projectName } : {}),
+                          ...(r.projectRelativeId != null ? { nr: String(r.projectRelativeId) } : {}),
+                        }).toString()}`}
+                        className="text-brand-red hover:underline"
+                      >
+                        {r.projectRelativeId != null ? `#${r.projectRelativeId} ` : ""}
+                        {r.projectName ?? "Projekt"}
+                      </a>
+                    ) : (
+                      <span className="text-gray-400">—</span>
+                    )}
                   </td>
                   <td className="px-4 py-2 text-right tabular-nums text-gray-700">
                     {currencyFormatter.format(r.net)}
@@ -181,7 +200,7 @@ export default async function ManualBelege({
                   </td>
                   <td className="px-4 py-2">
                     <div className="flex items-center gap-1.5">
-                      <ManualBelegeForm accounts={accounts} receipt={r} />
+                      <ManualBelegeForm accounts={accounts} projects={projects} receipt={r} />
                       <DeleteBelegButton id={r.id} label={r.supplier ?? r.description ?? `Beleg ${r.id}`} />
                     </div>
                   </td>

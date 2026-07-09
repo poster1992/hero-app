@@ -39,6 +39,14 @@ function reviewHeroId(description: string | null): string | null {
   return m ? m[1] : null;
 }
 
+/** Extracts the manual receipt id from a beleg-check task (marker [BELEGPRUEF:id] or /api/beleg?id=). */
+function belegPruefId(description: string | null): string | null {
+  const m = description?.match(/\[BELEGPRUEF:([^\]]+)\]/);
+  if (m) return m[1];
+  const l = description?.match(/api\/beleg\?id=(\d+)/);
+  return l ? l[1] : null;
+}
+
 /** Removes internal markers (e.g. [RECHNPRUEF:..], [EKREQ:..], [BEWERTUNG:..]) from display text. */
 function cleanDescription(description: string | null): string {
   return (description ?? "").replace(/\s*\[[A-Z]+:[^\]]*\]/g, "").trim();
@@ -128,6 +136,7 @@ function TaskCard({
   const [changing, setChanging] = useState(false);
   const [reviewNote, setReviewNote] = useState("");
   const [deciding, setDeciding] = useState(false);
+  const [belegOpen, setBelegOpen] = useState(false);
   const router = useRouter();
   // Optimistischer Status: sofort sichtbar, bevor der Server nachzieht.
   const effectiveStatus: TaskStatus = localStatus ?? task.status;
@@ -200,6 +209,7 @@ function TaskCard({
   const assigneeNames = task.assignees.map((a) => a.name).join(", ") || "—";
   const overdue = isOverdue(task.dueDate, effectiveStatus);
   const heroId = reviewHeroId(task.description);
+  const belegId = belegPruefId(task.description);
   const desc = cleanDescription(task.description);
   const bewertung = reviewEmailInfo(task.description);
   const [bewMail, setBewMail] = useState(bewertung?.email ?? "");
@@ -450,6 +460,89 @@ function TaskCard({
               ))}
             </ul>
           )}
+        </div>
+      )}
+
+      {/* Erfasster Beleg (Posteingang/Workflow): Vorschau im Fenster + abschließen */}
+      {belegId && (
+        <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+              Beleg prüfen
+            </span>
+            <button
+              type="button"
+              onClick={() => setBelegOpen(true)}
+              title="Beleg im Fenster anzeigen und die Aufgabe abschließen"
+              className="inline-flex items-center gap-1.5 rounded-md bg-brand-red px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90"
+            >
+              📄 Beleg anzeigen
+            </button>
+          </div>
+        </div>
+      )}
+
+      {belegOpen && belegId && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          onClick={() => setBelegOpen(false)}
+        >
+          <div
+            className="flex h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-gray-300 bg-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
+              <h3 className="min-w-0 truncate text-sm font-semibold text-gray-900">
+                Beleg #{belegId}
+                {task.title ? ` · ${task.title}` : ""}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setBelegOpen(false)}
+                className="ml-2 shrink-0 text-gray-400 transition-colors hover:text-gray-700"
+                aria-label="Schließen"
+              >
+                ✕
+              </button>
+            </div>
+            <iframe
+              src={`/api/beleg?id=${belegId}`}
+              title={`Beleg ${belegId}`}
+              className="min-h-0 flex-1 bg-gray-100"
+            />
+            <div className="flex flex-wrap items-center justify-end gap-2 border-t border-gray-200 px-4 py-3">
+              <a
+                href={`/api/beleg?id=${belegId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900"
+              >
+                In neuem Tab öffnen
+              </a>
+              {effectiveStatus === "erledigt" ? (
+                <span className="text-xs font-medium text-emerald-600">✓ Bereits erledigt</span>
+              ) : (
+                <button
+                  type="button"
+                  disabled={changing}
+                  onClick={async () => {
+                    await changeStatus("erledigt");
+                    setBelegOpen(false);
+                  }}
+                  className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                >
+                  {changing ? "…" : "✓ Geprüft & abschließen"}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setBelegOpen(false)}
+                className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50"
+              >
+                Schließen
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

@@ -52,6 +52,21 @@ export async function uploadBelegAction(
   const accountNumber = sep >= 0 ? account.slice(0, sep) : account;
   const accountName = sep >= 0 ? account.slice(sep + 1) : "";
 
+  // Optionale Projektzuordnung: verstecktes Feld "project" = "id|relativeId|name".
+  const projectRaw = String(formData.get("project") ?? "").trim();
+  let projectId: number | null = null;
+  let projectRelativeId: number | null = null;
+  let projectName: string | null = null;
+  if (projectRaw) {
+    const [pid, prel, ...rest] = projectRaw.split("|");
+    const idN = Number(pid);
+    if (Number.isFinite(idN) && idN > 0) projectId = idN;
+    const relN = Number(prel);
+    if (Number.isFinite(relN) && relN > 0) projectRelativeId = relN;
+    const nm = rest.join("|").trim();
+    if (nm) projectName = nm;
+  }
+
   const upload = formData.get("file");
   let file: { buffer: Buffer; originalName: string; mime: string } | null = null;
   if (upload && typeof upload === "object" && "arrayBuffer" in upload && upload.size > 0) {
@@ -75,6 +90,9 @@ export async function uploadBelegAction(
       accountName,
       file,
       uploadedBy: me?.id ?? null,
+      projectId,
+      projectRelativeId,
+      projectName,
     });
   } catch {
     return { error: "Beleg konnte nicht gespeichert werden." };
@@ -115,6 +133,21 @@ export async function updateBelegAction(
   const accountNumber = sep >= 0 ? account.slice(0, sep) : account;
   const accountName = sep >= 0 ? account.slice(sep + 1) : "";
 
+  // Optionale Projektzuordnung: verstecktes Feld "project" = "id|relativeId|name".
+  const projectRaw = String(formData.get("project") ?? "").trim();
+  let projectId: number | null = null;
+  let projectRelativeId: number | null = null;
+  let projectName: string | null = null;
+  if (projectRaw) {
+    const [pid, prel, ...rest] = projectRaw.split("|");
+    const idN = Number(pid);
+    if (Number.isFinite(idN) && idN > 0) projectId = idN;
+    const relN = Number(prel);
+    if (Number.isFinite(relN) && relN > 0) projectRelativeId = relN;
+    const nm = rest.join("|").trim();
+    if (nm) projectName = nm;
+  }
+
   const upload = formData.get("file");
   let file: { buffer: Buffer; originalName: string; mime: string } | null = null;
   if (upload && typeof upload === "object" && "arrayBuffer" in upload && upload.size > 0) {
@@ -138,6 +171,9 @@ export async function updateBelegAction(
       accountNumber,
       accountName,
       file,
+      projectId,
+      projectRelativeId,
+      projectName,
     });
   } catch {
     return { error: "Beleg konnte nicht aktualisiert werden." };

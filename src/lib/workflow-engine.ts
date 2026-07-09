@@ -162,18 +162,17 @@ async function collectEvents(triggerKey: string): Promise<WfEvent[]> {
   if (triggerKey === "new_manual_beleg") {
     // Im Sammel-Posteingang automatisch erfasste Belege (source='inbox').
     const receipts = await listInboxReceipts();
-    const base = process.env.APP_URL?.replace(/\/$/, "") || "";
     return receipts.map((r) => {
       const supplier = r.supplier ?? "";
       const nr = `#${r.id}`;
-      const link = `${base}/api/beleg?id=${r.id}`;
       const note = [
         `Erfasster Beleg ${nr}`,
         supplier ? `Lieferant: ${supplier}` : null,
         `Betrag: ${euro.format(r.gross || 0)}`,
         r.date ? `Belegdatum: ${fmtDay(r.date)}` : null,
         r.description ? `Beschreibung: ${r.description}` : null,
-        `PDF: ${link}`,
+        // Marker (wird in der Aufgabe ausgeblendet) – ermöglicht die Beleg-Vorschau + Abschluss.
+        `[BELEGPRUEF:${r.id}]`,
       ]
         .filter(Boolean)
         .join("\n");
