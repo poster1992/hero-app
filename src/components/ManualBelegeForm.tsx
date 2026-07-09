@@ -5,7 +5,7 @@ import { useActionState } from "react";
 import {
   uploadBelegAction,
   updateBelegAction,
-  computeLohnBruttoAction,
+  computeBelegSumAction,
   type UploadBelegState,
 } from "@/app/dashboard/belege/manual-actions";
 
@@ -48,34 +48,38 @@ export default function ManualBelegeForm({
       : null
   );
 
-  // Lohn-OCR: „Total Brutto" je Seite summieren.
+  // OCR-Summe je Seite (Lohn: „Total Brutto", BGL: „Total TTC à payer").
   const fileInputRef = useRef<HTMLInputElement>(null);
   const grossInputRef = useRef<HTMLInputElement>(null);
-  const [lohnBusy, startLohn] = useTransition();
-  const [lohnMsg, setLohnMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [belegTyp, setBelegTyp] = useState<"" | "lohn" | "bgl">("");
+  const [sumBusy, startSum] = useTransition();
+  const [sumMsg, setSumMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const sumLabel = belegTyp === "bgl" ? "Total TTC" : "Total Brutto";
 
-  const runLohnSum = () => {
+  const runSum = () => {
+    if (belegTyp !== "lohn" && belegTyp !== "bgl") return;
     const file = fileInputRef.current?.files?.[0] ?? null;
     if (!file) {
-      setLohnMsg({ ok: false, text: "Bitte zuerst die Lohn-Datei auswählen." });
+      setSumMsg({ ok: false, text: "Bitte zuerst die Datei auswählen." });
       return;
     }
-    setLohnMsg(null);
-    startLohn(async () => {
+    setSumMsg(null);
+    startSum(async () => {
       const fd = new FormData();
       fd.set("file", file);
-      const res = await computeLohnBruttoAction(fd);
+      fd.set("kind", belegTyp);
+      const res = await computeBelegSumAction(fd);
       if (res.ok && res.total != null) {
         if (grossInputRef.current) grossInputRef.current.value = res.total.toFixed(2).replace(".", ",");
-        setLohnMsg({
+        setSumMsg({
           ok: true,
-          text: `${res.count} Seiten · Summe Total Brutto ${res.total.toLocaleString("de-DE", {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
-          })} €`,
+          text: `${res.count} ${res.count === 1 ? "Seite" : "Seiten"} · Summe ${sumLabel} ${res.total.toLocaleString(
+            "de-DE",
+            { minimumFractionDigits: 2, maximumFractionDigits: 2 }
+          )} €`,
         });
       } else {
-        setLohnMsg({ ok: false, text: res.error ?? "OCR fehlgeschlagen." });
+        setSumMsg({ ok: false, text: res.error ?? "OCR fehlgeschlagen." });
       }
     });
   };
@@ -172,20 +176,35 @@ export default function ManualBelegeForm({
                 {isEdit && receipt.fileName && (
                   <p className="mt-1 text-xs text-gray-500">Aktuell: {receipt.fileName}</p>
                 )}
-                {/* Lohn: „Total Brutto" je Seite per OCR summieren → Betrag füllen. */}
+                {/* OCR-Summe je Seite (Lohn: Total Brutto, BGL: Total TTC) → Betrag füllen. */}
                 <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={runLohnSum}
-                    disabled={lohnBusy}
-                    title="Für Lohnabrechnungen: liest je Seite Total Brutto und trägt die Summe als Betrag ein"
-                    className="rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900 disabled:opacity-50"
+                  <select
+                    value={belegTyp}
+                    onChange={(e) => {
+                      setBelegTyp(e.target.value as "" | "lohn" | "bgl");
+                      setSumMsg(null);
+                    }}
+                    title="Für mehrseitige Sammelbelege: Summe je Seite automatisch aus dem PDF berechnen"
+                    className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 outline-none focus:border-brand-red/60"
                   >
-                    {lohnBusy ? "Rechne …" : "🧮 Lohn: Brutto-Summe aus PDF"}
-                  </button>
-                  {lohnMsg && (
-                    <span className={`text-xs ${lohnMsg.ok ? "text-emerald-700" : "text-rose-600"}`}>
-                      {lohnMsg.text}
+                    <option value="">Typ: Standard</option>
+                    <option value="lohn">Typ: Lohn</option>
+                    <option value="bgl">Typ: BGL-Leasing</option>
+                  </select>
+                  {(belegTyp === "lohn" || belegTyp === "bgl") && (
+                    <button
+                      type="button"
+                      onClick={runSum}
+                      disabled={sumBusy}
+                      title={`Liest je Seite „${sumLabel}" und trägt die Summe als Betrag ein`}
+                      className="rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900 disabled:opacity-50"
+                    >
+                      {sumBusy ? "Rechne …" : `🧮 ${sumLabel}-Summe aus PDF`}
+                    </button>
+                  )}
+                  {sumMsg && (
+                    <span className={`text-xs ${sumMsg.ok ? "text-emerald-700" : "text-rose-600"}`}>
+                      {sumMsg.text}
                     </span>
                   )}
                 </div>

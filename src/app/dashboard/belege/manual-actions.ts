@@ -146,11 +146,13 @@ export async function updateBelegAction(
   return { success: "Beleg aktualisiert." };
 }
 
-export interface LohnSumResult {
+export type BelegSumKind = "lohn" | "bgl";
+
+export interface BelegSumResult {
   ok: boolean;
-  /** Summe aller „Total Brutto"-Werte. */
+  /** Summe der je Seite ausgelesenen Beträge. */
   total?: number;
-  /** Anzahl erkannter Werte (Seiten/Mitarbeiter). */
+  /** Anzahl erkannter Werte (Seiten). */
   count?: number;
   /** Einzelwerte (für die Kontrolle). */
   values?: number[];
@@ -158,6 +160,30 @@ export interface LohnSumResult {
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/** Prompt + Bezeichnung des zu summierenden Betrags je Belegtyp. */
+const SUM_CONFIG: Record<BelegSumKind, { label: string; prompt: string }> = {
+  lohn: {
+    label: "Total Brutto",
+    prompt:
+      "Dies ist ein mehrseitiges Lohnjournal (in der Regel eine Seite je Mitarbeiter). Gehe das " +
+      "Dokument SEITE FÜR SEITE durch. Gib für JEDE Seite genau ein Objekt zurück: " +
+      "{seite: Zahl, betrag: Zahl|null}. betrag = der exakt mit „Total Brutto\" bezeichnete Betrag " +
+      "dieser Seite (NICHT Bruttogehalt, NICHT Netto, NICHT Auszahlung; wenn keiner vorhanden: null). " +
+      "Lass KEINE Seite aus und erfinde keine. Antworte AUSSCHLIESSLICH mit JSON: " +
+      '{"seiten": [ … ]}. Punkt als Dezimaltrennzeichen, KEINE Tausenderpunkte. Nur JSON.',
+  },
+  bgl: {
+    label: "Total TTC à payer",
+    prompt:
+      "Dies ist eine (evtl. mehrseitige) BNP Paribas Lease / BGL-Leasingrechnung. Gehe das Dokument " +
+      "SEITE FÜR SEITE durch. Gib für JEDE Seite genau ein Objekt zurück: {seite: Zahl, betrag: Zahl|null}. " +
+      "betrag = der auf dieser Seite ausgewiesene, zu zahlende BRUTTO-Gesamtbetrag – i. d. R. beschriftet " +
+      "mit „Total TTC à payer\" (auch „Total TTC\", „Net à payer\", „Montant total TTC\"). NICHT der " +
+      "HTVA-/Netto-Wert, NICHT nur die TVA. Wenn keiner vorhanden: null. Lass KEINE Seite aus. Antworte " +
+      'AUSSCHLIESSLICH mit JSON: {"seiten": [ … ]}. Punkt als Dezimaltrennzeichen, KEINE Tausenderpunkte. Nur JSON.',
+  },
+};
 
 /** Robustes Parsen deutscher/englischer Zahlen ("1.234,56", "1234.56", 1234.56). */
 function toNum(v: unknown): number {
@@ -171,17 +197,23 @@ function toNum(v: unknown): number {
 }
 
 /**
- * Liest per OCR aus einer (mehrseitigen) Lohnabrechnung alle „Total Brutto"-
- * Beträge (je Seite/Mitarbeiter) und liefert deren Summe.
+ * Liest per OCR aus einem (mehrseitigen) Beleg je Seite den relevanten Betrag
+ * (Lohn: „Total Brutto"; BGL: „Total TTC à payer") und liefert deren Summe.
+ * Die Extraktion erfolgt bewusst Seite-für-Seite strukturiert – das ist deutlich
+ * zuverlässiger, als nur „gib mir alle Zahlen".
  */
-export async function computeLohnBruttoAction(formData: FormData): Promise<LohnSumResult> {
+export async function computeBelegSumAction(formData: FormData): Promise<BelegSumResult> {
   if (!(await getSession())) return { ok: false, error: "Nicht angemeldet." };
   if (!process.env.ANTHROPIC_API_KEY) {
     return { ok: false, error: "OCR ist nicht konfiguriert (ANTHROPIC_API_KEY fehlt)." };
   }
+  const kindRaw = String(formData.get("kind") ?? "");
+  const kind: BelegSumKind = kindRaw === "bgl" ? "bgl" : "lohn";
+  const cfg = SUM_CONFIG[kind];
+
   const upload = formData.get("file");
   if (!upload || typeof upload !== "object" || !("arrayBuffer" in upload) || (upload as File).size === 0) {
-    return { ok: false, error: "Bitte zuerst die Lohn-Datei auswählen." };
+    return { ok: false, error: "Bitte zuerst die Datei auswählen." };
   }
   const f = upload as File;
   if (f.size > 25 * 1024 * 1024) return { ok: false, error: "Datei zu groß (max. 25 MB)." };
@@ -193,33 +225,22 @@ export async function computeLohnBruttoAction(formData: FormData): Promise<LohnS
     ? { type: "image" as const, source: { type: "base64" as const, media_type: mime as "image/png", data: dataB64 } }
     : { type: "document" as const, source: { type: "base64" as const, media_type: "application/pdf" as const, data: dataB64 } };
 
-  // Seite-für-Seite strukturiert extrahieren – das ist deutlich zuverlässiger,
-  // als nur „gib mir alle Zahlen" (das überspringt/verwechselt sonst Werte).
-  const prompt =
-    "Dies ist ein mehrseitiges Lohnjournal (in der Regel eine Seite je Mitarbeiter). Gehe das " +
-    "Dokument SEITE FÜR SEITE durch. Gib für JEDE Seite genau ein Objekt zurück: " +
-    "{seite: Zahl, name: string, total_brutto: Zahl|null}. total_brutto = der exakt mit " +
-    "„Total Brutto\" bezeichnete Betrag dieser Seite (NICHT Bruttogehalt, NICHT Netto, NICHT " +
-    "Auszahlung; wenn auf der Seite kein „Total Brutto\" steht: null). Lass KEINE Seite aus und " +
-    'erfinde keine. Antworte AUSSCHLIESSLICH mit JSON: {"seiten": [ … ]}. Punkt als ' +
-    "Dezimaltrennzeichen, KEINE Tausenderpunkte. Keine Erklärung, nur JSON.";
-
   try {
     const client = new Anthropic({ maxRetries: 2, timeout: 120_000 });
     const res = await client.messages.create({
       model: "claude-haiku-4-5",
       max_tokens: 6000,
-      messages: [{ role: "user", content: [block, { type: "text", text: prompt }] }],
+      messages: [{ role: "user", content: [block, { type: "text", text: cfg.prompt }] }],
     });
     const tb = res.content.find((b) => b.type === "text");
     const raw =
       tb && tb.type === "text"
         ? tb.text.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim()
         : "{}";
-    const parsed = JSON.parse(raw) as { seiten?: { total_brutto?: unknown }[] };
-    const values = (parsed.seiten ?? []).map((s) => toNum(s?.total_brutto)).filter((n) => n > 0);
+    const parsed = JSON.parse(raw) as { seiten?: { betrag?: unknown }[] };
+    const values = (parsed.seiten ?? []).map((s) => toNum(s?.betrag)).filter((n) => n > 0);
     if (values.length === 0) {
-      return { ok: false, error: "Es wurden keine „Total Brutto\"-Werte erkannt. Bitte Betrag manuell eintragen." };
+      return { ok: false, error: `Es wurden keine „${cfg.label}"-Werte erkannt. Bitte Betrag manuell eintragen.` };
     }
     const total = round2(values.reduce((s, n) => s + n, 0));
     return { ok: true, total, count: values.length, values: values.map(round2) };
