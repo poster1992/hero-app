@@ -103,12 +103,15 @@ export default async function ManualBelege({
               <tr className="text-left text-xs uppercase tracking-wide text-gray-500">
                 <th className="px-4 py-2 font-semibold">Datum</th>
                 <th className="px-4 py-2 font-semibold">Lieferant</th>
+                <th className="px-4 py-2 font-semibold">Beleg-Nr.</th>
                 <th className="px-4 py-2 font-semibold">Beschreibung</th>
                 <th className="px-4 py-2 font-semibold">Konto</th>
                 <th className="px-4 py-2 font-semibold">Projekt</th>
                 <th className="px-4 py-2 text-right font-semibold">Netto</th>
                 <th className="px-4 py-2 text-right font-semibold">MwSt</th>
                 <th className="px-4 py-2 text-right font-semibold">Brutto</th>
+                <th className="px-4 py-2 text-right font-semibold">Skonto €</th>
+                <th className="px-4 py-2 text-right font-semibold">Skontozahlbetrag</th>
                 <th className="px-4 py-2 font-semibold">Status</th>
                 <th className="px-4 py-2 font-semibold">Beleg</th>
                 <th className="px-4 py-2 font-semibold">Aktion</th>
@@ -132,6 +135,7 @@ export default async function ManualBelege({
                       </span>
                     )}
                   </td>
+                  <td className="px-4 py-2 tabular-nums text-gray-700">{r.invoiceNumber ?? "—"}</td>
                   <td className="px-4 py-2 text-gray-600">{r.description ?? "—"}</td>
                   <td className="px-4 py-2 text-gray-700">
                     {r.accountNumber ? `${r.accountNumber} ${r.accountName ?? ""}` : "—"}
@@ -160,6 +164,12 @@ export default async function ManualBelege({
                   </td>
                   <td className="px-4 py-2 text-right font-medium tabular-nums text-gray-900">
                     {currencyFormatter.format(r.gross)}
+                  </td>
+                  <td className="px-4 py-2 text-right tabular-nums text-gray-700">
+                    {r.skontoAmount != null ? currencyFormatter.format(r.skontoAmount) : "—"}
+                  </td>
+                  <td className="px-4 py-2 text-right tabular-nums text-gray-700">
+                    {r.skontoPayAmount != null ? currencyFormatter.format(r.skontoPayAmount) : "—"}
                   </td>
                   <td className="px-4 py-2">
                     <div className="flex items-center gap-2">

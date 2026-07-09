@@ -60,6 +60,9 @@ export interface EditableReceipt {
   projectId: number | null;
   projectRelativeId: number | null;
   projectName: string | null;
+  invoiceNumber: string | null;
+  skontoAmount: number | null;
+  skontoPayAmount: number | null;
 }
 
 export default function ManualBelegeForm({
@@ -102,6 +105,9 @@ export default function ManualBelegeForm({
   const dateInputRef = useRef<HTMLInputElement>(null);
   const supplierInputRef = useRef<HTMLInputElement>(null);
   const descInputRef = useRef<HTMLInputElement>(null);
+  const invoiceInputRef = useRef<HTMLInputElement>(null);
+  const skontoInputRef = useRef<HTMLInputElement>(null);
+  const skontoPayInputRef = useRef<HTMLInputElement>(null);
   const [belegTyp, setBelegTyp] = useState<SumTyp>("auto");
   const [sumBusy, startSum] = useTransition();
   const [sumMsg, setSumMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -135,6 +141,12 @@ export default function ManualBelegeForm({
         if (res.date && dateInputRef.current) dateInputRef.current.value = res.date;
         if (res.supplier && supplierInputRef.current) supplierInputRef.current.value = res.supplier;
         if (res.description && descInputRef.current) descInputRef.current.value = res.description;
+        // Belegnummer + Skonto (v. a. Etges & Dächer).
+        if (res.invoiceNumber && invoiceInputRef.current) invoiceInputRef.current.value = res.invoiceNumber;
+        if (res.skontoAmount != null && skontoInputRef.current)
+          skontoInputRef.current.value = res.skontoAmount.toFixed(2).replace(".", ",");
+        if (res.skontoPayAmount != null && skontoPayInputRef.current)
+          skontoPayInputRef.current.value = res.skontoPayAmount.toFixed(2).replace(".", ",");
         // Konto vorschlagen (BGL nur bei erkanntem Fahrzeug – von der Action entschieden).
         if (res.accountNumber) applyAccount(res.accountNumber, res.accountName);
         // Falls automatisch erkannt: Typ in der Auswahl übernehmen.
@@ -214,6 +226,10 @@ export default function ManualBelegeForm({
 
   const grossDefault = receipt ? String(receipt.gross).replace(".", ",") : "";
   const vatDefault = receipt?.vatRate != null ? String(receipt.vatRate) : "";
+  const invoiceDefault = receipt?.invoiceNumber ?? "";
+  const skontoDefault = receipt?.skontoAmount != null ? String(receipt.skontoAmount).replace(".", ",") : "";
+  const skontoPayDefault =
+    receipt?.skontoPayAmount != null ? String(receipt.skontoPayAmount).replace(".", ",") : "";
 
   return (
     <div className={isEdit ? "inline-block" : "flex items-center justify-end"}>
@@ -369,6 +385,41 @@ export default function ManualBelegeForm({
                   defaultValue={vatDefault}
                   className={inputClass}
                   placeholder="z. B. 17"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm text-gray-600">Belegnummer</label>
+                <input
+                  ref={invoiceInputRef}
+                  name="invoiceNumber"
+                  type="text"
+                  defaultValue={invoiceDefault}
+                  className={inputClass}
+                  placeholder="Rechnungs-/Belegnummer"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm text-gray-600">Skonto EUR</label>
+                <input
+                  ref={skontoInputRef}
+                  name="skontoAmount"
+                  type="text"
+                  inputMode="decimal"
+                  defaultValue={skontoDefault}
+                  className={inputClass}
+                  placeholder="z. B. 12,34"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm text-gray-600">Skontozahlbetrag</label>
+                <input
+                  ref={skontoPayInputRef}
+                  name="skontoPayAmount"
+                  type="text"
+                  inputMode="decimal"
+                  defaultValue={skontoPayDefault}
+                  className={inputClass}
+                  placeholder="Betrag abzgl. Skonto"
                 />
               </div>
               <div>

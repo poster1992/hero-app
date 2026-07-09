@@ -105,6 +105,9 @@ export async function ingestInboxBelegeAction(formData: FormData): Promise<Inbox
           file,
           uploadedBy: user.id,
           source: "inbox",
+          invoiceNumber: ex.invoiceNumber ?? null,
+          skontoAmount: ex.skontoAmount ?? null,
+          skontoPayAmount: ex.skontoPayAmount ?? null,
         });
         created++;
         results.push({

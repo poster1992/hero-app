@@ -38,6 +38,12 @@ export interface BelegSumResult {
   kind?: BelegSumKind;
   /** Anzeigename des Belegtyps. */
   kindLabel?: string;
+  /** Belegnummer/Rechnungsnummer (v. a. Etges & Dächer). */
+  invoiceNumber?: string;
+  /** Skontobetrag in EUR. */
+  skontoAmount?: number;
+  /** Zu zahlender Betrag bei Skontoabzug (Skontozahlbetrag). */
+  skontoPayAmount?: number;
   error?: string;
 }
 
@@ -108,9 +114,13 @@ const SUM_CONFIG: Record<
       "steuersatz = der Haupt-MwSt-Satz in Prozent als Zahl. Gib zusätzlich auf oberster Ebene an: " +
       "belegdatum (Rechnungsdatum YYYY-MM-DD oder null – reine Zahlen-Datumsangaben als Tag/Monat/Jahr " +
       "europäisch interpretieren), lieferant (Rechnungssteller oder null), beschreibung (kurze " +
-      "Leistungsbezeichnung, z. B. Material/Projekt). Antworte AUSSCHLIESSLICH mit JSON: " +
-      '{"seiten": [ EIN Objekt ], "belegdatum": …, "lieferant": …, "beschreibung": …}. Punkt als ' +
-      "Dezimaltrennzeichen, KEINE Tausenderpunkte. Nur JSON.",
+      "Leistungsbezeichnung, z. B. Material/Projekt), belegnummer (die Rechnungs-/Belegnummer als Text, " +
+      "oder null), skonto_eur (der Skontobetrag in EUR als Zahl – der gewährte Abzug bei fristgerechter " +
+      "Zahlung, Label z. B. „Skonto\", „abzgl. Skonto\"; oder null), skonto_zahlbetrag (der bei " +
+      "Skontoabzug zu zahlende Betrag als Zahl, Label z. B. „Skontozahlbetrag\", „Zahlbetrag bei Skonto\", " +
+      "„Betrag abzüglich Skonto\"; oder null). Antworte AUSSCHLIESSLICH mit JSON: " +
+      '{"seiten": [ EIN Objekt ], "belegdatum": …, "lieferant": …, "beschreibung": …, "belegnummer": …, ' +
+      '"skonto_eur": …, "skonto_zahlbetrag": …}. Punkt als Dezimaltrennzeichen, KEINE Tausenderpunkte. Nur JSON.',
   },
   circle: {
     label: "Total TTC",
@@ -289,6 +299,9 @@ export async function extractBeleg(input: {
       belegdatum?: unknown;
       lieferant?: unknown;
       beschreibung?: unknown;
+      belegnummer?: unknown;
+      skonto_eur?: unknown;
+      skonto_zahlbetrag?: unknown;
     };
     const seiten = parsed.seiten ?? [];
     // Nicht-Null-Beträge (bei Activité kann ein NK-Guthaben negativ sein).
@@ -326,6 +339,14 @@ export async function extractBeleg(input: {
     }
     // Fahrzeug erkannt, wenn eine Matricule/Immatriculation vorhanden ist.
     const isVehicle = kind === "bgl" && matricules.length > 0;
+
+    // Belegnummer + Skonto (v. a. Etges & Dächer).
+    let invoiceNumber: string | undefined;
+    const invNr = String(parsed.belegnummer ?? "").trim();
+    if (invNr && invNr.toLowerCase() !== "null") invoiceNumber = invNr.slice(0, 64);
+    const skontoAmount = parsed.skonto_eur == null ? undefined : toNum(parsed.skonto_eur) || undefined;
+    const skontoPayAmount =
+      parsed.skonto_zahlbetrag == null ? undefined : toNum(parsed.skonto_zahlbetrag) || undefined;
 
     // Lieferant: bevorzugt der kanonische HERO-Name (fester Suchbegriff je Typ, sonst OCR-Name).
     let supplier: string | undefined;
@@ -372,6 +393,9 @@ export async function extractBeleg(input: {
       accountName,
       kind,
       kindLabel: KIND_LABEL[kind],
+      invoiceNumber,
+      skontoAmount,
+      skontoPayAmount,
     };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "OCR fehlgeschlagen." };

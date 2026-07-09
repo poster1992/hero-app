@@ -67,6 +67,16 @@ export async function uploadBelegAction(
     if (nm) projectName = nm;
   }
 
+  // Belegnummer + Skonto (v. a. Etges & Dächer).
+  const invoiceNumber = String(formData.get("invoiceNumber") ?? "").trim() || null;
+  const skontoAmountRaw = String(formData.get("skontoAmount") ?? "").trim().replace(",", ".");
+  const skontoAmountN = skontoAmountRaw ? Number(skontoAmountRaw) : null;
+  const skontoAmount = skontoAmountN != null && Number.isFinite(skontoAmountN) ? skontoAmountN : null;
+  const skontoPayAmountRaw = String(formData.get("skontoPayAmount") ?? "").trim().replace(",", ".");
+  const skontoPayAmountN = skontoPayAmountRaw ? Number(skontoPayAmountRaw) : null;
+  const skontoPayAmount =
+    skontoPayAmountN != null && Number.isFinite(skontoPayAmountN) ? skontoPayAmountN : null;
+
   const upload = formData.get("file");
   let file: { buffer: Buffer; originalName: string; mime: string } | null = null;
   if (upload && typeof upload === "object" && "arrayBuffer" in upload && upload.size > 0) {
@@ -93,6 +103,9 @@ export async function uploadBelegAction(
       projectId,
       projectRelativeId,
       projectName,
+      invoiceNumber,
+      skontoAmount,
+      skontoPayAmount,
     });
   } catch {
     return { error: "Beleg konnte nicht gespeichert werden." };
@@ -148,6 +161,16 @@ export async function updateBelegAction(
     if (nm) projectName = nm;
   }
 
+  // Belegnummer + Skonto (v. a. Etges & Dächer).
+  const invoiceNumber = String(formData.get("invoiceNumber") ?? "").trim() || null;
+  const skontoAmountRaw = String(formData.get("skontoAmount") ?? "").trim().replace(",", ".");
+  const skontoAmountN = skontoAmountRaw ? Number(skontoAmountRaw) : null;
+  const skontoAmount = skontoAmountN != null && Number.isFinite(skontoAmountN) ? skontoAmountN : null;
+  const skontoPayAmountRaw = String(formData.get("skontoPayAmount") ?? "").trim().replace(",", ".");
+  const skontoPayAmountN = skontoPayAmountRaw ? Number(skontoPayAmountRaw) : null;
+  const skontoPayAmount =
+    skontoPayAmountN != null && Number.isFinite(skontoPayAmountN) ? skontoPayAmountN : null;
+
   const upload = formData.get("file");
   let file: { buffer: Buffer; originalName: string; mime: string } | null = null;
   if (upload && typeof upload === "object" && "arrayBuffer" in upload && upload.size > 0) {
@@ -174,6 +197,9 @@ export async function updateBelegAction(
       projectId,
       projectRelativeId,
       projectName,
+      invoiceNumber,
+      skontoAmount,
+      skontoPayAmount,
     });
   } catch {
     return { error: "Beleg konnte nicht aktualisiert werden." };

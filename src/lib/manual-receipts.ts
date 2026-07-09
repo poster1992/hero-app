@@ -27,6 +27,12 @@ export interface ManualReceipt {
   projectId: number | null;
   projectRelativeId: number | null;
   projectName: string | null;
+  /** Belegnummer des Lieferanten (z. B. Rechnungsnummer). */
+  invoiceNumber: string | null;
+  /** Skontobetrag in EUR. */
+  skontoAmount: number | null;
+  /** Zu zahlender Betrag bei Skontoabzug (Skontozahlbetrag). */
+  skontoPayAmount: number | null;
 }
 
 interface ReceiptRow extends RowDataPacket {
@@ -46,6 +52,9 @@ interface ReceiptRow extends RowDataPacket {
   project_id: number | null;
   project_relative_id: number | null;
   project_name: string | null;
+  invoice_number: string | null;
+  skonto_amount: string | number | null;
+  skonto_pay_amount: string | number | null;
 }
 
 const num = (v: string | number | null): number => (v == null ? 0 : Number(v));
@@ -73,6 +82,9 @@ function mapRow(r: ReceiptRow): ManualReceipt {
     projectId: r.project_id ?? null,
     projectRelativeId: r.project_relative_id ?? null,
     projectName: r.project_name ?? null,
+    invoiceNumber: r.invoice_number ?? null,
+    skontoAmount: r.skonto_amount == null ? null : num(r.skonto_amount),
+    skontoPayAmount: r.skonto_pay_amount == null ? null : num(r.skonto_pay_amount),
   };
 }
 
@@ -80,7 +92,8 @@ function mapRow(r: ReceiptRow): ManualReceipt {
 export async function listManualReceipts(year: number): Promise<ManualReceipt[]> {
   const [rows] = await getPool().query<ReceiptRow[]>(
     `SELECT id, beleg_date, supplier, description, gross, vat_rate, account_number, account_name,
-            file_name, stored_name, mime, is_paid, paid_date, project_id, project_relative_id, project_name
+            file_name, stored_name, mime, is_paid, paid_date, project_id, project_relative_id, project_name,
+            invoice_number, skonto_amount, skonto_pay_amount
      FROM manual_receipts
      WHERE beleg_date IS NULL OR YEAR(beleg_date) = ?
      ORDER BY beleg_date DESC, id DESC`,
@@ -112,6 +125,9 @@ export async function createManualReceipt(input: {
   projectId?: number | null;
   projectRelativeId?: number | null;
   projectName?: string | null;
+  invoiceNumber?: string | null;
+  skontoAmount?: number | null;
+  skontoPayAmount?: number | null;
 }): Promise<number> {
   let storedName: string | null = null;
   if (input.file) {
@@ -122,8 +138,8 @@ export async function createManualReceipt(input: {
   }
   const [res] = await getPool().query(
     `INSERT INTO manual_receipts
-       (beleg_date, supplier, description, gross, vat_rate, account_number, account_name, file_name, stored_name, mime, uploaded_by, source, project_id, project_relative_id, project_name)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (beleg_date, supplier, description, gross, vat_rate, account_number, account_name, file_name, stored_name, mime, uploaded_by, source, project_id, project_relative_id, project_name, invoice_number, skonto_amount, skonto_pay_amount)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.date,
       input.supplier,
@@ -140,6 +156,9 @@ export async function createManualReceipt(input: {
       input.projectId ?? null,
       input.projectRelativeId ?? null,
       input.projectName ?? null,
+      input.invoiceNumber ?? null,
+      input.skontoAmount ?? null,
+      input.skontoPayAmount ?? null,
     ]
   );
   return (res as { insertId: number }).insertId;
@@ -193,11 +212,17 @@ export async function updateManualReceipt(input: {
   projectId?: number | null;
   projectRelativeId?: number | null;
   projectName?: string | null;
+  invoiceNumber?: string | null;
+  skontoAmount?: number | null;
+  skontoPayAmount?: number | null;
 }): Promise<void> {
   const pool = getPool();
   const projectId = input.projectId ?? null;
   const projectRelativeId = input.projectRelativeId ?? null;
   const projectName = input.projectName ?? null;
+  const invoiceNumber = input.invoiceNumber ?? null;
+  const skontoAmount = input.skontoAmount ?? null;
+  const skontoPayAmount = input.skontoPayAmount ?? null;
 
   if (input.file) {
     // Alte Datei merken, um sie nach dem Ersetzen zu entfernen.
@@ -216,7 +241,8 @@ export async function updateManualReceipt(input: {
       `UPDATE manual_receipts
          SET beleg_date = ?, supplier = ?, description = ?, gross = ?, vat_rate = ?,
              account_number = ?, account_name = ?, file_name = ?, stored_name = ?, mime = ?,
-             project_id = ?, project_relative_id = ?, project_name = ?
+             project_id = ?, project_relative_id = ?, project_name = ?,
+             invoice_number = ?, skonto_amount = ?, skonto_pay_amount = ?
        WHERE id = ?`,
       [
         input.date,
@@ -232,6 +258,9 @@ export async function updateManualReceipt(input: {
         projectId,
         projectRelativeId,
         projectName,
+        invoiceNumber,
+        skontoAmount,
+        skontoPayAmount,
         input.id,
       ]
     );
@@ -250,7 +279,8 @@ export async function updateManualReceipt(input: {
     `UPDATE manual_receipts
        SET beleg_date = ?, supplier = ?, description = ?, gross = ?, vat_rate = ?,
            account_number = ?, account_name = ?,
-           project_id = ?, project_relative_id = ?, project_name = ?
+           project_id = ?, project_relative_id = ?, project_name = ?,
+           invoice_number = ?, skonto_amount = ?, skonto_pay_amount = ?
      WHERE id = ?`,
     [
       input.date,
@@ -263,6 +293,9 @@ export async function updateManualReceipt(input: {
       projectId,
       projectRelativeId,
       projectName,
+      invoiceNumber,
+      skontoAmount,
+      skontoPayAmount,
       input.id,
     ]
   );
