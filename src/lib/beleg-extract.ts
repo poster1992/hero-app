@@ -44,6 +44,8 @@ export interface BelegSumResult {
   skontoAmount?: number;
   /** Zu zahlender Betrag bei Skontoabzug (Skontozahlbetrag). */
   skontoPayAmount?: number;
+  /** Skontozahlungsziel (Datum yyyy-mm-dd, bis zu dem der Skonto gilt). */
+  skontoDueDate?: string;
   error?: string;
 }
 
@@ -118,9 +120,12 @@ const SUM_CONFIG: Record<
       "oder null), skonto_eur (der Skontobetrag in EUR als Zahl – der gewährte Abzug bei fristgerechter " +
       "Zahlung, Label z. B. „Skonto\", „abzgl. Skonto\"; oder null), skonto_zahlbetrag (der bei " +
       "Skontoabzug zu zahlende Betrag als Zahl, Label z. B. „Skontozahlbetrag\", „Zahlbetrag bei Skonto\", " +
-      "„Betrag abzüglich Skonto\"; oder null). Antworte AUSSCHLIESSLICH mit JSON: " +
-      '{"seiten": [ EIN Objekt ], "belegdatum": …, "lieferant": …, "beschreibung": …, "belegnummer": …, ' +
-      '"skonto_eur": …, "skonto_zahlbetrag": …}. Punkt als Dezimaltrennzeichen, KEINE Tausenderpunkte. Nur JSON.',
+      "„Betrag abzüglich Skonto\"; oder null), skonto_zahlungsziel (das Datum, bis zu dem der Skonto gilt, " +
+      "im Format YYYY-MM-DD; Label z. B. „Skontozahlungsziel\", „zahlbar mit Skonto bis\", „Skonto bis\"; " +
+      "reine Zahlen-Datumsangaben als Tag/Monat/Jahr europäisch interpretieren; oder null). Antworte " +
+      'AUSSCHLIESSLICH mit JSON: {"seiten": [ EIN Objekt ], "belegdatum": …, "lieferant": …, ' +
+      '"beschreibung": …, "belegnummer": …, "skonto_eur": …, "skonto_zahlbetrag": …, ' +
+      '"skonto_zahlungsziel": …}. Punkt als Dezimaltrennzeichen, KEINE Tausenderpunkte. Nur JSON.',
   },
   circle: {
     label: "Total TTC",
@@ -302,6 +307,7 @@ export async function extractBeleg(input: {
       belegnummer?: unknown;
       skonto_eur?: unknown;
       skonto_zahlbetrag?: unknown;
+      skonto_zahlungsziel?: unknown;
     };
     const seiten = parsed.seiten ?? [];
     // Nicht-Null-Beträge (bei Activité kann ein NK-Guthaben negativ sein).
@@ -347,6 +353,9 @@ export async function extractBeleg(input: {
     const skontoAmount = parsed.skonto_eur == null ? undefined : toNum(parsed.skonto_eur) || undefined;
     const skontoPayAmount =
       parsed.skonto_zahlbetrag == null ? undefined : toNum(parsed.skonto_zahlbetrag) || undefined;
+    let skontoDueDate: string | undefined;
+    const sdRaw = String(parsed.skonto_zahlungsziel ?? "").trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(sdRaw)) skontoDueDate = sdRaw;
 
     // Lieferant: bevorzugt der kanonische HERO-Name (fester Suchbegriff je Typ, sonst OCR-Name).
     let supplier: string | undefined;
@@ -396,6 +405,7 @@ export async function extractBeleg(input: {
       invoiceNumber,
       skontoAmount,
       skontoPayAmount,
+      skontoDueDate,
     };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "OCR fehlgeschlagen." };

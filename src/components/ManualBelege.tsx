@@ -112,6 +112,7 @@ export default async function ManualBelege({
                 <th className="px-4 py-2 text-right font-semibold">Brutto</th>
                 <th className="px-4 py-2 text-right font-semibold">Skonto €</th>
                 <th className="px-4 py-2 text-right font-semibold">Skontozahlbetrag</th>
+                <th className="px-4 py-2 font-semibold">Skonto bis</th>
                 <th className="px-4 py-2 font-semibold">Status</th>
                 <th className="px-4 py-2 font-semibold">Beleg</th>
                 <th className="px-4 py-2 font-semibold">Aktion</th>
@@ -171,6 +172,7 @@ export default async function ManualBelege({
                   <td className="px-4 py-2 text-right tabular-nums text-gray-700">
                     {r.skontoPayAmount != null ? currencyFormatter.format(r.skontoPayAmount) : "—"}
                   </td>
+                  <td className="px-4 py-2 tabular-nums text-gray-700">{formatDate(r.skontoDueDate)}</td>
                   <td className="px-4 py-2">
                     <div className="flex items-center gap-2">
                       {r.isPaid ? (

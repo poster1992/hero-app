@@ -108,6 +108,7 @@ export async function ingestInboxBelegeAction(formData: FormData): Promise<Inbox
           invoiceNumber: ex.invoiceNumber ?? null,
           skontoAmount: ex.skontoAmount ?? null,
           skontoPayAmount: ex.skontoPayAmount ?? null,
+          skontoDueDate: ex.skontoDueDate ?? null,
         });
         created++;
         results.push({

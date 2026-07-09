@@ -76,6 +76,7 @@ export async function uploadBelegAction(
   const skontoPayAmountN = skontoPayAmountRaw ? Number(skontoPayAmountRaw) : null;
   const skontoPayAmount =
     skontoPayAmountN != null && Number.isFinite(skontoPayAmountN) ? skontoPayAmountN : null;
+  const skontoDueDate = String(formData.get("skontoDueDate") ?? "").trim() || null;
 
   const upload = formData.get("file");
   let file: { buffer: Buffer; originalName: string; mime: string } | null = null;
@@ -106,6 +107,7 @@ export async function uploadBelegAction(
       invoiceNumber,
       skontoAmount,
       skontoPayAmount,
+      skontoDueDate,
     });
   } catch {
     return { error: "Beleg konnte nicht gespeichert werden." };
@@ -170,6 +172,7 @@ export async function updateBelegAction(
   const skontoPayAmountN = skontoPayAmountRaw ? Number(skontoPayAmountRaw) : null;
   const skontoPayAmount =
     skontoPayAmountN != null && Number.isFinite(skontoPayAmountN) ? skontoPayAmountN : null;
+  const skontoDueDate = String(formData.get("skontoDueDate") ?? "").trim() || null;
 
   const upload = formData.get("file");
   let file: { buffer: Buffer; originalName: string; mime: string } | null = null;
@@ -200,6 +203,7 @@ export async function updateBelegAction(
       invoiceNumber,
       skontoAmount,
       skontoPayAmount,
+      skontoDueDate,
     });
   } catch {
     return { error: "Beleg konnte nicht aktualisiert werden." };

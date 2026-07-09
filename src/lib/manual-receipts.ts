@@ -33,6 +33,8 @@ export interface ManualReceipt {
   skontoAmount: number | null;
   /** Zu zahlender Betrag bei Skontoabzug (Skontozahlbetrag). */
   skontoPayAmount: number | null;
+  /** Skontozahlungsziel (Datum, bis zu dem der Skonto gilt). */
+  skontoDueDate: string | null;
 }
 
 interface ReceiptRow extends RowDataPacket {
@@ -55,6 +57,7 @@ interface ReceiptRow extends RowDataPacket {
   invoice_number: string | null;
   skonto_amount: string | number | null;
   skonto_pay_amount: string | number | null;
+  skonto_due_date: string | null;
 }
 
 const num = (v: string | number | null): number => (v == null ? 0 : Number(v));
@@ -85,6 +88,7 @@ function mapRow(r: ReceiptRow): ManualReceipt {
     invoiceNumber: r.invoice_number ?? null,
     skontoAmount: r.skonto_amount == null ? null : num(r.skonto_amount),
     skontoPayAmount: r.skonto_pay_amount == null ? null : num(r.skonto_pay_amount),
+    skontoDueDate: r.skonto_due_date ? String(r.skonto_due_date).slice(0, 10) : null,
   };
 }
 
@@ -93,7 +97,7 @@ export async function listManualReceipts(year: number): Promise<ManualReceipt[]>
   const [rows] = await getPool().query<ReceiptRow[]>(
     `SELECT id, beleg_date, supplier, description, gross, vat_rate, account_number, account_name,
             file_name, stored_name, mime, is_paid, paid_date, project_id, project_relative_id, project_name,
-            invoice_number, skonto_amount, skonto_pay_amount
+            invoice_number, skonto_amount, skonto_pay_amount, skonto_due_date
      FROM manual_receipts
      WHERE beleg_date IS NULL OR YEAR(beleg_date) = ?
      ORDER BY beleg_date DESC, id DESC`,
@@ -128,6 +132,7 @@ export async function createManualReceipt(input: {
   invoiceNumber?: string | null;
   skontoAmount?: number | null;
   skontoPayAmount?: number | null;
+  skontoDueDate?: string | null;
 }): Promise<number> {
   let storedName: string | null = null;
   if (input.file) {
@@ -138,8 +143,8 @@ export async function createManualReceipt(input: {
   }
   const [res] = await getPool().query(
     `INSERT INTO manual_receipts
-       (beleg_date, supplier, description, gross, vat_rate, account_number, account_name, file_name, stored_name, mime, uploaded_by, source, project_id, project_relative_id, project_name, invoice_number, skonto_amount, skonto_pay_amount)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (beleg_date, supplier, description, gross, vat_rate, account_number, account_name, file_name, stored_name, mime, uploaded_by, source, project_id, project_relative_id, project_name, invoice_number, skonto_amount, skonto_pay_amount, skonto_due_date)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.date,
       input.supplier,
@@ -159,6 +164,7 @@ export async function createManualReceipt(input: {
       input.invoiceNumber ?? null,
       input.skontoAmount ?? null,
       input.skontoPayAmount ?? null,
+      input.skontoDueDate ?? null,
     ]
   );
   return (res as { insertId: number }).insertId;
@@ -215,6 +221,7 @@ export async function updateManualReceipt(input: {
   invoiceNumber?: string | null;
   skontoAmount?: number | null;
   skontoPayAmount?: number | null;
+  skontoDueDate?: string | null;
 }): Promise<void> {
   const pool = getPool();
   const projectId = input.projectId ?? null;
@@ -223,6 +230,7 @@ export async function updateManualReceipt(input: {
   const invoiceNumber = input.invoiceNumber ?? null;
   const skontoAmount = input.skontoAmount ?? null;
   const skontoPayAmount = input.skontoPayAmount ?? null;
+  const skontoDueDate = input.skontoDueDate ?? null;
 
   if (input.file) {
     // Alte Datei merken, um sie nach dem Ersetzen zu entfernen.
@@ -242,7 +250,7 @@ export async function updateManualReceipt(input: {
          SET beleg_date = ?, supplier = ?, description = ?, gross = ?, vat_rate = ?,
              account_number = ?, account_name = ?, file_name = ?, stored_name = ?, mime = ?,
              project_id = ?, project_relative_id = ?, project_name = ?,
-             invoice_number = ?, skonto_amount = ?, skonto_pay_amount = ?
+             invoice_number = ?, skonto_amount = ?, skonto_pay_amount = ?, skonto_due_date = ?
        WHERE id = ?`,
       [
         input.date,
@@ -261,6 +269,7 @@ export async function updateManualReceipt(input: {
         invoiceNumber,
         skontoAmount,
         skontoPayAmount,
+        skontoDueDate,
         input.id,
       ]
     );
@@ -280,7 +289,7 @@ export async function updateManualReceipt(input: {
        SET beleg_date = ?, supplier = ?, description = ?, gross = ?, vat_rate = ?,
            account_number = ?, account_name = ?,
            project_id = ?, project_relative_id = ?, project_name = ?,
-           invoice_number = ?, skonto_amount = ?, skonto_pay_amount = ?
+           invoice_number = ?, skonto_amount = ?, skonto_pay_amount = ?, skonto_due_date = ?
      WHERE id = ?`,
     [
       input.date,
@@ -296,6 +305,7 @@ export async function updateManualReceipt(input: {
       invoiceNumber,
       skontoAmount,
       skontoPayAmount,
+      skontoDueDate,
       input.id,
     ]
   );

@@ -63,6 +63,7 @@ export interface EditableReceipt {
   invoiceNumber: string | null;
   skontoAmount: number | null;
   skontoPayAmount: number | null;
+  skontoDueDate: string | null;
 }
 
 export default function ManualBelegeForm({
@@ -108,6 +109,7 @@ export default function ManualBelegeForm({
   const invoiceInputRef = useRef<HTMLInputElement>(null);
   const skontoInputRef = useRef<HTMLInputElement>(null);
   const skontoPayInputRef = useRef<HTMLInputElement>(null);
+  const skontoDueInputRef = useRef<HTMLInputElement>(null);
   const [belegTyp, setBelegTyp] = useState<SumTyp>("auto");
   const [sumBusy, startSum] = useTransition();
   const [sumMsg, setSumMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -147,6 +149,8 @@ export default function ManualBelegeForm({
           skontoInputRef.current.value = res.skontoAmount.toFixed(2).replace(".", ",");
         if (res.skontoPayAmount != null && skontoPayInputRef.current)
           skontoPayInputRef.current.value = res.skontoPayAmount.toFixed(2).replace(".", ",");
+        if (res.skontoDueDate && skontoDueInputRef.current)
+          skontoDueInputRef.current.value = res.skontoDueDate;
         // Konto vorschlagen (BGL nur bei erkanntem Fahrzeug – von der Action entschieden).
         if (res.accountNumber) applyAccount(res.accountNumber, res.accountName);
         // Falls automatisch erkannt: Typ in der Auswahl übernehmen.
@@ -230,6 +234,7 @@ export default function ManualBelegeForm({
   const skontoDefault = receipt?.skontoAmount != null ? String(receipt.skontoAmount).replace(".", ",") : "";
   const skontoPayDefault =
     receipt?.skontoPayAmount != null ? String(receipt.skontoPayAmount).replace(".", ",") : "";
+  const skontoDueDefault = receipt?.skontoDueDate ?? "";
 
   return (
     <div className={isEdit ? "inline-block" : "flex items-center justify-end"}>
@@ -420,6 +425,16 @@ export default function ManualBelegeForm({
                   defaultValue={skontoPayDefault}
                   className={inputClass}
                   placeholder="Betrag abzgl. Skonto"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm text-gray-600">Skontozahlungsziel</label>
+                <input
+                  ref={skontoDueInputRef}
+                  name="skontoDueDate"
+                  type="date"
+                  defaultValue={skontoDueDefault}
+                  className={inputClass}
                 />
               </div>
               <div>
