@@ -106,6 +106,18 @@ export async function listManualReceipts(year: number): Promise<ManualReceipt[]>
   return rows.map(mapRow);
 }
 
+/** Loads a single manual receipt by id (or null). */
+export async function getManualReceipt(id: number): Promise<ManualReceipt | null> {
+  const [rows] = await getPool().query<ReceiptRow[]>(
+    `SELECT id, beleg_date, supplier, description, gross, vat_rate, account_number, account_name,
+            file_name, stored_name, mime, is_paid, paid_date, project_id, project_relative_id, project_name,
+            invoice_number, skonto_amount, skonto_pay_amount, skonto_due_date
+     FROM manual_receipts WHERE id = ? LIMIT 1`,
+    [id]
+  );
+  return rows[0] ? mapRow(rows[0]) : null;
+}
+
 /** Sets/clears the paid status of a manual receipt. */
 export async function setManualReceiptPaid(id: number, paid: boolean): Promise<void> {
   await getPool().query(

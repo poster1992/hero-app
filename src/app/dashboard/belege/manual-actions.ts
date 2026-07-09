@@ -8,7 +8,10 @@ import {
   setManualReceiptPaid,
   updateManualReceipt,
   deleteManualReceipt,
+  getManualReceipt,
 } from "@/lib/manual-receipts";
+import { getBookAccounts, getProjects } from "@/lib/hero-api";
+import type { EditableReceipt, ProjectOption } from "@/components/ManualBelegeForm";
 import {
   addChecklistItem,
   removeChecklistItem,
@@ -235,6 +238,49 @@ export async function computeBelegSumAction(formData: FormData): Promise<BelegSu
 
   const buffer = Buffer.from(await f.arrayBuffer());
   return extractBeleg({ buffer, mime: f.type || "application/pdf", kind });
+}
+
+export interface BelegEditData {
+  receipt: EditableReceipt | null;
+  accounts: { number: string; name: string }[];
+  projects: ProjectOption[];
+}
+
+/**
+ * Lädt einen manuellen Beleg samt Konten-/Projektlisten zum Bearbeiten
+ * (z. B. aus der Aufgaben-Ansicht heraus).
+ */
+export async function loadBelegEditDataAction(id: number): Promise<BelegEditData> {
+  const session = await getSession();
+  if (!session || !Number.isFinite(id) || id <= 0) {
+    return { receipt: null, accounts: [], projects: [] };
+  }
+  const [r, accounts, projects] = await Promise.all([
+    getManualReceipt(id),
+    getBookAccounts().catch(() => [] as { number: string; name: string }[]),
+    getProjects().catch(() => [] as ProjectOption[]),
+  ]);
+  const receipt: EditableReceipt | null = r
+    ? {
+        id: r.id,
+        date: r.date,
+        supplier: r.supplier,
+        description: r.description,
+        gross: r.gross,
+        vatRate: r.vatRate,
+        accountNumber: r.accountNumber,
+        accountName: r.accountName,
+        fileName: r.fileName,
+        projectId: r.projectId,
+        projectRelativeId: r.projectRelativeId,
+        projectName: r.projectName,
+        invoiceNumber: r.invoiceNumber,
+        skontoAmount: r.skontoAmount,
+        skontoPayAmount: r.skontoPayAmount,
+        skontoDueDate: r.skontoDueDate,
+      }
+    : null;
+  return { receipt, accounts, projects };
 }
 
 /** Löscht einen manuellen Beleg (inkl. Datei). */

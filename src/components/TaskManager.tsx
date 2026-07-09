@@ -13,6 +13,8 @@ import {
   sendReviewEmailAction,
   type CreateTaskState,
 } from "@/app/dashboard/aufgaben/actions";
+import ManualBelegeForm from "@/components/ManualBelegeForm";
+import { loadBelegEditDataAction, type BelegEditData } from "@/app/dashboard/belege/manual-actions";
 
 /** Google-Bewertungslink (aus den Einstellungen) für den „E-Mail öffnen"-Button. */
 const ReviewUrlContext = createContext<string>("");
@@ -137,7 +139,13 @@ function TaskCard({
   const [reviewNote, setReviewNote] = useState("");
   const [deciding, setDeciding] = useState(false);
   const [belegOpen, setBelegOpen] = useState(false);
+  const [belegEdit, setBelegEdit] = useState<BelegEditData | null>(null);
+  const [belegLoading, setBelegLoading] = useState(false);
   const router = useRouter();
+  const closeBeleg = () => {
+    setBelegOpen(false);
+    setBelegEdit(null);
+  };
   // Optimistischer Status: sofort sichtbar, bevor der Server nachzieht.
   const effectiveStatus: TaskStatus = localStatus ?? task.status;
 
@@ -211,6 +219,24 @@ function TaskCard({
   const heroId = reviewHeroId(task.description);
   const belegId = belegPruefId(task.description);
   const desc = cleanDescription(task.description);
+
+  // Beleg-Werte (samt Konten/Projekten) laden, sobald das Beleg-Fenster geöffnet wird.
+  useEffect(() => {
+    if (!belegOpen || !belegId || belegEdit) return;
+    let cancelled = false;
+    setBelegLoading(true);
+    loadBelegEditDataAction(Number(belegId))
+      .then((d) => {
+        if (!cancelled) setBelegEdit(d);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setBelegLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [belegOpen, belegId, belegEdit]);
   const bewertung = reviewEmailInfo(task.description);
   const [bewMail, setBewMail] = useState(bewertung?.email ?? "");
   const googleReviewUrl = useContext(ReviewUrlContext);
@@ -485,7 +511,7 @@ function TaskCard({
       {belegOpen && belegId && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-          onClick={() => setBelegOpen(false)}
+          onClick={closeBeleg}
         >
           <div
             className="flex h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-gray-300 bg-white shadow-2xl"
@@ -498,7 +524,7 @@ function TaskCard({
               </h3>
               <button
                 type="button"
-                onClick={() => setBelegOpen(false)}
+                onClick={closeBeleg}
                 className="ml-2 shrink-0 text-gray-400 transition-colors hover:text-gray-700"
                 aria-label="Schließen"
               >
@@ -510,37 +536,52 @@ function TaskCard({
               title={`Beleg ${belegId}`}
               className="min-h-0 flex-1 bg-gray-100"
             />
-            <div className="flex flex-wrap items-center justify-end gap-2 border-t border-gray-200 px-4 py-3">
-              <a
-                href={`/api/beleg?id=${belegId}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900"
-              >
-                In neuem Tab öffnen
-              </a>
-              {effectiveStatus === "erledigt" ? (
-                <span className="text-xs font-medium text-emerald-600">✓ Bereits erledigt</span>
-              ) : (
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-200 px-4 py-3">
+              <div className="flex items-center gap-2">
+                {belegEdit?.receipt ? (
+                  <ManualBelegeForm
+                    accounts={belegEdit.accounts}
+                    projects={belegEdit.projects}
+                    receipt={belegEdit.receipt}
+                  />
+                ) : (
+                  <span className="text-xs text-gray-400">
+                    {belegLoading ? "Werte werden geladen …" : "Werte nicht verfügbar"}
+                  </span>
+                )}
+                <a
+                  href={`/api/beleg?id=${belegId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900"
+                >
+                  In neuem Tab öffnen
+                </a>
+              </div>
+              <div className="flex items-center gap-2">
+                {effectiveStatus === "erledigt" ? (
+                  <span className="text-xs font-medium text-emerald-600">✓ Bereits erledigt</span>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={changing}
+                    onClick={async () => {
+                      await changeStatus("erledigt");
+                      closeBeleg();
+                    }}
+                    className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                  >
+                    {changing ? "…" : "✓ Geprüft & abschließen"}
+                  </button>
+                )}
                 <button
                   type="button"
-                  disabled={changing}
-                  onClick={async () => {
-                    await changeStatus("erledigt");
-                    setBelegOpen(false);
-                  }}
-                  className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                  onClick={closeBeleg}
+                  className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50"
                 >
-                  {changing ? "…" : "✓ Geprüft & abschließen"}
+                  Schließen
                 </button>
-              )}
-              <button
-                type="button"
-                onClick={() => setBelegOpen(false)}
-                className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50"
-              >
-                Schließen
-              </button>
+              </div>
             </div>
           </div>
         </div>
