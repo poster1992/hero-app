@@ -44,7 +44,10 @@ type SumTyp =
   | "akemi"
   | "maroldt"
   | "hieronimi"
-  | "kennerbeton";
+  | "kennerbeton"
+  | "bureaucaisse"
+  | "sigre"
+  | "carlgeisen";
 
 /** Bezeichnung des summierten Betrags je erkanntem Typ (für die Meldung). */
 const KIND_AMOUNT_LABEL: Record<string, string> = {
@@ -68,6 +71,9 @@ const KIND_AMOUNT_LABEL: Record<string, string> = {
   maroldt: "Gesamtbetrag brutto",
   hieronimi: "Gesamtbetrag brutto",
   kennerbeton: "Gesamtbetrag brutto",
+  bureaucaisse: "Gesamtbetrag brutto",
+  sigre: "Gesamtbetrag brutto",
+  carlgeisen: "Gesamtbetrag brutto",
 };
 
 /** Subset of a manual receipt needed to prefill the edit form. */
@@ -312,6 +318,9 @@ export function ManualBelegeFormFields({
                     <option value="maroldt">Typ: Maroldt</option>
                     <option value="hieronimi">Typ: Hieronimi</option>
                     <option value="kennerbeton">Typ: Kenner Betonwerk Eiden</option>
+                    <option value="bureaucaisse">Typ: Bureau Caisse Centrale (Kfz-Steuer)</option>
+                    <option value="sigre">Typ: SIGRE (Entsorgung)</option>
+                    <option value="carlgeisen">Typ: Carl Geisen (Arbeitskleidung)</option>
                   </select>
                   {isSumType && (
                     <button

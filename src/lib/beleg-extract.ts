@@ -22,7 +22,10 @@ export type BelegSumKind =
   | "akemi"
   | "maroldt"
   | "hieronimi"
-  | "kennerbeton";
+  | "kennerbeton"
+  | "bureaucaisse"
+  | "sigre"
+  | "carlgeisen";
 
 export interface BelegSumResult {
   ok: boolean;
@@ -83,6 +86,9 @@ export const KIND_LABEL: Record<BelegSumKind, string> = {
   maroldt: "Maroldt",
   hieronimi: "Hieronimi",
   kennerbeton: "Kenner Betonwerk Eiden",
+  bureaucaisse: "Bureau Caisse Centrale",
+  sigre: "SIGRE",
+  carlgeisen: "Carl Geisen",
 };
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -245,6 +251,24 @@ const SUM_CONFIG: Record<
     account: { number: "3000", name: "Wareneingang / Material" },
     prompt: materialInvoicePrompt("Kenner Betonwerk Eiden", "Beton / Betonwerk"),
   },
+  bureaucaisse: {
+    label: "Gesamtbetrag brutto",
+    supplierSearch: "Bureau Caisse Centrale",
+    account: { number: "4510", name: "Kfz-Steuer" },
+    prompt: materialInvoicePrompt("Bureau Caisse Centrale", "Kfz-Steuer"),
+  },
+  sigre: {
+    label: "Gesamtbetrag brutto",
+    supplierSearch: "SIGRE",
+    account: { number: "4969", name: "Aufwendungen für Abraum- und Abfallbeseitigung" },
+    prompt: materialInvoicePrompt("SIGRE", "Entsorgung / Abfall"),
+  },
+  carlgeisen: {
+    label: "Gesamtbetrag brutto",
+    supplierSearch: "Geisen",
+    account: { number: "4980", name: "Sonstiger Betriebsbedarf" },
+    prompt: materialInvoicePrompt("Carl Geisen", "Arbeitskleidung"),
+  },
   postdeep: {
     label: "Total TTC",
     supplierSearch: "Post Telecom",
@@ -406,6 +430,8 @@ export async function extractBeleg(input: {
                   "johanntrierweiler (Johann Trierweiler – Kfz-Reparaturen/Werkstatt), " +
                   "akemi (AKEMI Benelux – Steinpflege/Bauchemie), maroldt (Maroldt – Baustoffe/Werkzeug), " +
                   "hieronimi (Hieronimi – Baustoffe), kennerbeton (Kenner Betonwerk Eiden – Beton), " +
+                  "bureaucaisse (Bureau Caisse Centrale – Kfz-Steuer), sigre (SIGRE – Entsorgung/Abfall), " +
+                  "carlgeisen (Carl Geisen – Arbeitskleidung), " +
                   "lohn (Lohnabrechnung/Lohnjournal), oder unbekannt. Nur das eine Wort, keine Erklärung.",
               },
             ],
@@ -415,7 +441,7 @@ export async function extractBeleg(input: {
       const ctb = cls.content.find((b) => b.type === "text");
       const word = ctb && ctb.type === "text" ? ctb.text.trim().toLowerCase().replace(/[^a-z]/g, "") : "";
       const detected = (
-        ["circle", "mixvoip", "bgl", "palettecad", "herosoftware", "activite", "etges", "niederer", "raabkarcher", "fliesenzentrum", "etbkenn", "kiesel", "moselbaustoff", "postdeep", "johanntrierweiler", "akemi", "maroldt", "hieronimi", "kennerbeton", "lohn"] as BelegSumKind[]
+        ["circle", "mixvoip", "bgl", "palettecad", "herosoftware", "activite", "etges", "niederer", "raabkarcher", "fliesenzentrum", "etbkenn", "kiesel", "moselbaustoff", "postdeep", "johanntrierweiler", "akemi", "maroldt", "hieronimi", "kennerbeton", "bureaucaisse", "sigre", "carlgeisen", "lohn"] as BelegSumKind[]
       ).find((k) => word === k);
       if (!detected) {
         return {
