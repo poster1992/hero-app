@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useActionState } from "react";
 import {
   uploadBelegAction,
   updateBelegAction,
+  computeLohnBruttoAction,
   type UploadBelegState,
 } from "@/app/dashboard/belege/manual-actions";
 
@@ -46,6 +47,38 @@ export default function ManualBelegeForm({
       ? { number: receipt.accountNumber, name: receipt.accountName ?? "" }
       : null
   );
+
+  // Lohn-OCR: „Total Brutto" je Seite summieren.
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const grossInputRef = useRef<HTMLInputElement>(null);
+  const [lohnBusy, startLohn] = useTransition();
+  const [lohnMsg, setLohnMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const runLohnSum = () => {
+    const file = fileInputRef.current?.files?.[0] ?? null;
+    if (!file) {
+      setLohnMsg({ ok: false, text: "Bitte zuerst die Lohn-Datei auswählen." });
+      return;
+    }
+    setLohnMsg(null);
+    startLohn(async () => {
+      const fd = new FormData();
+      fd.set("file", file);
+      const res = await computeLohnBruttoAction(fd);
+      if (res.ok && res.total != null) {
+        if (grossInputRef.current) grossInputRef.current.value = res.total.toFixed(2).replace(".", ",");
+        setLohnMsg({
+          ok: true,
+          text: `${res.count} Seiten · Summe Total Brutto ${res.total.toLocaleString("de-DE", {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })} €`,
+        });
+      } else {
+        setLohnMsg({ ok: false, text: res.error ?? "OCR fehlgeschlagen." });
+      }
+    });
+  };
 
   // Nach erfolgreichem Speichern Pop-up schließen (deferred, um setState
   // synchron im Effekt zu vermeiden).
@@ -130,6 +163,7 @@ export default function ManualBelegeForm({
                   {isEdit ? "Datei ersetzen (optional)" : "Datei (PDF/Bild)"}
                 </label>
                 <input
+                  ref={fileInputRef}
                   name="file"
                   type="file"
                   accept=".pdf,image/*"
@@ -138,6 +172,23 @@ export default function ManualBelegeForm({
                 {isEdit && receipt.fileName && (
                   <p className="mt-1 text-xs text-gray-500">Aktuell: {receipt.fileName}</p>
                 )}
+                {/* Lohn: „Total Brutto" je Seite per OCR summieren → Betrag füllen. */}
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={runLohnSum}
+                    disabled={lohnBusy}
+                    title="Für Lohnabrechnungen: liest je Seite Total Brutto und trägt die Summe als Betrag ein"
+                    className="rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900 disabled:opacity-50"
+                  >
+                    {lohnBusy ? "Rechne …" : "🧮 Lohn: Brutto-Summe aus PDF"}
+                  </button>
+                  {lohnMsg && (
+                    <span className={`text-xs ${lohnMsg.ok ? "text-emerald-700" : "text-rose-600"}`}>
+                      {lohnMsg.text}
+                    </span>
+                  )}
+                </div>
               </div>
               <div>
                 <label className="mb-1 block text-sm text-gray-600">Belegdatum</label>
@@ -166,6 +217,7 @@ export default function ManualBelegeForm({
               <div>
                 <label className="mb-1 block text-sm text-gray-600">Betrag (brutto) *</label>
                 <input
+                  ref={grossInputRef}
                   name="gross"
                   type="text"
                   inputMode="decimal"

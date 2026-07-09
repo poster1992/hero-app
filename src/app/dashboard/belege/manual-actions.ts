@@ -1,5 +1,6 @@
 "use server";
 
+import Anthropic from "@anthropic-ai/sdk";
 import { revalidatePath } from "next/cache";
 import { getSession } from "@/lib/session";
 import { getUserByUsername } from "@/lib/users";
@@ -143,6 +144,85 @@ export async function updateBelegAction(
 
   revalidatePath(PATH);
   return { success: "Beleg aktualisiert." };
+}
+
+export interface LohnSumResult {
+  ok: boolean;
+  /** Summe aller „Total Brutto"-Werte. */
+  total?: number;
+  /** Anzahl erkannter Werte (Seiten/Mitarbeiter). */
+  count?: number;
+  /** Einzelwerte (für die Kontrolle). */
+  values?: number[];
+  error?: string;
+}
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/** Robustes Parsen deutscher/englischer Zahlen ("1.234,56", "1234.56", 1234.56). */
+function toNum(v: unknown): number {
+  if (typeof v === "number") return Number.isFinite(v) ? v : 0;
+  let s = String(v ?? "").trim();
+  if (!s) return 0;
+  if (s.includes(",") && s.includes(".")) s = s.replace(/\./g, "").replace(",", ".");
+  else if (s.includes(",")) s = s.replace(",", ".");
+  const n = Number(s.replace(/[^0-9.\-]/g, ""));
+  return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * Liest per OCR aus einer (mehrseitigen) Lohnabrechnung alle „Total Brutto"-
+ * Beträge (je Seite/Mitarbeiter) und liefert deren Summe.
+ */
+export async function computeLohnBruttoAction(formData: FormData): Promise<LohnSumResult> {
+  if (!(await getSession())) return { ok: false, error: "Nicht angemeldet." };
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return { ok: false, error: "OCR ist nicht konfiguriert (ANTHROPIC_API_KEY fehlt)." };
+  }
+  const upload = formData.get("file");
+  if (!upload || typeof upload !== "object" || !("arrayBuffer" in upload) || (upload as File).size === 0) {
+    return { ok: false, error: "Bitte zuerst die Lohn-Datei auswählen." };
+  }
+  const f = upload as File;
+  if (f.size > 25 * 1024 * 1024) return { ok: false, error: "Datei zu groß (max. 25 MB)." };
+
+  const mime = f.type || "application/pdf";
+  const isImage = mime.startsWith("image/");
+  const dataB64 = Buffer.from(await f.arrayBuffer()).toString("base64");
+  const block = isImage
+    ? { type: "image" as const, source: { type: "base64" as const, media_type: mime as "image/png", data: dataB64 } }
+    : { type: "document" as const, source: { type: "base64" as const, media_type: "application/pdf" as const, data: dataB64 } };
+
+  const prompt =
+    "Dies ist eine mehrseitige Lohnabrechnung bzw. ein Lohnjournal. Auf jeder Seite (bzw. je " +
+    "Mitarbeiter) steht ein Betrag mit der Bezeichnung „Total Brutto\" (Bruttolohn). Extrahiere ALLE " +
+    "diese „Total Brutto\"-Beträge – genau einen pro Seite/Mitarbeiter. Antworte AUSSCHLIESSLICH mit " +
+    'JSON: {"werte": number[]}. Nutze Punkt als Dezimaltrennzeichen und KEINE Tausenderpunkte. Gib ' +
+    "ausschließlich die „Total Brutto\"-Werte aus – KEINE Netto-, Abzugs-, Zwischen- oder Gesamtsummen. " +
+    "Keine Erklärung, nur JSON.";
+
+  try {
+    const client = new Anthropic({ maxRetries: 2, timeout: 120_000 });
+    const res = await client.messages.create({
+      model: "claude-haiku-4-5",
+      max_tokens: 4000,
+      messages: [{ role: "user", content: [block, { type: "text", text: prompt }] }],
+    });
+    const tb = res.content.find((b) => b.type === "text");
+    const raw =
+      tb && tb.type === "text"
+        ? tb.text.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim()
+        : "{}";
+    const parsed = JSON.parse(raw) as { werte?: unknown[] };
+    const values = (parsed.werte ?? []).map(toNum).filter((n) => n > 0);
+    if (values.length === 0) {
+      return { ok: false, error: "Es wurden keine „Total Brutto\"-Werte erkannt. Bitte Betrag manuell eintragen." };
+    }
+    const total = round2(values.reduce((s, n) => s + n, 0));
+    return { ok: true, total, count: values.length, values: values.map(round2) };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "OCR fehlgeschlagen." };
+  }
 }
 
 /** Markiert einen manuellen Beleg als bezahlt/offen. */
