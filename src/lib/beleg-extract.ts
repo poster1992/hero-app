@@ -240,7 +240,7 @@ const SUM_CONFIG: Record<
   johanntrierweiler: {
     label: "Gesamtbetrag brutto",
     supplierSearch: "Trierweiler",
-    account: { number: "4530", name: "Laufende Kfz-Betriebskosten" },
+    account: { number: "4540", name: "Kfz-Reparaturen" },
     prompt: materialInvoicePrompt("Johann Trierweiler", "Kfz-Reparaturen/Werkstatt"),
   },
   akemi: {
