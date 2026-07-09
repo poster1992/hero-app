@@ -40,7 +40,11 @@ type SumTyp =
   | "kiesel"
   | "moselbaustoff"
   | "postdeep"
-  | "johanntrierweiler";
+  | "johanntrierweiler"
+  | "akemi"
+  | "maroldt"
+  | "hieronimi"
+  | "kennerbeton";
 
 /** Bezeichnung des summierten Betrags je erkanntem Typ (für die Meldung). */
 const KIND_AMOUNT_LABEL: Record<string, string> = {
@@ -60,6 +64,10 @@ const KIND_AMOUNT_LABEL: Record<string, string> = {
   moselbaustoff: "Gesamtbetrag brutto",
   postdeep: "Total TTC",
   johanntrierweiler: "Gesamtbetrag brutto",
+  akemi: "Gesamtbetrag brutto",
+  maroldt: "Gesamtbetrag brutto",
+  hieronimi: "Gesamtbetrag brutto",
+  kennerbeton: "Gesamtbetrag brutto",
 };
 
 /** Subset of a manual receipt needed to prefill the edit form. */
@@ -300,6 +308,10 @@ export function ManualBelegeFormFields({
                     <option value="moselbaustoff">Typ: Mosel Baustoff</option>
                     <option value="postdeep">Typ: Post Telecom / DEEP</option>
                     <option value="johanntrierweiler">Typ: Johann Trierweiler (Kfz)</option>
+                    <option value="akemi">Typ: AKEMI Benelux</option>
+                    <option value="maroldt">Typ: Maroldt</option>
+                    <option value="hieronimi">Typ: Hieronimi</option>
+                    <option value="kennerbeton">Typ: Kenner Betonwerk Eiden</option>
                   </select>
                   {isSumType && (
                     <button

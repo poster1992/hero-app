@@ -18,7 +18,11 @@ export type BelegSumKind =
   | "kiesel"
   | "moselbaustoff"
   | "postdeep"
-  | "johanntrierweiler";
+  | "johanntrierweiler"
+  | "akemi"
+  | "maroldt"
+  | "hieronimi"
+  | "kennerbeton";
 
 export interface BelegSumResult {
   ok: boolean;
@@ -75,6 +79,10 @@ export const KIND_LABEL: Record<BelegSumKind, string> = {
   moselbaustoff: "Mosel Baustoff",
   postdeep: "Post Telecom / DEEP",
   johanntrierweiler: "Johann Trierweiler",
+  akemi: "AKEMI Benelux",
+  maroldt: "Maroldt",
+  hieronimi: "Hieronimi",
+  kennerbeton: "Kenner Betonwerk Eiden",
 };
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -212,6 +220,30 @@ const SUM_CONFIG: Record<
     supplierSearch: "Trierweiler",
     account: { number: "4530", name: "Laufende Kfz-Betriebskosten" },
     prompt: materialInvoicePrompt("Johann Trierweiler", "Kfz-Reparaturen/Werkstatt"),
+  },
+  akemi: {
+    label: "Gesamtbetrag brutto",
+    supplierSearch: "AKEMI",
+    account: { number: "3000", name: "Wareneingang / Material" },
+    prompt: materialInvoicePrompt("AKEMI Benelux", "Steinpflege / Bauchemie"),
+  },
+  maroldt: {
+    label: "Gesamtbetrag brutto",
+    supplierSearch: "Maroldt",
+    account: { number: "3000", name: "Wareneingang / Material" },
+    prompt: materialInvoicePrompt("Maroldt", "Baustoffe / Werkzeug"),
+  },
+  hieronimi: {
+    label: "Gesamtbetrag brutto",
+    supplierSearch: "Hieronimi",
+    account: { number: "3000", name: "Wareneingang / Material" },
+    prompt: materialInvoicePrompt("Hieronimi", "Baustoffe"),
+  },
+  kennerbeton: {
+    label: "Gesamtbetrag brutto",
+    supplierSearch: "Kenner Betonwerk",
+    account: { number: "3000", name: "Wareneingang / Material" },
+    prompt: materialInvoicePrompt("Kenner Betonwerk Eiden", "Beton / Betonwerk"),
   },
   postdeep: {
     label: "Total TTC",
@@ -372,6 +404,8 @@ export async function extractBeleg(input: {
                   "kiesel (Kiesel – Bauchemie/Verlegewerkstoffe), moselbaustoff (Mosel Baustoff – Baustoffhandel), " +
                   "postdeep (Post Telecom / DEEP – Telefonrechnung Luxemburg), " +
                   "johanntrierweiler (Johann Trierweiler – Kfz-Reparaturen/Werkstatt), " +
+                  "akemi (AKEMI Benelux – Steinpflege/Bauchemie), maroldt (Maroldt – Baustoffe/Werkzeug), " +
+                  "hieronimi (Hieronimi – Baustoffe), kennerbeton (Kenner Betonwerk Eiden – Beton), " +
                   "lohn (Lohnabrechnung/Lohnjournal), oder unbekannt. Nur das eine Wort, keine Erklärung.",
               },
             ],
@@ -381,7 +415,7 @@ export async function extractBeleg(input: {
       const ctb = cls.content.find((b) => b.type === "text");
       const word = ctb && ctb.type === "text" ? ctb.text.trim().toLowerCase().replace(/[^a-z]/g, "") : "";
       const detected = (
-        ["circle", "mixvoip", "bgl", "palettecad", "herosoftware", "activite", "etges", "niederer", "raabkarcher", "fliesenzentrum", "etbkenn", "kiesel", "moselbaustoff", "postdeep", "johanntrierweiler", "lohn"] as BelegSumKind[]
+        ["circle", "mixvoip", "bgl", "palettecad", "herosoftware", "activite", "etges", "niederer", "raabkarcher", "fliesenzentrum", "etbkenn", "kiesel", "moselbaustoff", "postdeep", "johanntrierweiler", "akemi", "maroldt", "hieronimi", "kennerbeton", "lohn"] as BelegSumKind[]
       ).find((k) => word === k);
       if (!detected) {
         return {
