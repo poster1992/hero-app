@@ -66,18 +66,26 @@ export interface EditableReceipt {
   skontoDueDate: string | null;
 }
 
-export default function ManualBelegeForm({
+export function ManualBelegeFormFields({
   accounts,
   projects,
   receipt,
+  onSuccess,
+  onCancel,
+  formClassName = "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3",
 }: {
   accounts: AccountOption[];
   projects: ProjectOption[];
   /** When set, the form edits this receipt instead of creating a new one. */
   receipt?: EditableReceipt;
+  /** Nach erfolgreichem Speichern aufgerufen (z. B. Modal schließen). */
+  onSuccess?: () => void;
+  /** Wenn gesetzt, wird ein Abbrechen-Button angezeigt. */
+  onCancel?: () => void;
+  /** CSS-Klassen für das Formular-Grid (Layout je Einsatzort). */
+  formClassName?: string;
 }) {
   const isEdit = !!receipt;
-  const [open, setOpen] = useState(false);
   const [state, formAction, pending] = useActionState<UploadBelegState, FormData>(
     isEdit ? updateBelegAction : uploadBelegAction,
     {}
@@ -185,23 +193,17 @@ export default function ManualBelegeForm({
     });
   };
 
-  // Nach erfolgreichem Speichern Pop-up schließen (deferred, um setState
-  // synchron im Effekt zu vermeiden).
+  // Nach erfolgreichem Speichern den Aufrufer benachrichtigen (deferred, um
+  // setState synchron im Effekt zu vermeiden).
   const lastSuccess = useRef<string | undefined>(undefined);
   useEffect(() => {
     if (!state.success || state.success === lastSuccess.current) return;
     lastSuccess.current = state.success;
     const t = setTimeout(() => {
-      setOpen(false);
-      if (!isEdit) {
-        setAccount(null);
-        setAccountQuery("");
-        setProject(null);
-        setProjectQuery("");
-      }
+      onSuccess?.();
     }, 0);
     return () => clearTimeout(t);
-  }, [state.success, isEdit]);
+  }, [state.success, onSuccess]);
 
   const accountMatches = (() => {
     const words = accountQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
@@ -237,49 +239,7 @@ export default function ManualBelegeForm({
   const skontoDueDefault = receipt?.skontoDueDate ?? "";
 
   return (
-    <div className={isEdit ? "inline-block" : "flex items-center justify-end"}>
-      {isEdit ? (
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className="rounded-md border border-gray-300 px-2 py-0.5 text-xs font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900"
-        >
-          Bearbeiten
-        </button>
-      ) : (
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className="rounded-md bg-brand-red px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90"
-        >
-          + Beleg hochladen
-        </button>
-      )}
-
-      {open && (
-        <div
-          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-4 sm:items-center"
-          onClick={() => setOpen(false)}
-        >
-          <div
-            className="w-full max-w-3xl rounded-xl border border-gray-300 bg-white p-6 shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-gray-900">
-                {isEdit ? "Beleg bearbeiten" : "Beleg manuell hochladen"}
-              </h2>
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                className="text-gray-400 transition-colors hover:text-gray-700"
-                aria-label="Schließen"
-              >
-                ✕
-              </button>
-            </div>
-
-            <form action={formAction} className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <form action={formAction} className={formClassName}>
               {isEdit && <input type="hidden" name="id" value={receipt.id} />}
               <div>
                 <label className="mb-1 block text-sm text-gray-600">
@@ -555,7 +515,7 @@ export default function ManualBelegeForm({
                 )}
               </div>
 
-              <div className="flex items-center gap-4 sm:col-span-2 lg:col-span-3">
+              <div className="flex flex-wrap items-center gap-4 sm:col-span-2 lg:col-span-3">
                 <button
                   type="submit"
                   disabled={pending}
@@ -567,16 +527,83 @@ export default function ManualBelegeForm({
                       ? "Änderungen speichern"
                       : "Beleg speichern"}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setOpen(false)}
-                  className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
-                >
-                  Abbrechen
-                </button>
+                {onCancel && (
+                  <button
+                    type="button"
+                    onClick={onCancel}
+                    className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+                  >
+                    Abbrechen
+                  </button>
+                )}
                 {state.error && <span className="text-sm text-rose-600">{state.error}</span>}
+                {state.success && <span className="text-sm text-emerald-600">✓ Gespeichert</span>}
               </div>
             </form>
+  );
+}
+
+export default function ManualBelegeForm({
+  accounts,
+  projects,
+  receipt,
+}: {
+  accounts: AccountOption[];
+  projects: ProjectOption[];
+  /** When set, the form edits this receipt instead of creating a new one. */
+  receipt?: EditableReceipt;
+}) {
+  const isEdit = !!receipt;
+  const [open, setOpen] = useState(false);
+  return (
+    <div className={isEdit ? "inline-block" : "flex items-center justify-end"}>
+      {isEdit ? (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="rounded-md border border-gray-300 px-2 py-0.5 text-xs font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900"
+        >
+          Bearbeiten
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="rounded-md bg-brand-red px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+        >
+          + Beleg hochladen
+        </button>
+      )}
+
+      {open && (
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-4 sm:items-center"
+          onClick={() => setOpen(false)}
+        >
+          <div
+            className="w-full max-w-3xl rounded-xl border border-gray-300 bg-white p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-gray-900">
+                {isEdit ? "Beleg bearbeiten" : "Beleg manuell hochladen"}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="text-gray-400 transition-colors hover:text-gray-700"
+                aria-label="Schließen"
+              >
+                ✕
+              </button>
+            </div>
+            <ManualBelegeFormFields
+              accounts={accounts}
+              projects={projects}
+              receipt={receipt}
+              onSuccess={() => setOpen(false)}
+              onCancel={() => setOpen(false)}
+            />
           </div>
         </div>
       )}

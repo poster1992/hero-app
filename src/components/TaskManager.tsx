@@ -13,7 +13,7 @@ import {
   sendReviewEmailAction,
   type CreateTaskState,
 } from "@/app/dashboard/aufgaben/actions";
-import ManualBelegeForm from "@/components/ManualBelegeForm";
+import { ManualBelegeFormFields } from "@/components/ManualBelegeForm";
 import { loadBelegEditDataAction, type BelegEditData } from "@/app/dashboard/belege/manual-actions";
 
 /** Google-Bewertungslink (aus den Einstellungen) für den „E-Mail öffnen"-Button. */
@@ -514,7 +514,7 @@ function TaskCard({
           onClick={closeBeleg}
         >
           <div
-            className="flex h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-gray-300 bg-white shadow-2xl"
+            className="flex h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-xl border border-gray-300 bg-white shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
@@ -531,33 +531,37 @@ function TaskCard({
                 ✕
               </button>
             </div>
-            <iframe
-              src={`/api/beleg?id=${belegId}`}
-              title={`Beleg ${belegId}`}
-              className="min-h-0 flex-1 bg-gray-100"
-            />
-            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-200 px-4 py-3">
-              <div className="flex items-center gap-2">
+            {/* Zweispaltig: links Beleg-Vorschau, rechts direkt die Werte bearbeiten */}
+            <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+              <iframe
+                src={`/api/beleg?id=${belegId}`}
+                title={`Beleg ${belegId}`}
+                className="min-h-0 flex-1 bg-gray-100 md:w-1/2 md:flex-none md:border-r md:border-gray-200"
+              />
+              <div className="min-h-0 overflow-y-auto border-t border-gray-200 p-4 md:w-1/2 md:border-t-0">
                 {belegEdit?.receipt ? (
-                  <ManualBelegeForm
+                  <ManualBelegeFormFields
                     accounts={belegEdit.accounts}
                     projects={belegEdit.projects}
                     receipt={belegEdit.receipt}
+                    formClassName="grid grid-cols-1 gap-3"
                   />
                 ) : (
-                  <span className="text-xs text-gray-400">
+                  <p className="text-sm text-gray-400">
                     {belegLoading ? "Werte werden geladen …" : "Werte nicht verfügbar"}
-                  </span>
+                  </p>
                 )}
-                <a
-                  href={`/api/beleg?id=${belegId}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900"
-                >
-                  In neuem Tab öffnen
-                </a>
               </div>
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-200 px-4 py-3">
+              <a
+                href={`/api/beleg?id=${belegId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900"
+              >
+                In neuem Tab öffnen
+              </a>
               <div className="flex items-center gap-2">
                 {effectiveStatus === "erledigt" ? (
                   <span className="text-xs font-medium text-emerald-600">✓ Bereits erledigt</span>
