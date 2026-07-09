@@ -32,7 +32,9 @@ type SumTyp =
   | "activite"
   | "herosoftware"
   | "circle"
-  | "etges";
+  | "etges"
+  | "niederer"
+  | "raabkarcher";
 
 /** Bezeichnung des summierten Betrags je erkanntem Typ (für die Meldung). */
 const KIND_AMOUNT_LABEL: Record<string, string> = {
@@ -44,6 +46,8 @@ const KIND_AMOUNT_LABEL: Record<string, string> = {
   herosoftware: "Total",
   circle: "Total TTC",
   etges: "Gesamtbetrag brutto",
+  niederer: "Gesamtbetrag brutto",
+  raabkarcher: "Gesamtbetrag brutto",
 };
 
 /** Subset of a manual receipt needed to prefill the edit form. */
@@ -276,6 +280,8 @@ export function ManualBelegeFormFields({
                     <option value="herosoftware">Typ: Hero-Software</option>
                     <option value="circle">Typ: Circle (Tankkosten)</option>
                     <option value="etges">Typ: Etges &amp; Dächer</option>
+                    <option value="niederer">Typ: Niederer</option>
+                    <option value="raabkarcher">Typ: Raab Karcher</option>
                   </select>
                   {isSumType && (
                     <button

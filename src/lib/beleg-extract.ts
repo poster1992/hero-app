@@ -10,7 +10,9 @@ export type BelegSumKind =
   | "activite"
   | "herosoftware"
   | "circle"
-  | "etges";
+  | "etges"
+  | "niederer"
+  | "raabkarcher";
 
 export interface BelegSumResult {
   ok: boolean;
@@ -59,9 +61,39 @@ export const KIND_LABEL: Record<BelegSumKind, string> = {
   herosoftware: "Hero-Software",
   circle: "Circle",
   etges: "Etges & Dächer",
+  niederer: "Niederer",
+  raabkarcher: "Raab Karcher",
 };
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/**
+ * Baustein für einfache Material-/Baustoff-Rechnungen (eine Rechnung je PDF):
+ * liest Brutto-Gesamtbetrag, MwSt, Datum, Lieferant, Beschreibung, Belegnummer
+ * und die Skonto-Angaben (€, Zahlbetrag, Zahlungsziel) – wie bei Etges & Dächer.
+ */
+function materialInvoicePrompt(supplierLabel: string, hint: string): string {
+  return (
+    `Dies ist eine Rechnung des Lieferanten „${supplierLabel}"${hint ? ` (${hint})` : ""}. Das PDF ` +
+    "enthält GENAU EINE Rechnung (evtl. mehrseitig). Gib in seiten GENAU EIN Objekt {betrag, steuersatz} " +
+    "zurück. betrag = der zu zahlende BRUTTO-Gesamtbetrag inkl. MwSt der ganzen Rechnung (Label z. B. " +
+    "„Gesamtbetrag\", „Rechnungsbetrag\", „Bruttobetrag\", „Gesamtbetrag brutto\", „Endbetrag\", „Zu " +
+    "zahlender Betrag\") – NICHT der Netto-Wert, NICHT eine Zwischensumme, NICHT nur die MwSt. " +
+    "steuersatz = der Haupt-MwSt-Satz in Prozent als Zahl. Gib zusätzlich auf oberster Ebene an: " +
+    "belegdatum (Rechnungsdatum YYYY-MM-DD oder null – reine Zahlen-Datumsangaben als Tag/Monat/Jahr " +
+    "europäisch interpretieren), lieferant (Rechnungssteller oder null), beschreibung (kurze " +
+    "Leistungsbezeichnung, z. B. Material/Projekt), belegnummer (die Rechnungs-/Belegnummer als Text, " +
+    "oder null), skonto_eur (der Skontobetrag in EUR als Zahl – der gewährte Abzug bei fristgerechter " +
+    "Zahlung, Label z. B. „Skonto\", „abzgl. Skonto\"; oder null), skonto_zahlbetrag (der bei " +
+    "Skontoabzug zu zahlende Betrag als Zahl, Label z. B. „Skontozahlbetrag\", „Zahlbetrag bei Skonto\", " +
+    "„Betrag abzüglich Skonto\"; oder null), skonto_zahlungsziel (das Datum, bis zu dem der Skonto gilt, " +
+    "im Format YYYY-MM-DD; Label z. B. „Skontozahlungsziel\", „zahlbar mit Skonto bis\", „Skonto bis\"; " +
+    "reine Zahlen-Datumsangaben als Tag/Monat/Jahr europäisch interpretieren; oder null). Antworte " +
+    'AUSSCHLIESSLICH mit JSON: {"seiten": [ EIN Objekt ], "belegdatum": …, "lieferant": …, ' +
+    '"beschreibung": …, "belegnummer": …, "skonto_eur": …, "skonto_zahlbetrag": …, ' +
+    '"skonto_zahlungsziel": …}. Punkt als Dezimaltrennzeichen, KEINE Tausenderpunkte. Nur JSON.'
+  );
+}
 
 /** Prompt + Konfiguration je Belegtyp. */
 const SUM_CONFIG: Record<
@@ -126,6 +158,18 @@ const SUM_CONFIG: Record<
       'AUSSCHLIESSLICH mit JSON: {"seiten": [ EIN Objekt ], "belegdatum": …, "lieferant": …, ' +
       '"beschreibung": …, "belegnummer": …, "skonto_eur": …, "skonto_zahlbetrag": …, ' +
       '"skonto_zahlungsziel": …}. Punkt als Dezimaltrennzeichen, KEINE Tausenderpunkte. Nur JSON.',
+  },
+  niederer: {
+    label: "Gesamtbetrag brutto",
+    supplierSearch: "Niederer",
+    account: { number: "3000", name: "Wareneingang / Material" },
+    prompt: materialInvoicePrompt("Niederer", "Materiallieferant"),
+  },
+  raabkarcher: {
+    label: "Gesamtbetrag brutto",
+    supplierSearch: "Raab Karcher",
+    account: { number: "3000", name: "Wareneingang / Material" },
+    prompt: materialInvoicePrompt("Raab Karcher", "Baustoffhandel"),
   },
   circle: {
     label: "Total TTC",
@@ -266,6 +310,7 @@ export async function extractBeleg(input: {
                   "bgl (BNP Paribas Lease/BGL-Leasingrechnung), palettecad (Palette-CAD-Rechnung), " +
                   "herosoftware (HERO Software GmbH), activite (Activité Lensterbierg – Miete/Nebenkosten), " +
                   "etges (Etges & Dächer – Dachdecker/Dachbaustoffe), " +
+                  "niederer (Niederer – Materiallieferant), raabkarcher (Raab Karcher – Baustoffhandel), " +
                   "lohn (Lohnabrechnung/Lohnjournal), oder unbekannt. Nur das eine Wort, keine Erklärung.",
               },
             ],
@@ -275,7 +320,7 @@ export async function extractBeleg(input: {
       const ctb = cls.content.find((b) => b.type === "text");
       const word = ctb && ctb.type === "text" ? ctb.text.trim().toLowerCase().replace(/[^a-z]/g, "") : "";
       const detected = (
-        ["circle", "mixvoip", "bgl", "palettecad", "herosoftware", "activite", "etges", "lohn"] as BelegSumKind[]
+        ["circle", "mixvoip", "bgl", "palettecad", "herosoftware", "activite", "etges", "niederer", "raabkarcher", "lohn"] as BelegSumKind[]
       ).find((k) => word === k);
       if (!detected) {
         return {
