@@ -238,6 +238,24 @@ export async function updateManualReceipt(input: {
   );
 }
 
+/** Löscht einen manuellen Beleg samt hinterlegter Datei. */
+export async function deleteManualReceipt(id: number): Promise<void> {
+  const pool = getPool();
+  const [rows] = await pool.query<ReceiptRow[]>(
+    "SELECT stored_name FROM manual_receipts WHERE id = ? LIMIT 1",
+    [id]
+  );
+  const stored = rows[0]?.stored_name ?? null;
+  await pool.query("DELETE FROM manual_receipts WHERE id = ?", [id]);
+  if (stored) {
+    try {
+      await unlink(path.join(BELEGE_DIR, stored));
+    } catch {
+      // Datei evtl. schon weg – ignorieren.
+    }
+  }
+}
+
 /** Loads a receipt's stored file for download/inline view. */
 export async function getManualReceiptFile(
   id: number

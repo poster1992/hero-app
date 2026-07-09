@@ -4,6 +4,7 @@ import { listChecklist } from "@/lib/belege-checklist";
 import { getBookAccounts } from "@/lib/hero-api";
 import { setBelegPaidAction } from "@/app/dashboard/belege/manual-actions";
 import ManualBelegeForm from "@/components/ManualBelegeForm";
+import DeleteBelegButton from "@/components/DeleteBelegButton";
 import BelegeChecklist from "@/components/BelegeChecklist";
 import { receiptDupKey } from "@/lib/receipt-duplicates";
 
@@ -179,7 +180,10 @@ export default async function ManualBelege({
                     )}
                   </td>
                   <td className="px-4 py-2">
-                    <ManualBelegeForm accounts={accounts} receipt={r} />
+                    <div className="flex items-center gap-1.5">
+                      <ManualBelegeForm accounts={accounts} receipt={r} />
+                      <DeleteBelegButton id={r.id} label={r.supplier ?? r.description ?? `Beleg ${r.id}`} />
+                    </div>
                   </td>
                 </tr>
                 );

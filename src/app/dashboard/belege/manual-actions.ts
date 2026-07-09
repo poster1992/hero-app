@@ -7,6 +7,7 @@ import {
   createManualReceipt,
   setManualReceiptPaid,
   updateManualReceipt,
+  deleteManualReceipt,
 } from "@/lib/manual-receipts";
 import {
   addChecklistItem,
@@ -168,6 +169,16 @@ export async function computeBelegSumAction(formData: FormData): Promise<BelegSu
 
   const buffer = Buffer.from(await f.arrayBuffer());
   return extractBeleg({ buffer, mime: f.type || "application/pdf", kind });
+}
+
+/** Löscht einen manuellen Beleg (inkl. Datei). */
+export async function deleteBelegAction(formData: FormData): Promise<void> {
+  const session = await getSession();
+  if (!session) return;
+  const id = Number(formData.get("id"));
+  if (!Number.isFinite(id) || id <= 0) return;
+  await deleteManualReceipt(id);
+  revalidatePath(PATH);
 }
 
 /** Markiert einen manuellen Beleg als bezahlt/offen. */
