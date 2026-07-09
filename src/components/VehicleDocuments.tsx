@@ -324,19 +324,15 @@ function VehiclePanel({
           setDragOver(false);
           addFiles(filesFromDataTransfer(e.dataTransfer));
         }}
-        className={`rounded-xl border-2 border-dashed p-6 text-center transition-colors ${
-          dragOver ? "border-brand-red bg-brand-red/5" : "border-gray-300 bg-white"
+        onClick={() => fileInputRef.current?.click()}
+        role="button"
+        tabIndex={0}
+        className={`cursor-pointer rounded-xl border-2 border-dashed p-6 text-center transition-colors ${
+          dragOver ? "border-brand-red bg-brand-red/5" : "border-gray-300 bg-white hover:border-brand-red/50"
         }`}
       >
         <p className="text-sm text-gray-600">
-          PDF/Dokumente hierher ziehen oder{" "}
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="font-medium text-brand-red hover:underline"
-          >
-            Dateien auswählen
-          </button>
+          <span className="font-medium text-brand-red">Dateien auswählen</span> oder PDF/Dokumente hierher ziehen
         </p>
         <p className="mt-1 text-xs text-gray-400">Danach je Datei eine Beschriftung vergeben (max. 25 MB).</p>
         <input
