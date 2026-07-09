@@ -60,6 +60,14 @@ export default function ManualBelegeForm({
   const [sumMsg, setSumMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const sumLabel = belegTyp === "bgl" ? "Total TTC" : "Total Brutto";
 
+  // BGL: Konto „4595 Leasing/Mietwagen" vorauswählen (echtes HERO-Konto, sonst Fallback).
+  const applyBglAccount = () => {
+    const match =
+      accounts.find((a) => a.number === "4595") ?? { number: "4595", name: "Leasing/Mietwagen" };
+    setAccount(match);
+    setAccountQuery("");
+  };
+
   const runSum = () => {
     if (belegTyp !== "lohn" && belegTyp !== "bgl") return;
     const file = fileInputRef.current?.files?.[0] ?? null;
@@ -81,6 +89,8 @@ export default function ManualBelegeForm({
         if (res.date && dateInputRef.current) dateInputRef.current.value = res.date;
         if (res.supplier && supplierInputRef.current) supplierInputRef.current.value = res.supplier;
         if (res.description && descInputRef.current) descInputRef.current.value = res.description;
+        // Konto 4595 (Leasing/Mietwagen) nur bei erkanntem Fahrzeug (Matricule vorhanden).
+        if (res.isVehicle) applyBglAccount();
         setSumMsg({
           ok: true,
           text:
@@ -89,7 +99,8 @@ export default function ManualBelegeForm({
               { minimumFractionDigits: 2, maximumFractionDigits: 2 }
             )} €` +
             (res.vatRate != null ? ` · MwSt ${res.vatRate} %` : "") +
-            (res.date ? ` · Datum ${res.date.split("-").reverse().join(".")}` : ""),
+            (res.date ? ` · Datum ${res.date.split("-").reverse().join(".")}` : "") +
+            (res.isVehicle ? " · Konto 4595 (Fahrzeug)" : ""),
         });
       } else {
         setSumMsg({ ok: false, text: res.error ?? "OCR fehlgeschlagen." });

@@ -165,6 +165,8 @@ export interface BelegSumResult {
   supplier?: string;
   /** Beschreibung – bei BGL die Matricule(n)/Kennzeichen. */
   description?: string;
+  /** true, wenn es sich (laut Matricule/Immatriculation) um Fahrzeug-Leasing handelt. */
+  isVehicle?: boolean;
   error?: string;
 }
 
@@ -287,6 +289,8 @@ export async function computeBelegSumAction(formData: FormData): Promise<BelegSu
       if (m && m.toLowerCase() !== "null" && !matricules.includes(m)) matricules.push(m);
     }
     if (matricules.length > 0) description = matricules.join(", ").slice(0, 250);
+    // Fahrzeug erkannt, wenn eine Matricule/Immatriculation vorhanden ist.
+    const isVehicle = kind === "bgl" && matricules.length > 0;
 
     // Lieferant: bevorzugt der kanonische HERO-Name (Suche), sonst der aus dem Beleg gelesene.
     let supplier: string | undefined;
@@ -301,7 +305,7 @@ export async function computeBelegSumAction(formData: FormData): Promise<BelegSu
       }
     }
 
-    return { ok: true, total, count: values.length, values: values.map(round2), vatRate, date, supplier, description };
+    return { ok: true, total, count: values.length, values: values.map(round2), vatRate, date, supplier, description, isVehicle };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "OCR fehlgeschlagen." };
   }
