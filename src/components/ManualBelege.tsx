@@ -1,5 +1,7 @@
 import Link from "next/link";
-import { listManualReceipts } from "@/lib/manual-receipts";
+import { listManualReceipts, searchManualOcrIds } from "@/lib/manual-receipts";
+import { getManualOcrIndexStatus } from "@/app/dashboard/belege/manual-ocr-index";
+import ManualOcrPanel from "@/components/ManualOcrPanel";
 import { listChecklist } from "@/lib/belege-checklist";
 import { getBookAccounts, getProjects } from "@/lib/hero-api";
 import { setBelegPaidAction } from "@/app/dashboard/belege/manual-actions";
@@ -41,17 +43,23 @@ export default async function ManualBelege({
   let accounts: Awaited<ReturnType<typeof getBookAccounts>> = [];
   let checklist: Awaited<ReturnType<typeof listChecklist>> = [];
   let projects: Awaited<ReturnType<typeof getProjects>> = [];
+  let ocrStatus = { total: 0, done: 0 };
   let error: string | null = null;
   try {
-    [receipts, accounts, checklist, projects] = await Promise.all([
+    [receipts, accounts, checklist, projects, ocrStatus] = await Promise.all([
       listManualReceipts(year),
       getBookAccounts(),
       listChecklist(year, month),
       getProjects().catch(() => []),
+      getManualOcrIndexStatus().catch(() => ({ total: 0, done: 0 })),
     ]);
   } catch (e) {
     error = e instanceof Error ? e.message : "Manuelle Belege konnten nicht geladen werden.";
   }
+
+  // Bei aktiver Suche: zusätzlich die per OCR-Volltext passenden Beleg-IDs.
+  const qTrim = q.trim();
+  const ocrMatchIds = qTrim ? await searchManualOcrIds(qTrim).catch(() => new Set<number>()) : new Set<number>();
 
   // Suche: durchsucht die manuellen Belege (Lieferant, Beschreibung, Belegnr.,
   // Konto, Projekt, Datum, Betrag) – über das ganze Jahr, unabhängig vom Monat.
@@ -72,7 +80,8 @@ export default async function ManualBelege({
       .filter(Boolean)
       .join(" ")
       .toLowerCase();
-    return hay.includes(ql);
+    // Treffer über die strukturierten Felder ODER den OCR-Volltext des Belegs.
+    return hay.includes(ql) || ocrMatchIds.has(r.id);
   };
 
   // Monatsfilter berücksichtigen (wie bei den HERO-Belegen oben); bei aktiver
@@ -100,6 +109,7 @@ export default async function ManualBelege({
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <ManualOcrPanel status={ocrStatus} />
           <Link
             href="/dashboard/belege/posteingang"
             className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900"

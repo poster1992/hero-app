@@ -341,6 +341,60 @@ export async function deleteManualReceipt(id: number): Promise<void> {
   }
 }
 
+/** IDs manueller Belege mit Datei, aber noch ohne OCR-Volltext (für die Indexierung). */
+export async function listManualReceiptIdsNeedingOcr(): Promise<number[]> {
+  const [rows] = await getPool().query<RowDataPacket[]>(
+    "SELECT id FROM manual_receipts WHERE stored_name IS NOT NULL AND (ocr_text IS NULL OR ocr_text = '')"
+  );
+  return (rows as { id: number }[]).map((r) => r.id);
+}
+
+/** Speichert den OCR-Volltext eines manuellen Belegs. */
+export async function setManualReceiptOcrText(id: number, text: string | null): Promise<void> {
+  await getPool().query("UPDATE manual_receipts SET ocr_text = ? WHERE id = ?", [
+    text ? text.slice(0, 16_000_000) : null,
+    id,
+  ]);
+}
+
+/** Status der OCR-Indexierung: wie viele Belege mit Datei sind volltext-indexiert. */
+export async function getManualOcrStatus(): Promise<{ total: number; done: number }> {
+  const [rows] = await getPool().query<RowDataPacket[]>(
+    `SELECT
+       SUM(stored_name IS NOT NULL) AS total,
+       SUM(stored_name IS NOT NULL AND ocr_text IS NOT NULL AND ocr_text <> '') AS done
+     FROM manual_receipts`
+  );
+  const r = (rows as { total: number | null; done: number | null }[])[0];
+  return { total: Number(r?.total ?? 0), done: Number(r?.done ?? 0) };
+}
+
+/** Volltextsuche über die manuellen Belege → Menge passender Beleg-IDs. */
+export async function searchManualOcrIds(query: string): Promise<Set<number>> {
+  const q = query.trim();
+  if (!q) return new Set();
+  const [rows] = await getPool().query<RowDataPacket[]>(
+    "SELECT id FROM manual_receipts WHERE ocr_text LIKE ? LIMIT 5000",
+    [`%${q}%`]
+  );
+  return new Set((rows as { id: number }[]).map((r) => r.id));
+}
+
+/** Manuelle Belege (mit Datei), die einem Projekt zugeordnet sind. */
+export async function listManualReceiptsByProject(
+  projectId: number
+): Promise<{ id: number; supplier: string | null; storedName: string | null }[]> {
+  const [rows] = await getPool().query<RowDataPacket[]>(
+    "SELECT id, supplier, stored_name FROM manual_receipts WHERE project_id = ?",
+    [projectId]
+  );
+  return (rows as { id: number; supplier: string | null; stored_name: string | null }[]).map((r) => ({
+    id: r.id,
+    supplier: r.supplier,
+    storedName: r.stored_name,
+  }));
+}
+
 /** Loads a receipt's stored file for download/inline view. */
 export async function getManualReceiptFile(
   id: number
