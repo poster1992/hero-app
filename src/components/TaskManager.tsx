@@ -534,7 +534,7 @@ function TaskCard({
             {/* Zweispaltig: links Beleg-Vorschau, rechts direkt die Werte bearbeiten */}
             <div className="flex min-h-0 flex-1 flex-col md:flex-row">
               <iframe
-                src={`/api/beleg?id=${belegId}`}
+                src={`/api/beleg?id=${belegId}#zoom=80`}
                 title={`Beleg ${belegId}`}
                 className="min-h-0 flex-1 bg-gray-100 md:w-1/2 md:flex-none md:border-r md:border-gray-200"
               />
