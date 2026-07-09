@@ -11,6 +11,7 @@ import type { PaymentOverride } from "@/lib/receipt-payment-status";
 import type { ReceiptOcrFields } from "@/lib/receipt-ocr";
 import type { OcrStatus } from "@/app/dashboard/belege/ocr-index";
 import OcrIndexPanel from "@/components/OcrIndexPanel";
+import type { DuplicateGroup } from "@/lib/receipt-duplicates";
 
 const currencyFormatter = new Intl.NumberFormat("de-DE", {
   style: "currency",
@@ -44,6 +45,9 @@ export default async function MonthlyReceipts({
   searchIds,
   q = "",
   restricted = false,
+  receiptsByMonth = null,
+  duplicateKeys,
+  duplicateGroups = [],
 }: {
   title: string;
   type: ReceiptType;
@@ -52,6 +56,12 @@ export default async function MonthlyReceipts({
   month: number;
   view: ReceiptsView;
   partyLabel?: string;
+  /** Vorgeladene HERO-Belege (spart den erneuten Abruf). */
+  receiptsByMonth?: Awaited<ReturnType<typeof getReceiptsByMonth>> | null;
+  /** Dubletten-Schlüssel (Lieferant+Betrag+Datum) zum Markieren der Zeilen. */
+  duplicateKeys?: Set<string>;
+  /** Dubletten-Gruppen für den Warnhinweis. */
+  duplicateGroups?: DuplicateGroup[];
   /** Eingeschränkte Ansicht: nur Suche + Belegliste (ohne Summen, Import-Tools, Tabs, Jahr). */
   restricted?: boolean;
   /** Manually uploaded receipts (year), folded into the summary cards. */
@@ -71,12 +81,14 @@ export default async function MonthlyReceipts({
   /** Aktueller Suchbegriff (für das Eingabefeld). */
   q?: string;
 }) {
-  let monthly: Awaited<ReturnType<typeof getReceiptsByMonth>> | null = null;
+  let monthly: Awaited<ReturnType<typeof getReceiptsByMonth>> | null = receiptsByMonth;
   let error: string | null = null;
-  try {
-    monthly = await getReceiptsByMonth(year, type);
-  } catch (e) {
-    error = e instanceof Error ? e.message : "Unbekannter Fehler beim Laden der Daten.";
+  if (!monthly) {
+    try {
+      monthly = await getReceiptsByMonth(year, type);
+    } catch (e) {
+      error = e instanceof Error ? e.message : "Unbekannter Fehler beim Laden der Daten.";
+    }
   }
 
   const counts = monthly?.map((m) => m.length);
@@ -241,6 +253,26 @@ export default async function MonthlyReceipts({
 
       {monthly && !restricted && <ReceiptsSummaryPanel summary={summary} />}
 
+      {duplicateGroups.length > 0 && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 px-5 py-4 text-sm text-amber-900 shadow-sm">
+          <p className="font-semibold">
+            ⚠ {duplicateGroups.length} mögliche{" "}
+            {duplicateGroups.length === 1 ? "Dublette" : "Dubletten"} (Lieferant + Betrag + Datum)
+          </p>
+          <ul className="mt-2 flex flex-col gap-0.5">
+            {duplicateGroups.slice(0, 12).map((g) => (
+              <li key={g.key}>
+                {g.supplier || "—"} · {currencyFormatter.format(g.gross)} ·{" "}
+                {g.date.split("-").reverse().join(".")} <span className="font-medium">({g.count}×)</span>
+              </li>
+            ))}
+            {duplicateGroups.length > 12 && (
+              <li className="text-amber-700">… und {duplicateGroups.length - 12} weitere</li>
+            )}
+          </ul>
+        </div>
+      )}
+
       {monthly && (
         <div className="rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-5 py-4">
@@ -264,6 +296,7 @@ export default async function MonthlyReceipts({
               paymentOverrides={paymentOverrides}
               ocrMap={ocrMap}
               showOcr={type === "output"}
+              duplicateKeys={duplicateKeys}
             />
           )}
         </div>

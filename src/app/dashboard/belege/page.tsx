@@ -1,6 +1,8 @@
 import MonthlyReceipts, { type ReceiptsView } from "@/components/MonthlyReceipts";
 import ManualBelege from "@/components/ManualBelege";
 import { listManualReceipts } from "@/lib/manual-receipts";
+import { getReceiptsByMonth, getCustomerName } from "@/lib/invoices";
+import { computeReceiptDuplicates } from "@/lib/receipt-duplicates";
 import { listReceiptReviews } from "@/lib/receipt-reviews";
 import { getPaymentOverrideMap } from "@/lib/receipt-payment-status";
 import { getReceiptOcrMap, searchOcrHeroIds } from "@/lib/receipt-ocr";
@@ -62,6 +64,25 @@ export default async function BelegePage({
     // Manuelle Belege sind optional – Fehler hier blockiert die Seite nicht.
   }
 
+  // HERO-Belege des Jahres einmal laden und an MonthlyReceipts durchreichen
+  // (spart einen zweiten Abruf) + Basis für die Dubletten-Prüfung.
+  let receiptsByMonth: Awaited<ReturnType<typeof getReceiptsByMonth>> | null = null;
+  try {
+    receiptsByMonth = await getReceiptsByMonth(year, "output");
+  } catch {
+    // Ohne HERO-Belege bleibt nur die manuelle Dubletten-Prüfung.
+  }
+
+  // Dubletten (Lieferant + Bruttobetrag + Datum) über HERO- UND manuelle Belege.
+  const { keys: duplicateKeys, groups: duplicateGroups } = computeReceiptDuplicates([
+    ...(receiptsByMonth?.flat() ?? []).map((r) => ({
+      supplier: getCustomerName(r),
+      gross: r.value,
+      dateISO: r.receiptDate,
+    })),
+    ...manual.map((m) => ({ supplier: m.supplier, gross: m.gross, dateISO: m.date })),
+  ]);
+
   // Lokale Zahlstatus-Overrides (überschreiben den HERO-Status je Beleg).
   let paymentOverrides: Awaited<ReturnType<typeof getPaymentOverrideMap>> = new Map();
   try {
@@ -106,6 +127,9 @@ export default async function BelegePage({
         view={view}
         partyLabel="Lieferant"
         manual={manual}
+        receiptsByMonth={receiptsByMonth}
+        duplicateKeys={duplicateKeys}
+        duplicateGroups={duplicateGroups}
         reviews={reviews}
         reviewers={reviewers}
         canReview={canReview}
@@ -116,7 +140,9 @@ export default async function BelegePage({
         q={q}
         restricted={restricted}
       />
-      {!restricted && <ManualBelege year={year} month={month} view={view} />}
+      {!restricted && (
+        <ManualBelege year={year} month={month} view={view} duplicateKeys={duplicateKeys} />
+      )}
     </>
   );
 }

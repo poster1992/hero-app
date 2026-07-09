@@ -76,6 +76,8 @@ export interface ReceiptRow {
   open?: number;
   /** Lieferant zieht per Bankeinzug ein. */
   directDebit?: boolean;
+  /** Mögliche Dublette (gleicher Lieferant + Betrag + Datum wie ein anderer Beleg). */
+  duplicate?: boolean;
   /** OCR: Zahlungsziel laut Beleg. */
   zahlungszielOcr?: string | null;
   /** OCR: zu zahlender Skonto-Betrag. */
@@ -654,7 +656,17 @@ export default function ReceiptsTableClient({
                   />
                 </td>
               )}
-              <td className="px-3 py-2.5 font-medium break-words text-gray-800">{row.number}</td>
+              <td className="px-3 py-2.5 font-medium break-words text-gray-800">
+                {row.number}
+                {row.duplicate && (
+                  <span
+                    title="Mögliche Dublette: gleicher Lieferant, Betrag und Datum wie ein anderer Beleg"
+                    className="ml-1.5 whitespace-nowrap rounded-full bg-amber-400/20 px-2 py-0.5 text-[10px] font-semibold text-amber-800 ring-1 ring-amber-500/40"
+                  >
+                    ⚠ Dublette
+                  </span>
+                )}
+              </td>
               <td className="px-3 py-2.5 whitespace-nowrap text-gray-600">{row.dateStr}</td>
               {showDue && (
                 <td className="px-3 py-2.5 whitespace-nowrap text-gray-600">{row.dueStr}</td>

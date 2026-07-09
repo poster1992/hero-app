@@ -10,6 +10,7 @@ import { reviewStatusLabel, type ReceiptReview } from "@/lib/receipt-reviews";
 import { getSupplierIbanMap } from "@/lib/supplier-ibans";
 import type { PaymentOverride } from "@/lib/receipt-payment-status";
 import type { ReceiptOcrFields } from "@/lib/receipt-ocr";
+import { receiptDupKey } from "@/lib/receipt-duplicates";
 
 const dateFormatter = new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
 
@@ -25,6 +26,7 @@ export default async function ReceiptsTable({
   paymentOverrides,
   ocrMap,
   showOcr = false,
+  duplicateKeys,
 }: {
   receipts: Receipt[];
   partyLabel?: string;
@@ -41,6 +43,8 @@ export default async function ReceiptsTable({
   ocrMap?: Map<string, ReceiptOcrFields>;
   /** OCR-Spalten anzeigen. */
   showOcr?: boolean;
+  /** Dubletten-Schlüssel (Lieferant+Betrag+Datum) zum Markieren. */
+  duplicateKeys?: Set<string>;
 }) {
   // Bankeinzug-Kennzeichen je Lieferant (nur für Belege/SEPA-Ansicht laden).
   let ibanMap: Awaited<ReturnType<typeof getSupplierIbanMap>> = new Map();
@@ -64,7 +68,10 @@ export default async function ReceiptsTable({
       : null;
     const file = r.fileUpload;
     const rv = reviews?.get(r.id) ?? null;
+    const dupKey = receiptDupKey(getCustomerName(r), r.value, r.receiptDate);
+    const duplicate = dupKey != null && (duplicateKeys?.has(dupKey) ?? false);
     return {
+      duplicate,
       review: rv
         ? {
             status: rv.status,

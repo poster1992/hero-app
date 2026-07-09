@@ -4,6 +4,7 @@ import { getBookAccounts } from "@/lib/hero-api";
 import { setBelegPaidAction } from "@/app/dashboard/belege/manual-actions";
 import ManualBelegeForm from "@/components/ManualBelegeForm";
 import BelegeChecklist from "@/components/BelegeChecklist";
+import { receiptDupKey } from "@/lib/receipt-duplicates";
 
 const currencyFormatter = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
 const dateFormatter = new Intl.DateTimeFormat("de-DE");
@@ -22,10 +23,13 @@ export default async function ManualBelege({
   year,
   month,
   view,
+  duplicateKeys,
 }: {
   year: number;
   month: number;
   view: string;
+  /** Dubletten-Schlüssel (Lieferant+Betrag+Datum) über HERO + manuelle Belege. */
+  duplicateKeys?: Set<string>;
 }) {
   let receipts: Awaited<ReturnType<typeof listManualReceipts>> = [];
   let accounts: Awaited<ReturnType<typeof getBookAccounts>> = [];
@@ -98,10 +102,23 @@ export default async function ManualBelege({
               </tr>
             </thead>
             <tbody>
-              {filtered.map((r) => (
+              {filtered.map((r) => {
+                const dk = receiptDupKey(r.supplier, r.gross, r.date);
+                const duplicate = dk != null && (duplicateKeys?.has(dk) ?? false);
+                return (
                 <tr key={r.id} className="border-t border-gray-100">
                   <td className="px-4 py-2 tabular-nums text-gray-700">{formatDate(r.date)}</td>
-                  <td className="px-4 py-2 text-gray-900">{r.supplier ?? "—"}</td>
+                  <td className="px-4 py-2 text-gray-900">
+                    {r.supplier ?? "—"}
+                    {duplicate && (
+                      <span
+                        title="Mögliche Dublette: gleicher Lieferant, Betrag und Datum wie ein anderer Beleg"
+                        className="ml-1.5 whitespace-nowrap rounded-full bg-amber-400/20 px-2 py-0.5 text-[10px] font-semibold text-amber-800 ring-1 ring-amber-500/40"
+                      >
+                        ⚠ Dublette
+                      </span>
+                    )}
+                  </td>
                   <td className="px-4 py-2 text-gray-600">{r.description ?? "—"}</td>
                   <td className="px-4 py-2 text-gray-700">
                     {r.accountNumber ? `${r.accountNumber} ${r.accountName ?? ""}` : "—"}
@@ -156,7 +173,8 @@ export default async function ManualBelege({
                     <ManualBelegeForm accounts={accounts} receipt={r} />
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         )}
