@@ -149,6 +149,14 @@ export default async function MonthlyReceipts({
     return `${basePath}?${params.toString()}`;
   };
 
+  // Ab Juli 2026 werden Belege nur noch über den Posteingang (manuell) erfasst –
+  // die HERO-Belege-Box wird für diese Zeiträume fortlaufend ausgeblendet.
+  // (Nur Belege/„output"; für die Jahres-Ansicht 2026 bleibt sie sichtbar, da
+  // Jan–Jun noch HERO-Belege enthält.)
+  const hideHeroOutput =
+    type === "output" &&
+    (year > 2026 || (year === 2026 && view === "month" && month >= 7));
+
   const emptyText =
     view === "open"
       ? "Keine offenen Belege in diesem Jahr."
@@ -273,7 +281,14 @@ export default async function MonthlyReceipts({
         </div>
       )}
 
-      {monthly && (
+      {hideHeroOutput && (
+        <div className="rounded-xl border border-gray-200 bg-gray-50 px-5 py-4 text-sm text-gray-600">
+          Ab Juli 2026 werden Belege nur noch über den Posteingang erfasst – siehe Abschnitt
+          „Manuelle Belege" unten.
+        </div>
+      )}
+
+      {monthly && !hideHeroOutput && (
         <div className="rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-5 py-4">
             <h2 className="text-lg font-medium text-gray-900">{heading}</h2>
