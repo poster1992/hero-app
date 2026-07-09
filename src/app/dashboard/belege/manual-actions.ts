@@ -203,7 +203,10 @@ const SUM_CONFIG: Record<
   palettecad: {
     label: "Gesamtbetrag inkl. USt.",
     supplierSearch: "Palette CAD",
-    account: { number: "2300", name: "Sonstige Aufwendungen" },
+    account: {
+      number: "4964",
+      name: "Aufwendungen für die zeitlich befristete Überlassung von Rechten (Lizenzen, Konzessionen)",
+    },
     prompt:
       "Dies ist eine Palette-CAD-Rechnung (Software; evtl. mehrere Rechnungen je PDF). Gib pro RECHNUNG " +
       "genau ein Objekt in seiten:[{betrag, steuersatz}] zurück. betrag = der BRUTTO-Gesamtbetrag inkl. " +
