@@ -47,7 +47,9 @@ type SumTyp =
   | "kennerbeton"
   | "bureaucaisse"
   | "sigre"
-  | "carlgeisen";
+  | "carlgeisen"
+  | "wohlwert"
+  | "ibod";
 
 /** Bezeichnung des summierten Betrags je erkanntem Typ (für die Meldung). */
 const KIND_AMOUNT_LABEL: Record<string, string> = {
@@ -74,6 +76,8 @@ const KIND_AMOUNT_LABEL: Record<string, string> = {
   bureaucaisse: "Gesamtbetrag brutto",
   sigre: "Gesamtbetrag brutto",
   carlgeisen: "Gesamtbetrag brutto",
+  wohlwert: "Gesamtbetrag brutto",
+  ibod: "Gesamtbetrag brutto",
 };
 
 /** Subset of a manual receipt needed to prefill the edit form. */
@@ -321,6 +325,8 @@ export function ManualBelegeFormFields({
                     <option value="bureaucaisse">Typ: Bureau Caisse Centrale (Kfz-Steuer)</option>
                     <option value="sigre">Typ: SIGRE (Entsorgung)</option>
                     <option value="carlgeisen">Typ: Carl Geisen (Arbeitskleidung)</option>
+                    <option value="wohlwert">Typ: wohlwert (Konto manuell)</option>
+                    <option value="ibod">Typ: Ibod (Material)</option>
                   </select>
                   {isSumType && (
                     <button

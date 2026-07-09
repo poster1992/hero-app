@@ -25,7 +25,9 @@ export type BelegSumKind =
   | "kennerbeton"
   | "bureaucaisse"
   | "sigre"
-  | "carlgeisen";
+  | "carlgeisen"
+  | "wohlwert"
+  | "ibod";
 
 export interface BelegSumResult {
   ok: boolean;
@@ -89,6 +91,8 @@ export const KIND_LABEL: Record<BelegSumKind, string> = {
   bureaucaisse: "Bureau Caisse Centrale",
   sigre: "SIGRE",
   carlgeisen: "Carl Geisen",
+  wohlwert: "wohlwert",
+  ibod: "Ibod",
 };
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -269,6 +273,19 @@ const SUM_CONFIG: Record<
     account: { number: "4980", name: "Sonstiger Betriebsbedarf" },
     prompt: materialInvoicePrompt("Carl Geisen", "Arbeitskleidung"),
   },
+  wohlwert: {
+    // Gemischter Lieferant (Strom/Wasser, Material, Getränke, Reinigung) –
+    // KEIN festes Konto, Konto wird pro Beleg manuell gewählt.
+    label: "Gesamtbetrag brutto",
+    supplierSearch: "wohlwert",
+    prompt: materialInvoicePrompt("wohlwert", "Strom/Wasser, Material, Getränke oder Reinigung"),
+  },
+  ibod: {
+    label: "Gesamtbetrag brutto",
+    supplierSearch: "Ibod",
+    account: { number: "3000", name: "Wareneingang / Material" },
+    prompt: materialInvoicePrompt("Ibod", "Materialeinkauf"),
+  },
   postdeep: {
     label: "Total TTC",
     supplierSearch: "Post Telecom",
@@ -432,6 +449,8 @@ export async function extractBeleg(input: {
                   "hieronimi (Hieronimi – Baustoffe), kennerbeton (Kenner Betonwerk Eiden – Beton), " +
                   "bureaucaisse (Bureau Caisse Centrale – Kfz-Steuer), sigre (SIGRE – Entsorgung/Abfall), " +
                   "carlgeisen (Carl Geisen – Arbeitskleidung), " +
+                  "wohlwert (wohlwert – Strom/Wasser, Material, Getränke oder Reinigung), " +
+                  "ibod (Ibod – Materialeinkauf), " +
                   "lohn (Lohnabrechnung/Lohnjournal), oder unbekannt. Nur das eine Wort, keine Erklärung.",
               },
             ],
@@ -441,7 +460,7 @@ export async function extractBeleg(input: {
       const ctb = cls.content.find((b) => b.type === "text");
       const word = ctb && ctb.type === "text" ? ctb.text.trim().toLowerCase().replace(/[^a-z]/g, "") : "";
       const detected = (
-        ["circle", "mixvoip", "bgl", "palettecad", "herosoftware", "activite", "etges", "niederer", "raabkarcher", "fliesenzentrum", "etbkenn", "kiesel", "moselbaustoff", "postdeep", "johanntrierweiler", "akemi", "maroldt", "hieronimi", "kennerbeton", "bureaucaisse", "sigre", "carlgeisen", "lohn"] as BelegSumKind[]
+        ["circle", "mixvoip", "bgl", "palettecad", "herosoftware", "activite", "etges", "niederer", "raabkarcher", "fliesenzentrum", "etbkenn", "kiesel", "moselbaustoff", "postdeep", "johanntrierweiler", "akemi", "maroldt", "hieronimi", "kennerbeton", "bureaucaisse", "sigre", "carlgeisen", "wohlwert", "ibod", "lohn"] as BelegSumKind[]
       ).find((k) => word === k);
       if (!detected) {
         return {
