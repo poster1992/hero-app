@@ -147,7 +147,7 @@ export async function updateBelegAction(
   return { success: "Beleg aktualisiert." };
 }
 
-export type BelegSumKind = "lohn" | "bgl" | "mixvoip" | "palettecad" | "activite";
+export type BelegSumKind = "lohn" | "bgl" | "mixvoip" | "palettecad" | "activite" | "herosoftware";
 
 export interface BelegSumResult {
   ok: boolean;
@@ -215,6 +215,25 @@ const SUM_CONFIG: Record<
       '(kurze Leistungsbezeichnung inkl. Objekt/Monat). Antworte AUSSCHLIESSLICH mit JSON: {"seiten": ' +
       '[ EIN Objekt ], "belegdatum": …, "lieferant": …, "beschreibung": …}. Punkt als Dezimaltrennzeichen, ' +
       "KEINE Tausenderpunkte. Nur JSON.",
+  },
+  herosoftware: {
+    label: "Total",
+    supplierSearch: "Hero Software",
+    account: {
+      number: "4964",
+      name: "Aufwendungen für die zeitlich befristete Überlassung von Rechten (Lizenzen, Konzessionen)",
+    },
+    prompt:
+      "Dies ist eine Rechnung der HERO Software GmbH (Handwerker-Software, oft englischsprachig, MwSt " +
+      "0 % / Reverse-Charge). Das PDF enthält GENAU EINE Rechnung. Gib in seiten GENAU EIN Objekt " +
+      "{betrag, steuersatz} zurück. betrag = der RECHNUNGS-Gesamtbetrag, beschriftet mit „Total\" " +
+      "(bzw. „Total incl. VAT\"/„Rechnungsbetrag\"/„Gesamt\") – NICHT „Amount Due\"/„Betrag offen\" und " +
+      "NICHT „Paid\"/„Bezahlt\" (die können 0 sein, wenn schon bezahlt). steuersatz = MwSt/VAT-Satz in " +
+      "Prozent als Zahl (bei Reverse-Charge 0). Gib zusätzlich auf oberster Ebene an: belegdatum = das " +
+      "Rechnungsdatum (Invoice Date) im Format YYYY-MM-DD – interpretiere reine Zahlen-Datumsangaben als " +
+      "Tag/Monat/Jahr (europäisch); lieferant (Rechnungssteller); beschreibung (kurze Leistung, z. B. " +
+      '„Software-Abo" + Paket). Antworte AUSSCHLIESSLICH mit JSON: {"seiten": [ EIN Objekt ], ' +
+      '"belegdatum": …, "lieferant": …, "beschreibung": …}. Punkt als Dezimaltrennzeichen. Nur JSON.',
   },
   palettecad: {
     label: "Gesamtbetrag inkl. USt.",
@@ -292,7 +311,7 @@ export async function computeBelegSumAction(formData: FormData): Promise<BelegSu
     return { ok: false, error: "OCR ist nicht konfiguriert (ANTHROPIC_API_KEY fehlt)." };
   }
   const kindRaw = String(formData.get("kind") ?? "");
-  const allowedKinds: BelegSumKind[] = ["bgl", "mixvoip", "palettecad", "activite"];
+  const allowedKinds: BelegSumKind[] = ["bgl", "mixvoip", "palettecad", "activite", "herosoftware"];
   const kind: BelegSumKind = allowedKinds.includes(kindRaw as BelegSumKind)
     ? (kindRaw as BelegSumKind)
     : "lohn";

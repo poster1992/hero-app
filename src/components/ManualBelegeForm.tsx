@@ -56,7 +56,7 @@ export default function ManualBelegeForm({
   const supplierInputRef = useRef<HTMLInputElement>(null);
   const descInputRef = useRef<HTMLInputElement>(null);
   const [belegTyp, setBelegTyp] = useState<
-    "" | "lohn" | "bgl" | "mixvoip" | "palettecad" | "activite"
+    "" | "lohn" | "bgl" | "mixvoip" | "palettecad" | "activite" | "herosoftware"
   >("");
   const [sumBusy, startSum] = useTransition();
   const [sumMsg, setSumMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -69,13 +69,16 @@ export default function ManualBelegeForm({
           ? "Gesamtbetrag"
           : belegTyp === "activite"
             ? "Endbetrag"
-            : "Total Brutto";
+            : belegTyp === "herosoftware"
+              ? "Total"
+              : "Total Brutto";
   const isSumType =
     belegTyp === "lohn" ||
     belegTyp === "bgl" ||
     belegTyp === "mixvoip" ||
     belegTyp === "palettecad" ||
-    belegTyp === "activite";
+    belegTyp === "activite" ||
+    belegTyp === "herosoftware";
 
   // Konto vorauswählen (echtes HERO-Konto anhand Nummer, sonst Fallbackname).
   const applyAccount = (number: string, name?: string) => {
@@ -108,7 +111,10 @@ export default function ManualBelegeForm({
         // Konto vorschlagen (BGL nur bei erkanntem Fahrzeug – von der Action entschieden).
         if (res.accountNumber) applyAccount(res.accountNumber, res.accountName);
         const perInvoice =
-          belegTyp === "mixvoip" || belegTyp === "palettecad" || belegTyp === "activite";
+          belegTyp === "mixvoip" ||
+          belegTyp === "palettecad" ||
+          belegTyp === "activite" ||
+          belegTyp === "herosoftware";
         const unit = perInvoice
           ? res.count === 1
             ? "Rechnung"
@@ -233,7 +239,14 @@ export default function ManualBelegeForm({
                     value={belegTyp}
                     onChange={(e) => {
                       setBelegTyp(
-                        e.target.value as "" | "lohn" | "bgl" | "mixvoip" | "palettecad" | "activite"
+                        e.target.value as
+                          | ""
+                          | "lohn"
+                          | "bgl"
+                          | "mixvoip"
+                          | "palettecad"
+                          | "activite"
+                          | "herosoftware"
                       );
                       setSumMsg(null);
                     }}
@@ -246,6 +259,7 @@ export default function ManualBelegeForm({
                     <option value="mixvoip">Typ: Mixvoip</option>
                     <option value="palettecad">Typ: Palette CAD</option>
                     <option value="activite">Typ: Activité (Miete/NK)</option>
+                    <option value="herosoftware">Typ: Hero-Software</option>
                   </select>
                   {isSumType && (
                     <button
