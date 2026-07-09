@@ -5,12 +5,18 @@ import Anthropic from "@anthropic-ai/sdk";
 import { getSession } from "@/lib/session";
 import { getUserByUsername } from "@/lib/users";
 import { getReceiptsInRange, type Receipt } from "@/lib/hero-api";
+import { getManualReceiptFile, listManualReceiptsByProject } from "@/lib/manual-receipts";
 import {
   getBelegArticlesMap,
   upsertBelegArticles,
   deleteBelegArticles,
   type BelegArticle,
 } from "@/lib/beleg-articles";
+
+/** Vorbereiteter Anthropic-Content-Block (PDF-Dokument oder Bild, base64). */
+type DocBlock =
+  | { type: "image"; source: { type: "base64"; media_type: "image/png"; data: string } }
+  | { type: "document"; source: { type: "base64"; media_type: "application/pdf"; data: string } };
 import {
   getMaterialMappings,
   setMaterialMapping,
@@ -33,6 +39,8 @@ const USD_EUR = 0.92;
 const OCR_VERSION = "v4-einheit";
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const docHashOf = (src: string) => createHash("sha256").update(`${src}|${OCR_VERSION}`).digest("hex");
+const manualDocHashOf = (id: number) =>
+  createHash("sha256").update(`manual-${id}|${OCR_VERSION}`).digest("hex");
 
 /** Aggregierte Ist-Position aus Belegen (je Artikel). */
 export interface ProjectBelegMaterialItem {
@@ -77,6 +85,30 @@ async function ocrBelegArticles(
     ? { type: "image" as const, source: { type: "base64" as const, media_type: doc.mediaType as "image/png", data: doc.data } }
     : { type: "document" as const, source: { type: "base64" as const, media_type: "application/pdf" as const, data: doc.data } };
 
+  return ocrArticlesFromBlock(client, block);
+}
+
+/** OCR eines manuellen Belegs (lokale Datei): liest die Artikelpositionen. */
+async function ocrManualArticles(
+  client: Anthropic,
+  id: number
+): Promise<{ items: BelegArticle[]; cost: number }> {
+  const file = await getManualReceiptFile(id);
+  if (!file) return { items: [], cost: 0 };
+  const mime = file.mime || "application/pdf";
+  const isImage = mime.startsWith("image/");
+  const data = file.data.toString("base64");
+  const block: DocBlock = isImage
+    ? { type: "image", source: { type: "base64", media_type: "image/png", data } }
+    : { type: "document", source: { type: "base64", media_type: "application/pdf", data } };
+  return ocrArticlesFromBlock(client, block);
+}
+
+/** OCR-Kern: liest die Artikelpositionen aus einem vorbereiteten Content-Block. */
+async function ocrArticlesFromBlock(
+  client: Anthropic,
+  block: DocBlock
+): Promise<{ items: BelegArticle[]; cost: number }> {
   const res = await client.messages.create({
     model: MODEL,
     max_tokens: 4000,
@@ -218,13 +250,24 @@ export async function getProjectBelegArticles(projectMatchId: number): Promise<P
       r.receiptPositions.some((p) => p.projectMatch?.id === projectMatchId)
   );
 
-  if (belege.length === 0) {
+  // Dem Projekt zugeordnete manuelle Belege (Posteingang) mit Datei.
+  let manualBelege: { id: number }[] = [];
+  try {
+    manualBelege = (await listManualReceiptsByProject(projectMatchId))
+      .filter((m) => m.hasFile)
+      .map((m) => ({ id: m.id }));
+  } catch {
+    /* manuelle Belege optional */
+  }
+
+  if (belege.length === 0 && manualBelege.length === 0) {
     return { items: [], total: 0, belegeCount: 0, ocrCostEur: 0, excluded: [] };
   }
 
   const excludeSet = await getMaterialExcludes(projectMatchId).catch(() => new Set<string>());
 
-  const cached = await getBelegArticlesMap(belege.map((b) => b.id));
+  const manualKeys = manualBelege.map((m) => `manual-${m.id}`);
+  const cached = await getBelegArticlesMap([...belege.map((b) => b.id), ...manualKeys]);
 
   // Welche Belege müssen (neu) ausgelesen werden? (kein Cache oder Dokument geändert)
   const toOcr = belege.filter((b) => {
@@ -262,12 +305,62 @@ export async function getProjectBelegArticles(projectMatchId: number): Promise<P
     }
   }
 
+  // Manuelle Belege: fehlende/aktualisierte per OCR auslesen (Cache-Key "manual-<id>").
+  const manualToOcr = manualBelege.filter((m) => {
+    const c = cached.get(`manual-${m.id}`);
+    return !c || c.docHash !== manualDocHashOf(m.id);
+  });
+  if (manualToOcr.length > 0 && process.env.ANTHROPIC_API_KEY) {
+    const client = new Anthropic({ maxRetries: 2, timeout: 120_000 });
+    const results = await Promise.all(
+      manualToOcr.map(async (m) => {
+        const key = `manual-${m.id}`;
+        try {
+          const { items, cost } = await ocrManualArticles(client, m.id);
+          const total = round2(items.reduce((s, it) => s + it.lineTotal, 0));
+          await upsertBelegArticles({
+            heroReceiptId: key,
+            docHash: manualDocHashOf(m.id),
+            items,
+            total,
+            model: MODEL,
+            costEur: cost,
+          });
+          return { key, items, total, cost };
+        } catch {
+          return { key, items: [] as BelegArticle[], total: 0, cost: 0 };
+        }
+      })
+    );
+    for (const r of results) {
+      ocrCostEur += r.cost;
+      cached.set(r.key, { heroReceiptId: r.key, docHash: null, items: r.items, total: r.total });
+    }
+  }
+
   // Artikel über alle Belege je Bezeichnung zusammenfassen (entfernte ausblenden).
   const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
   const map = new Map<string, ProjectBelegMaterialItem>();
   const excludedNames = new Map<string, string>(); // ist_key → Anzeigename
   for (const b of belege) {
     const entry = cached.get(b.id);
+    if (!entry) continue;
+    for (const it of entry.items) {
+      if (excludeSet.has(materialKey(it.name))) {
+        excludedNames.set(materialKey(it.name), it.name);
+        continue;
+      }
+      const key = norm(it.name);
+      const cur = map.get(key) ?? { name: it.name, unit: it.unit, quantity: 0, value: 0 };
+      cur.quantity += it.quantity;
+      cur.value += it.lineTotal;
+      if (!cur.unit) cur.unit = it.unit;
+      map.set(key, cur);
+    }
+  }
+  // Manuelle Belege desselben Projekts ebenfalls einbeziehen.
+  for (const m of manualBelege) {
+    const entry = cached.get(`manual-${m.id}`);
     if (!entry) continue;
     for (const it of entry.items) {
       if (excludeSet.has(materialKey(it.name))) {
@@ -292,7 +385,7 @@ export async function getProjectBelegArticles(projectMatchId: number): Promise<P
   return {
     items,
     total,
-    belegeCount: belege.length,
+    belegeCount: belege.length + manualBelege.length,
     ocrCostEur: round2(ocrCostEur),
     excluded: [...excludedNames.values()],
   };
@@ -407,7 +500,10 @@ export async function resetProjectMaterialAssignment(
             r.receiptPositions.some((p) => p.projectMatch?.id === projectMatchId)
         )
         .map((r) => r.id);
-      await deleteBelegArticles(belegeIds);
+      const manualKeys = (await listManualReceiptsByProject(projectMatchId))
+        .filter((m) => m.hasFile)
+        .map((m) => `manual-${m.id}`);
+      await deleteBelegArticles([...belegeIds, ...manualKeys]);
     } catch {
       /* Cache-Leeren optional */
     }

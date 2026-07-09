@@ -380,19 +380,16 @@ export async function searchManualOcrIds(query: string): Promise<Set<number>> {
   return new Set((rows as { id: number }[]).map((r) => r.id));
 }
 
-/** Manuelle Belege (mit Datei), die einem Projekt zugeordnet sind. */
-export async function listManualReceiptsByProject(
-  projectId: number
-): Promise<{ id: number; supplier: string | null; storedName: string | null }[]> {
-  const [rows] = await getPool().query<RowDataPacket[]>(
-    "SELECT id, supplier, stored_name FROM manual_receipts WHERE project_id = ?",
+/** Manuelle Belege, die einem Projekt (HERO project_match id) zugeordnet sind. */
+export async function listManualReceiptsByProject(projectId: number): Promise<ManualReceipt[]> {
+  const [rows] = await getPool().query<ReceiptRow[]>(
+    `SELECT id, beleg_date, supplier, description, gross, vat_rate, account_number, account_name,
+            file_name, stored_name, mime, is_paid, paid_date, project_id, project_relative_id, project_name,
+            invoice_number, skonto_amount, skonto_pay_amount, skonto_due_date
+     FROM manual_receipts WHERE project_id = ? ORDER BY beleg_date DESC, id DESC`,
     [projectId]
   );
-  return (rows as { id: number; supplier: string | null; stored_name: string | null }[]).map((r) => ({
-    id: r.id,
-    supplier: r.supplier,
-    storedName: r.stored_name,
-  }));
+  return rows.map(mapRow);
 }
 
 /** Loads a receipt's stored file for download/inline view. */

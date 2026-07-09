@@ -11,6 +11,7 @@ import {
   type ProjectBookedMaterials,
 } from "@/lib/materials";
 import { getInvoiceStatus, getDocumentUrl } from "@/lib/invoices";
+import { listManualReceiptsByProject } from "@/lib/manual-receipts";
 
 export interface ProjectPhoto {
   filename: string;
@@ -292,7 +293,7 @@ export async function getProjectReceipts(projectId: number): Promise<ProjectRece
   const to = `${now.getUTCFullYear() + 1}-12-31T23:59:59Z`;
   const receipts = await getReceiptsInRange(from, to);
   const round2 = (n: number) => Math.round(n * 100) / 100;
-  return receipts
+  const heroItems: ProjectReceiptItem[] = receipts
     .filter((r) => r.receiptPositions.some((p) => p.projectMatch?.id === projectId))
     .map((r) => {
       const status = getInvoiceStatus(r);
@@ -318,6 +319,25 @@ export async function getProjectReceipts(projectId: number): Promise<ProjectRece
         docUrl: file?.src ? getDocumentUrl(file.src) : null,
         filename: file?.filename ?? null,
       };
-    })
-    .sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""));
+    });
+
+  // Manuelle Belege (Posteingang), die diesem Projekt zugeordnet sind.
+  let manualItems: ProjectReceiptItem[] = [];
+  try {
+    const manual = await listManualReceiptsByProject(projectId);
+    manualItems = manual.map((m) => ({
+      id: `manual-${m.id}`,
+      number: m.invoiceNumber || m.supplier || `#${m.id}`,
+      date: m.date,
+      net: m.net,
+      gross: m.gross,
+      statusLabel: m.isPaid ? "Bezahlt" : "Offen",
+      docUrl: m.hasFile ? `/api/beleg?id=${m.id}` : null,
+      filename: m.fileName,
+    }));
+  } catch {
+    // Manuelle Belege sind optional – Fehler blockiert die HERO-Belegliste nicht.
+  }
+
+  return [...heroItems, ...manualItems].sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""));
 }
