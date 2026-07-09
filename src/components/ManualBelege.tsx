@@ -27,12 +27,15 @@ export default async function ManualBelege({
   month,
   view,
   duplicateKeys,
+  q = "",
 }: {
   year: number;
   month: number;
   view: string;
   /** Dubletten-Schlüssel (Lieferant+Betrag+Datum) über HERO + manuelle Belege. */
   duplicateKeys?: Set<string>;
+  /** Suchbegriff (Volltextsuche über die manuellen Belege). */
+  q?: string;
 }) {
   let receipts: Awaited<ReturnType<typeof listManualReceipts>> = [];
   let accounts: Awaited<ReturnType<typeof getBookAccounts>> = [];
@@ -50,12 +53,40 @@ export default async function ManualBelege({
     error = e instanceof Error ? e.message : "Manuelle Belege konnten nicht geladen werden.";
   }
 
-  // Monatsfilter berücksichtigen (wie bei den HERO-Belegen oben).
-  const filtered =
-    view === "month"
+  // Suche: durchsucht die manuellen Belege (Lieferant, Beschreibung, Belegnr.,
+  // Konto, Projekt, Datum, Betrag) – über das ganze Jahr, unabhängig vom Monat.
+  const ql = q.trim().toLowerCase();
+  const searchActive = ql.length > 0;
+  const matchesQ = (r: (typeof receipts)[number]): boolean => {
+    const hay = [
+      r.supplier,
+      r.description,
+      r.invoiceNumber,
+      r.accountNumber,
+      r.accountName,
+      r.projectName,
+      r.projectRelativeId != null ? `#${r.projectRelativeId}` : "",
+      r.date,
+      String(r.gross).replace(".", ","),
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return hay.includes(ql);
+  };
+
+  // Monatsfilter berücksichtigen (wie bei den HERO-Belegen oben); bei aktiver
+  // Suche gilt der Suchfilter über das ganze Jahr.
+  const filtered = searchActive
+    ? receipts.filter(matchesQ)
+    : view === "month"
       ? receipts.filter((r) => r.date && Number(r.date.slice(5, 7)) === month)
       : receipts;
-  const periodLabel = view === "month" ? `${MONTH_LABELS[month - 1]} ${year}` : String(year);
+  const periodLabel = searchActive
+    ? `Suche „${q}" (${filtered.length})`
+    : view === "month"
+      ? `${MONTH_LABELS[month - 1]} ${year}`
+      : String(year);
   const monthLabel = `${MONTH_LABELS[month - 1]} ${year}`;
   const total = filtered.reduce((s, r) => s + r.gross, 0);
 
