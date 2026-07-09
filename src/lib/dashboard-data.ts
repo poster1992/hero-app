@@ -6,7 +6,7 @@ import {
   isRevenueReduction,
 } from "./hero-api";
 import { listManualReceipts } from "./manual-receipts";
-import { effectiveReceiptStatus, LOCAL_STATUS_FROM } from "./invoices";
+import { effectiveReceiptStatus, LOCAL_STATUS_FROM, getDocumentUrl } from "./invoices";
 import { getPaymentOverrideMap } from "./receipt-payment-status";
 import { accountForSupplier } from "./beleg-extract";
 
@@ -40,6 +40,23 @@ export interface MonthlyTotals {
   confirmations: number;
 }
 
+/** Einzelner Beleg, der zu einem GuV-Konto beiträgt (für die Detail-Ansicht). */
+export interface GuvExpenseEntry {
+  /** Monat 1–12. */
+  month: number;
+  date: string | null;
+  /** Lieferant/Rechnungssteller. */
+  party: string;
+  /** Belegnummer (falls vorhanden). */
+  number: string;
+  /** Netto-Betrag dieses Belegs auf diesem Konto. */
+  net: number;
+  /** Herkunft: HERO-Beleg oder manueller Beleg. */
+  source: "hero" | "manuell";
+  /** Link zum Beleg-PDF, falls vorhanden. */
+  docUrl: string | null;
+}
+
 export interface GuvAccountRow {
   /** Booking account number (Buchungsnummer), or "" if none. */
   accountNumber: string;
@@ -48,6 +65,8 @@ export interface GuvAccountRow {
   /** Net amount per month (index 0 = January). */
   monthly: number[];
   total: number;
+  /** Einzelne Belege, die dieses Konto ausmachen (für das Detail-Popup). */
+  entries: GuvExpenseEntry[];
 }
 
 export interface GuvData {
@@ -174,6 +193,8 @@ export async function getDashboardData(year: number): Promise<DashboardData> {
 
   // GuV: expenses per booking account, net, per month.
   const expenseByAccount = new Map<string, number[]>();
+  // Detail-Belege je Konto (für das Klick-Popup in der GuV).
+  const expenseEntriesByAccount = new Map<string, GuvExpenseEntry[]>();
 
   // HERO-Belegpositionen liefern oft keine Konto-Nr. – daher die SKR-Nummer
   // über den Kontonamen aus dem HERO-Kontenrahmen nachschlagen.
@@ -237,6 +258,9 @@ export async function getDashboardData(year: number): Promise<DashboardData> {
       : "";
     const override = accountForSupplier(supplierName);
 
+    // Netto je Konto innerhalb dieses Belegs sammeln (für die Detailliste ein
+    // Eintrag pro Beleg & Konto statt pro Einzelposition).
+    const netByKeyThisReceipt = new Map<string, number>();
     for (const p of receipt.receiptPositions) {
       let name = p.bookAccount?.name?.trim() ?? "";
       let number = p.bookAccount?.num?.trim() ?? "";
@@ -248,9 +272,25 @@ export async function getDashboardData(year: number): Promise<DashboardData> {
       } else if (!number && name) {
         number = accountNumberByName.get(name.toLowerCase()) ?? "";
       }
-      const arr = expenseByAccount.get(accountKey(number, name)) ?? new Array(12).fill(0);
+      const key = accountKey(number, name);
+      const arr = expenseByAccount.get(key) ?? new Array(12).fill(0);
       arr[monthIndex] += p.valueExclVat;
-      expenseByAccount.set(accountKey(number, name), arr);
+      expenseByAccount.set(key, arr);
+      netByKeyThisReceipt.set(key, (netByKeyThisReceipt.get(key) ?? 0) + p.valueExclVat);
+    }
+    const heroDocUrl = receipt.fileUpload?.src ? getDocumentUrl(receipt.fileUpload.src) : null;
+    for (const [key, net] of netByKeyThisReceipt) {
+      const list = expenseEntriesByAccount.get(key) ?? [];
+      list.push({
+        month: monthIndex + 1,
+        date: receipt.receiptDate,
+        party: supplierName || "—",
+        number: receipt.number ?? "",
+        net: round2(net),
+        source: "hero",
+        docUrl: heroDocUrl,
+      });
+      expenseEntriesByAccount.set(key, list);
     }
   }
 
@@ -282,9 +322,21 @@ export async function getDashboardData(year: number): Promise<DashboardData> {
       }
       const number = r.accountNumber?.trim() ?? "";
       const name = (number && accountNameByNumber.get(number)) || (r.accountName?.trim() ?? "");
-      const arr = expenseByAccount.get(accountKey(number, name)) ?? new Array(12).fill(0);
+      const key = accountKey(number, name);
+      const arr = expenseByAccount.get(key) ?? new Array(12).fill(0);
       arr[monthIndex] += r.net;
-      expenseByAccount.set(accountKey(number, name), arr);
+      expenseByAccount.set(key, arr);
+      const list = expenseEntriesByAccount.get(key) ?? [];
+      list.push({
+        month: monthIndex + 1,
+        date: r.date,
+        party: r.supplier || r.description || "Manueller Beleg",
+        number: r.invoiceNumber ?? "",
+        net: round2(r.net),
+        source: "manuell",
+        docUrl: r.hasFile ? `/api/beleg?id=${r.id}` : null,
+      });
+      expenseEntriesByAccount.set(key, list);
     }
   } catch {
     // Manuelle Belege sind optional – Fehler hier blockiert das Dashboard nicht.
@@ -372,11 +424,15 @@ export async function getDashboardData(year: number): Promise<DashboardData> {
   const expenseAccounts: GuvAccountRow[] = [...expenseByAccount.entries()]
     .map(([key, arr]) => {
       const sep = key.indexOf(KEY_SEP);
+      const entries = (expenseEntriesByAccount.get(key) ?? []).sort(
+        (a, b) => a.month - b.month || (a.date ?? "").localeCompare(b.date ?? "")
+      );
       return {
         accountNumber: sep >= 0 ? key.slice(0, sep) : "",
         accountName: sep >= 0 ? key.slice(sep + 1) : key,
         monthly: arr.map(round2),
         total: round2(arr.reduce((s, v) => s + v, 0)),
+        entries,
       };
     })
     .sort((a, b) => b.total - a.total);
