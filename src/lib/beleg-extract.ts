@@ -435,6 +435,25 @@ const SUM_CONFIG: Record<
   },
 };
 
+/**
+ * Liefert das für einen Lieferanten fest konfigurierte Buchungskonto (Override
+ * gegenüber HERO), oder null. Grundlage ist dieselbe SUM_CONFIG wie bei der
+ * OCR-Erfassung – so bleibt die Lieferanten→Konto-Zuordnung an einer Stelle.
+ * Lieferanten mit dynamischem/keinem festen Konto (z. B. Activité, wohlwert,
+ * Lohn) liefern null und bleiben auf dem HERO-Konto.
+ */
+export function accountForSupplier(
+  supplierName: string | null | undefined
+): { number: string; name: string } | null {
+  const hay = (supplierName ?? "").toLowerCase().trim();
+  if (!hay) return null;
+  for (const cfg of Object.values(SUM_CONFIG)) {
+    if (!cfg.account || !cfg.supplierSearch) continue;
+    if (hay.includes(cfg.supplierSearch.toLowerCase())) return cfg.account;
+  }
+  return null;
+}
+
 /** Robustes Parsen deutscher/englischer Zahlen ("1.234,56", "1234.56", 1234.56). */
 function toNum(v: unknown): number {
   if (typeof v === "number") return Number.isFinite(v) ? v : 0;

@@ -8,6 +8,7 @@ import {
 import { listManualReceipts } from "./manual-receipts";
 import { effectiveReceiptStatus, LOCAL_STATUS_FROM } from "./invoices";
 import { getPaymentOverrideMap } from "./receipt-payment-status";
+import { accountForSupplier } from "./beleg-extract";
 
 const MONTH_LABELS = [
   "Jan",
@@ -177,9 +178,11 @@ export async function getDashboardData(year: number): Promise<DashboardData> {
   // HERO-Belegpositionen liefern oft keine Konto-Nr. – daher die SKR-Nummer
   // über den Kontonamen aus dem HERO-Kontenrahmen nachschlagen.
   const accountNumberByName = new Map<string, string>();
+  const accountNameByNumber = new Map<string, string>();
   try {
     for (const a of await getBookAccounts()) {
       accountNumberByName.set(a.name.trim().toLowerCase(), a.number);
+      accountNameByNumber.set(a.number, a.name.trim());
     }
   } catch {
     // Kontenrahmen optional – ohne ihn bleibt die Nummer ggf. leer.
@@ -225,10 +228,26 @@ export async function getDashboardData(year: number): Promise<DashboardData> {
       });
     }
 
+    // Lieferant → fest konfiguriertes Konto (Override): Für die GuV buchen wir den
+    // Beleg auf unser Konto, auch wenn HERO ein anderes Buchungskonto ausweist.
+    const supplierName = receipt.customer
+      ? receipt.customer.companyName ||
+        [receipt.customer.firstName, receipt.customer.lastName].filter(Boolean).join(" ") ||
+        ""
+      : "";
+    const override = accountForSupplier(supplierName);
+
     for (const p of receipt.receiptPositions) {
-      const name = p.bookAccount?.name?.trim() ?? "";
+      let name = p.bookAccount?.name?.trim() ?? "";
       let number = p.bookAccount?.num?.trim() ?? "";
-      if (!number && name) number = accountNumberByName.get(name.toLowerCase()) ?? "";
+      if (override) {
+        number = override.number;
+        // Kanonischen Kontonamen aus dem HERO-Kontenrahmen bevorzugen, damit
+        // Override- und HERO-eigene Positionen desselben Kontos zusammenfallen.
+        name = accountNameByNumber.get(override.number) ?? override.name;
+      } else if (!number && name) {
+        number = accountNumberByName.get(name.toLowerCase()) ?? "";
+      }
       const arr = expenseByAccount.get(accountKey(number, name)) ?? new Array(12).fill(0);
       arr[monthIndex] += p.valueExclVat;
       expenseByAccount.set(accountKey(number, name), arr);
@@ -262,7 +281,7 @@ export async function getDashboardData(year: number): Promise<DashboardData> {
         });
       }
       const number = r.accountNumber?.trim() ?? "";
-      const name = r.accountName?.trim() ?? "";
+      const name = (number && accountNameByNumber.get(number)) || (r.accountName?.trim() ?? "");
       const arr = expenseByAccount.get(accountKey(number, name)) ?? new Array(12).fill(0);
       arr[monthIndex] += r.net;
       expenseByAccount.set(accountKey(number, name), arr);
