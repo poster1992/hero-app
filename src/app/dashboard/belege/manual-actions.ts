@@ -147,7 +147,7 @@ export async function updateBelegAction(
   return { success: "Beleg aktualisiert." };
 }
 
-export type BelegSumKind = "lohn" | "bgl" | "mixvoip";
+export type BelegSumKind = "lohn" | "bgl" | "mixvoip" | "palettecad";
 
 export interface BelegSumResult {
   ok: boolean;
@@ -199,6 +199,20 @@ const SUM_CONFIG: Record<
       "dieser Seite (NICHT Bruttogehalt, NICHT Netto, NICHT Auszahlung; wenn keiner vorhanden: null). " +
       "Lass KEINE Seite aus und erfinde keine. Antworte AUSSCHLIESSLICH mit JSON: " +
       '{"seiten": [ … ]}. Punkt als Dezimaltrennzeichen, KEINE Tausenderpunkte. Nur JSON.',
+  },
+  palettecad: {
+    label: "Gesamtbetrag inkl. USt.",
+    supplierSearch: "Palette CAD",
+    account: { number: "2300", name: "Sonstige Aufwendungen" },
+    prompt:
+      "Dies ist eine Palette-CAD-Rechnung (Software; evtl. mehrere Rechnungen je PDF). Gib pro RECHNUNG " +
+      "genau ein Objekt in seiten:[{betrag, steuersatz}] zurück. betrag = der BRUTTO-Gesamtbetrag inkl. " +
+      "MwSt (Label z. B. „Gesamtbetrag inkl. USt.\", „Gesamtbetrag\", „Bruttobetrag\", „Rechnungsbetrag\") – " +
+      "NICHT der Netto-Wert. steuersatz = USt-/MwSt-Satz in Prozent als Zahl. Gib zusätzlich auf oberster " +
+      "Ebene an: belegdatum (Rechnungsdatum YYYY-MM-DD oder null), lieferant (Rechnungssteller oder null), " +
+      "beschreibung (kurze Leistungsbezeichnung). Antworte AUSSCHLIESSLICH mit JSON: " +
+      '{"seiten": [ … ], "belegdatum": …, "lieferant": …, "beschreibung": …}. Punkt als Dezimaltrennzeichen, ' +
+      "KEINE Tausenderpunkte. Nur JSON.",
   },
   mixvoip: {
     label: "Grand Total",
@@ -259,8 +273,10 @@ export async function computeBelegSumAction(formData: FormData): Promise<BelegSu
     return { ok: false, error: "OCR ist nicht konfiguriert (ANTHROPIC_API_KEY fehlt)." };
   }
   const kindRaw = String(formData.get("kind") ?? "");
-  const kind: BelegSumKind =
-    kindRaw === "bgl" ? "bgl" : kindRaw === "mixvoip" ? "mixvoip" : "lohn";
+  const allowedKinds: BelegSumKind[] = ["bgl", "mixvoip", "palettecad"];
+  const kind: BelegSumKind = allowedKinds.includes(kindRaw as BelegSumKind)
+    ? (kindRaw as BelegSumKind)
+    : "lohn";
   const cfg = SUM_CONFIG[kind];
 
   const upload = formData.get("file");
