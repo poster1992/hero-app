@@ -49,7 +49,12 @@ type SumTyp =
   | "sigre"
   | "carlgeisen"
   | "wohlwert"
-  | "ibod";
+  | "ibod"
+  | "eon"
+  | "idealfliesen"
+  | "garagelosch"
+  | "reifenkruetten"
+  | "henrichbaustoff";
 
 /** Bezeichnung des summierten Betrags je erkanntem Typ (für die Meldung). */
 const KIND_AMOUNT_LABEL: Record<string, string> = {
@@ -78,6 +83,11 @@ const KIND_AMOUNT_LABEL: Record<string, string> = {
   carlgeisen: "Gesamtbetrag brutto",
   wohlwert: "Gesamtbetrag brutto",
   ibod: "Gesamtbetrag brutto",
+  eon: "Gesamtbetrag brutto",
+  idealfliesen: "Gesamtbetrag brutto",
+  garagelosch: "Gesamtbetrag brutto",
+  reifenkruetten: "Gesamtbetrag brutto",
+  henrichbaustoff: "Gesamtbetrag brutto",
 };
 
 /** Subset of a manual receipt needed to prefill the edit form. */
@@ -327,6 +337,11 @@ export function ManualBelegeFormFields({
                     <option value="carlgeisen">Typ: Carl Geisen (Arbeitskleidung)</option>
                     <option value="wohlwert">Typ: wohlwert (Konto manuell)</option>
                     <option value="ibod">Typ: Ibod (Material)</option>
+                    <option value="eon">Typ: E.On (Strom)</option>
+                    <option value="idealfliesen">Typ: Idealfliesen (Subunternehmer)</option>
+                    <option value="garagelosch">Typ: Garage Losch (Kfz)</option>
+                    <option value="reifenkruetten">Typ: Reifen Krütten</option>
+                    <option value="henrichbaustoff">Typ: Henrich Baustoffzentrum</option>
                   </select>
                   {isSumType && (
                     <button

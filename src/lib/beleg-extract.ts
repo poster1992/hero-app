@@ -27,7 +27,12 @@ export type BelegSumKind =
   | "sigre"
   | "carlgeisen"
   | "wohlwert"
-  | "ibod";
+  | "ibod"
+  | "eon"
+  | "idealfliesen"
+  | "garagelosch"
+  | "reifenkruetten"
+  | "henrichbaustoff";
 
 export interface BelegSumResult {
   ok: boolean;
@@ -93,6 +98,11 @@ export const KIND_LABEL: Record<BelegSumKind, string> = {
   carlgeisen: "Carl Geisen",
   wohlwert: "wohlwert",
   ibod: "Ibod",
+  eon: "E.On (Strom)",
+  idealfliesen: "Idealfliesen",
+  garagelosch: "Garage Losch",
+  reifenkruetten: "Reifen Krütten",
+  henrichbaustoff: "Henrich Baustoffzentrum",
 };
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -286,6 +296,36 @@ const SUM_CONFIG: Record<
     account: { number: "3000", name: "Wareneingang / Material" },
     prompt: materialInvoicePrompt("Ibod", "Materialeinkauf"),
   },
+  eon: {
+    label: "Gesamtbetrag brutto",
+    supplierSearch: "E.On",
+    account: { number: "4240", name: "Strom, Wasser, Gas" },
+    prompt: materialInvoicePrompt("E.On Energie Deutschland", "Stromlieferung / Energie"),
+  },
+  idealfliesen: {
+    label: "Gesamtbetrag brutto",
+    supplierSearch: "Idealfliesen",
+    account: { number: "3100", name: "Fremdleistungen" },
+    prompt: materialInvoicePrompt("Idealfliesen", "Subunternehmer / Fliesenverlegung"),
+  },
+  garagelosch: {
+    label: "Gesamtbetrag brutto",
+    supplierSearch: "Garage Losch",
+    account: { number: "4530", name: "Laufende Kfz-Betriebskosten" },
+    prompt: materialInvoicePrompt("Garage Losch", "Kfz-Reparatur / Werkstatt"),
+  },
+  reifenkruetten: {
+    label: "Gesamtbetrag brutto",
+    supplierSearch: "Krütten",
+    account: { number: "3000", name: "Wareneingang / Material" },
+    prompt: materialInvoicePrompt("Reifen Wolfgang Krütten", "Reifen / Material"),
+  },
+  henrichbaustoff: {
+    label: "Gesamtbetrag brutto",
+    supplierSearch: "Henrich Baustoff",
+    account: { number: "3000", name: "Wareneingang / Material" },
+    prompt: materialInvoicePrompt("Henrich Baustoffzentrum", "Baustoffe / Materialeinkauf"),
+  },
   postdeep: {
     label: "Total TTC",
     supplierSearch: "Post Telecom",
@@ -450,7 +490,9 @@ export async function extractBeleg(input: {
                   "bureaucaisse (Bureau Caisse Centrale – Kfz-Steuer), sigre (SIGRE – Entsorgung/Abfall), " +
                   "carlgeisen (Carl Geisen – Arbeitskleidung), " +
                   "wohlwert (wohlwert – Strom/Wasser, Material, Getränke oder Reinigung), " +
-                  "ibod (Ibod – Materialeinkauf), " +
+                  "ibod (Ibod – Materialeinkauf), eon (E.On – Stromlieferung), " +
+                  "idealfliesen (Idealfliesen – Subunternehmer), garagelosch (Garage Losch – Kfz-Reparatur), " +
+                  "reifenkruetten (Reifen Krütten – Reifen), henrichbaustoff (Henrich Baustoffzentrum – Baustoffe), " +
                   "lohn (Lohnabrechnung/Lohnjournal), oder unbekannt. Nur das eine Wort, keine Erklärung.",
               },
             ],
@@ -460,7 +502,7 @@ export async function extractBeleg(input: {
       const ctb = cls.content.find((b) => b.type === "text");
       const word = ctb && ctb.type === "text" ? ctb.text.trim().toLowerCase().replace(/[^a-z]/g, "") : "";
       const detected = (
-        ["circle", "mixvoip", "bgl", "palettecad", "herosoftware", "activite", "etges", "niederer", "raabkarcher", "fliesenzentrum", "etbkenn", "kiesel", "moselbaustoff", "postdeep", "johanntrierweiler", "akemi", "maroldt", "hieronimi", "kennerbeton", "bureaucaisse", "sigre", "carlgeisen", "wohlwert", "ibod", "lohn"] as BelegSumKind[]
+        ["circle", "mixvoip", "bgl", "palettecad", "herosoftware", "activite", "etges", "niederer", "raabkarcher", "fliesenzentrum", "etbkenn", "kiesel", "moselbaustoff", "postdeep", "johanntrierweiler", "akemi", "maroldt", "hieronimi", "kennerbeton", "bureaucaisse", "sigre", "carlgeisen", "wohlwert", "ibod", "eon", "idealfliesen", "garagelosch", "reifenkruetten", "henrichbaustoff", "lohn"] as BelegSumKind[]
       ).find((k) => word === k);
       if (!detected) {
         return {
