@@ -147,7 +147,14 @@ export async function updateBelegAction(
   return { success: "Beleg aktualisiert." };
 }
 
-export type BelegSumKind = "lohn" | "bgl" | "mixvoip" | "palettecad" | "activite" | "herosoftware";
+export type BelegSumKind =
+  | "lohn"
+  | "bgl"
+  | "mixvoip"
+  | "palettecad"
+  | "activite"
+  | "herosoftware"
+  | "circle";
 
 export interface BelegSumResult {
   ok: boolean;
@@ -215,6 +222,20 @@ const SUM_CONFIG: Record<
       '(kurze Leistungsbezeichnung inkl. Objekt/Monat). Antworte AUSSCHLIESSLICH mit JSON: {"seiten": ' +
       '[ EIN Objekt ], "belegdatum": …, "lieferant": …, "beschreibung": …}. Punkt als Dezimaltrennzeichen, ' +
       "KEINE Tausenderpunkte. Nur JSON.",
+  },
+  circle: {
+    label: "Total TTC",
+    supplierSearch: "Circle",
+    account: { number: "4530", name: "Laufende Kfz-Betriebskosten" },
+    prompt:
+      "Dies ist eine Circle-K-Tankrechnung (Luxemburg). Das PDF ist EINE Rechnung (evtl. mehrseitig). " +
+      "Gib in seiten GENAU EIN Objekt {betrag, steuersatz} zurück. betrag = die GESAMT-Endsumme inkl. " +
+      "MwSt der ganzen Rechnung, beschriftet mit „Total TTC\" (bzw. „Total à payer\"/„Montant total\") – " +
+      "NICHT Seiten-Zwischensummen, NICHT „Total HT\"/„Total HTVA\". steuersatz = TVA-Satz in Prozent als " +
+      "Zahl. Zusätzlich auf oberster Ebene: belegdatum (Rechnungsdatum YYYY-MM-DD oder null), lieferant, " +
+      "beschreibung (kurz, z. B. „Tankkosten\" + Abrechnungszeitraum/Monat). Antworte AUSSCHLIESSLICH mit " +
+      'JSON: {"seiten": [ EIN Objekt ], "belegdatum": …, "lieferant": …, "beschreibung": …}. Punkt als ' +
+      "Dezimaltrennzeichen, KEINE Tausenderpunkte. Nur JSON.",
   },
   herosoftware: {
     label: "Total",
@@ -311,7 +332,14 @@ export async function computeBelegSumAction(formData: FormData): Promise<BelegSu
     return { ok: false, error: "OCR ist nicht konfiguriert (ANTHROPIC_API_KEY fehlt)." };
   }
   const kindRaw = String(formData.get("kind") ?? "");
-  const allowedKinds: BelegSumKind[] = ["bgl", "mixvoip", "palettecad", "activite", "herosoftware"];
+  const allowedKinds: BelegSumKind[] = [
+    "bgl",
+    "mixvoip",
+    "palettecad",
+    "activite",
+    "herosoftware",
+    "circle",
+  ];
   const kind: BelegSumKind = allowedKinds.includes(kindRaw as BelegSumKind)
     ? (kindRaw as BelegSumKind)
     : "lohn";
