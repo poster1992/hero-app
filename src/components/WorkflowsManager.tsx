@@ -22,6 +22,7 @@ const inputClass =
 
 const TRIGGER_OPTIONS = [
   { key: "new_beleg", label: "Neuer Beleg (Eingangsrechnung)" },
+  { key: "new_manual_beleg", label: "Neuer erfasster Beleg (Posteingang/manuell)" },
   { key: "angebot_alt_ohne_ab", label: "Angebot zu alt ohne AB (Pipeline 'Angebot offen')" },
   { key: "stunden_ohne_abschlag", label: "Stunden gebucht, aber keine Abschlagsrechnung" },
   { key: "endrechnung", label: "Endrechnung erstellt (Schluss-/Vollrechnung, keine Teil-/Abschlagsrechnung)" },

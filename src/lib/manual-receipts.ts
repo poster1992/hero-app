@@ -97,7 +97,9 @@ export async function createManualReceipt(input: {
   accountName: string | null;
   file: { buffer: Buffer; originalName: string; mime: string } | null;
   uploadedBy: number | null;
-}): Promise<void> {
+  /** Herkunft: "form" (Formular) oder "inbox" (Sammel-Posteingang). */
+  source?: string;
+}): Promise<number> {
   let storedName: string | null = null;
   if (input.file) {
     await mkdir(BELEGE_DIR, { recursive: true });
@@ -105,10 +107,10 @@ export async function createManualReceipt(input: {
     storedName = `${randomUUID()}${ext}`;
     await writeFile(path.join(BELEGE_DIR, storedName), input.file.buffer);
   }
-  await getPool().query(
+  const [res] = await getPool().query(
     `INSERT INTO manual_receipts
-       (beleg_date, supplier, description, gross, vat_rate, account_number, account_name, file_name, stored_name, mime, uploaded_by)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (beleg_date, supplier, description, gross, vat_rate, account_number, account_name, file_name, stored_name, mime, uploaded_by, source)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.date,
       input.supplier,
@@ -121,8 +123,44 @@ export async function createManualReceipt(input: {
       storedName,
       input.file?.mime ?? null,
       input.uploadedBy,
+      input.source ?? "form",
     ]
   );
+  return (res as { insertId: number }).insertId;
+}
+
+export interface InboxReceipt {
+  id: number;
+  /** Belegdatum (yyyy-mm-dd) oder null. */
+  date: string | null;
+  /** Erfassungszeitpunkt (ISO), für die Workflow-Auslösung. */
+  created: string | null;
+  supplier: string | null;
+  description: string | null;
+  gross: number;
+}
+
+/** Im Posteingang (source='inbox') erfasste Belege – für die Workflow-Auslösung. */
+export async function listInboxReceipts(): Promise<InboxReceipt[]> {
+  const [rows] = await getPool().query<RowDataPacket[]>(
+    `SELECT id, beleg_date, created, supplier, description, gross
+     FROM manual_receipts WHERE source = 'inbox' ORDER BY id DESC`
+  );
+  return (rows as {
+    id: number;
+    beleg_date: string | Date | null;
+    created: string | Date | null;
+    supplier: string | null;
+    description: string | null;
+    gross: string | number;
+  }[]).map((r) => ({
+    id: r.id,
+    date: r.beleg_date ? String(r.beleg_date).slice(0, 10) : null,
+    created: r.created ? String(r.created) : null,
+    supplier: r.supplier,
+    description: r.description,
+    gross: num(r.gross),
+  }));
 }
 
 /** Updates an existing manual receipt; replaces the file only if a new one is given. */

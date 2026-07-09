@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { listManualReceipts } from "@/lib/manual-receipts";
 import { listChecklist } from "@/lib/belege-checklist";
 import { getBookAccounts } from "@/lib/hero-api";
@@ -63,7 +64,15 @@ export default async function ManualBelege({
             Dokumente unabhängig von HERO hochladen und einem Konto zubuchen.
           </p>
         </div>
-        <ManualBelegeForm accounts={accounts} />
+        <div className="flex items-center gap-2">
+          <Link
+            href="/dashboard/belege/posteingang"
+            className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900"
+          >
+            📥 Posteingang (Sammel-Upload)
+          </Link>
+          <ManualBelegeForm accounts={accounts} />
+        </div>
       </header>
 
       {error && (

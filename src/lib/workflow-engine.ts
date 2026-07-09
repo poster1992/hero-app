@@ -12,6 +12,7 @@ import {
   type CustomerInvoice,
 } from "./hero-api";
 import { getCustomerName, getDocumentUrl, getReceiptProjects } from "./invoices";
+import { listInboxReceipts } from "./manual-receipts";
 import { createTask, createReviewTask } from "./tasks";
 import { assignReviewer, getReceiptReview } from "./receipt-reviews";
 import { sendPushToUsers } from "./push";
@@ -158,6 +159,41 @@ async function collectEvents(triggerKey: string): Promise<WfEvent[]> {
     });
   }
 
+  if (triggerKey === "new_manual_beleg") {
+    // Im Sammel-Posteingang automatisch erfasste Belege (source='inbox').
+    const receipts = await listInboxReceipts();
+    const base = process.env.APP_URL?.replace(/\/$/, "") || "";
+    return receipts.map((r) => {
+      const supplier = r.supplier ?? "";
+      const nr = `#${r.id}`;
+      const link = `${base}/api/beleg?id=${r.id}`;
+      const note = [
+        `Erfasster Beleg ${nr}`,
+        supplier ? `Lieferant: ${supplier}` : null,
+        `Betrag: ${euro.format(r.gross || 0)}`,
+        r.date ? `Belegdatum: ${fmtDay(r.date)}` : null,
+        r.description ? `Beschreibung: ${r.description}` : null,
+        `PDF: ${link}`,
+      ]
+        .filter(Boolean)
+        .join("\n");
+      return {
+        ref: `manual-${r.id}`,
+        supplier,
+        amount: r.gross || 0,
+        // Erfassungszeitpunkt (nicht Belegdatum) – für „gilt ab Regel-Anlage".
+        eventDate: r.created ? r.created.slice(0, 10) : null,
+        note,
+        fill: (tpl: string) =>
+          tpl
+            .replace(/\{nr\}/g, nr)
+            .replace(/\{lieferant\}/g, supplier)
+            .replace(/\{betrag\}/g, euro.format(r.gross || 0))
+            .replace(/\{datum\}/g, r.date ?? ""),
+      };
+    });
+  }
+
   if (triggerKey === "angebot_alt_ohne_ab") {
     // Projekte in der Pipeline-Phase „Angebot offen" (offenes Angebot, noch kein AB).
     const pipe = await getProjectPipeline();
@@ -255,7 +291,11 @@ async function collectEvents(triggerKey: string): Promise<WfEvent[]> {
 function effectiveValidFrom(triggerKey: string, wf: Workflow): string | null {
   if (wf.config.validFrom) return wf.config.validFrom;
   // Beleg-/Rechnungs-Regeln ohne „gilt ab" gelten ab Anlage der Regel (kein Altbestand-Schwall).
-  if ((triggerKey === "new_beleg" || triggerKey === "endrechnung") && wf.createdAt) return wf.createdAt.slice(0, 10);
+  if (
+    (triggerKey === "new_beleg" || triggerKey === "new_manual_beleg" || triggerKey === "endrechnung") &&
+    wf.createdAt
+  )
+    return wf.createdAt.slice(0, 10);
   return null;
 }
 
