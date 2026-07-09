@@ -12,7 +12,11 @@ export type BelegSumKind =
   | "circle"
   | "etges"
   | "niederer"
-  | "raabkarcher";
+  | "raabkarcher"
+  | "fliesenzentrum"
+  | "etbkenn"
+  | "kiesel"
+  | "moselbaustoff";
 
 export interface BelegSumResult {
   ok: boolean;
@@ -63,6 +67,10 @@ export const KIND_LABEL: Record<BelegSumKind, string> = {
   etges: "Etges & Dächer",
   niederer: "Niederer",
   raabkarcher: "Raab Karcher",
+  fliesenzentrum: "Fliesen-Zentrum",
+  etbkenn: "ETB Kenn",
+  kiesel: "Kiesel",
+  moselbaustoff: "Mosel Baustoff",
 };
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -170,6 +178,30 @@ const SUM_CONFIG: Record<
     supplierSearch: "Raab Karcher",
     account: { number: "3000", name: "Wareneingang / Material" },
     prompt: materialInvoicePrompt("Raab Karcher", "Baustoffhandel"),
+  },
+  fliesenzentrum: {
+    label: "Gesamtbetrag brutto",
+    supplierSearch: "Fliesen-Zentrum",
+    account: { number: "3000", name: "Wareneingang / Material" },
+    prompt: materialInvoicePrompt("Fliesen-Zentrum Deutschland", "Fliesenhandel"),
+  },
+  etbkenn: {
+    label: "Gesamtbetrag brutto",
+    supplierSearch: "ETB Kenn",
+    account: { number: "3000", name: "Wareneingang / Material" },
+    prompt: materialInvoicePrompt("ETB Kenn", "Baustoffe"),
+  },
+  kiesel: {
+    label: "Gesamtbetrag brutto",
+    supplierSearch: "Kiesel",
+    account: { number: "3000", name: "Wareneingang / Material" },
+    prompt: materialInvoicePrompt("Kiesel", "Bauchemie / Verlegewerkstoffe"),
+  },
+  moselbaustoff: {
+    label: "Gesamtbetrag brutto",
+    supplierSearch: "Mosel Baustoff",
+    account: { number: "3000", name: "Wareneingang / Material" },
+    prompt: materialInvoicePrompt("Mosel Baustoff", "Baustoffhandel"),
   },
   circle: {
     label: "Total TTC",
@@ -311,6 +343,8 @@ export async function extractBeleg(input: {
                   "herosoftware (HERO Software GmbH), activite (Activité Lensterbierg – Miete/Nebenkosten), " +
                   "etges (Etges & Dächer – Dachdecker/Dachbaustoffe), " +
                   "niederer (Niederer – Materiallieferant), raabkarcher (Raab Karcher – Baustoffhandel), " +
+                  "fliesenzentrum (Fliesen-Zentrum Deutschland – Fliesenhandel), etbkenn (ETB Kenn – Baustoffe), " +
+                  "kiesel (Kiesel – Bauchemie/Verlegewerkstoffe), moselbaustoff (Mosel Baustoff – Baustoffhandel), " +
                   "lohn (Lohnabrechnung/Lohnjournal), oder unbekannt. Nur das eine Wort, keine Erklärung.",
               },
             ],
@@ -320,7 +354,7 @@ export async function extractBeleg(input: {
       const ctb = cls.content.find((b) => b.type === "text");
       const word = ctb && ctb.type === "text" ? ctb.text.trim().toLowerCase().replace(/[^a-z]/g, "") : "";
       const detected = (
-        ["circle", "mixvoip", "bgl", "palettecad", "herosoftware", "activite", "etges", "niederer", "raabkarcher", "lohn"] as BelegSumKind[]
+        ["circle", "mixvoip", "bgl", "palettecad", "herosoftware", "activite", "etges", "niederer", "raabkarcher", "fliesenzentrum", "etbkenn", "kiesel", "moselbaustoff", "lohn"] as BelegSumKind[]
       ).find((k) => word === k);
       if (!detected) {
         return {

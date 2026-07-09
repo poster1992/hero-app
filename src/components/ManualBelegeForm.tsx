@@ -34,7 +34,11 @@ type SumTyp =
   | "circle"
   | "etges"
   | "niederer"
-  | "raabkarcher";
+  | "raabkarcher"
+  | "fliesenzentrum"
+  | "etbkenn"
+  | "kiesel"
+  | "moselbaustoff";
 
 /** Bezeichnung des summierten Betrags je erkanntem Typ (für die Meldung). */
 const KIND_AMOUNT_LABEL: Record<string, string> = {
@@ -48,6 +52,10 @@ const KIND_AMOUNT_LABEL: Record<string, string> = {
   etges: "Gesamtbetrag brutto",
   niederer: "Gesamtbetrag brutto",
   raabkarcher: "Gesamtbetrag brutto",
+  fliesenzentrum: "Gesamtbetrag brutto",
+  etbkenn: "Gesamtbetrag brutto",
+  kiesel: "Gesamtbetrag brutto",
+  moselbaustoff: "Gesamtbetrag brutto",
 };
 
 /** Subset of a manual receipt needed to prefill the edit form. */
@@ -282,6 +290,10 @@ export function ManualBelegeFormFields({
                     <option value="etges">Typ: Etges &amp; Dächer</option>
                     <option value="niederer">Typ: Niederer</option>
                     <option value="raabkarcher">Typ: Raab Karcher</option>
+                    <option value="fliesenzentrum">Typ: Fliesen-Zentrum</option>
+                    <option value="etbkenn">Typ: ETB Kenn</option>
+                    <option value="kiesel">Typ: Kiesel</option>
+                    <option value="moselbaustoff">Typ: Mosel Baustoff</option>
                   </select>
                   {isSumType && (
                     <button
