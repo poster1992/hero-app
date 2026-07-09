@@ -29,6 +29,22 @@ function baseName(name: string): string {
   return name.replace(/\.[^.]+$/, "");
 }
 
+/** Liest Dateien robust aus einem Drop-Event (files, sonst items-Fallback). */
+function filesFromDataTransfer(dt: DataTransfer | null): File[] {
+  if (!dt) return [];
+  if (dt.files && dt.files.length > 0) return Array.from(dt.files);
+  const out: File[] = [];
+  if (dt.items) {
+    for (const item of Array.from(dt.items)) {
+      if (item.kind === "file") {
+        const f = item.getAsFile();
+        if (f) out.push(f);
+      }
+    }
+  }
+  return out;
+}
+
 interface Pending {
   key: string;
   file: File;
@@ -52,6 +68,17 @@ export default function VehicleDocuments({ vehicles }: { vehicles: Vehicle[] }) 
       setSelectedId(vehicles[0]?.id ?? null);
     }
   }, [vehicles, selectedId]);
+
+  // Verhindert, dass der Browser eine daneben abgelegte Datei öffnet (statt sie aufzunehmen).
+  useEffect(() => {
+    const prevent = (e: DragEvent) => e.preventDefault();
+    window.addEventListener("dragover", prevent);
+    window.addEventListener("drop", prevent);
+    return () => {
+      window.removeEventListener("dragover", prevent);
+      window.removeEventListener("drop", prevent);
+    };
+  }, []);
 
   const reloadDocs = (vehicleId: number) => {
     setLoadingDocs(true);
@@ -273,15 +300,29 @@ function VehiclePanel({
 
       {/* Upload-Zone */}
       <div
-        onDragOver={(e) => {
+        onDragEnter={(e) => {
           e.preventDefault();
           setDragOver(true);
         }}
-        onDragLeave={() => setDragOver(false)}
+        onDragOver={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          try {
+            e.dataTransfer.dropEffect = "copy";
+          } catch {
+            /* manche Browser erlauben das Setzen nicht */
+          }
+          setDragOver(true);
+        }}
+        onDragLeave={(e) => {
+          // Nur zurücksetzen, wenn die Maus die Zone wirklich verlässt (nicht bei Kindelementen).
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragOver(false);
+        }}
         onDrop={(e) => {
           e.preventDefault();
+          e.stopPropagation();
           setDragOver(false);
-          addFiles(e.dataTransfer.files);
+          addFiles(filesFromDataTransfer(e.dataTransfer));
         }}
         className={`rounded-xl border-2 border-dashed p-6 text-center transition-colors ${
           dragOver ? "border-brand-red bg-brand-red/5" : "border-gray-300 bg-white"
