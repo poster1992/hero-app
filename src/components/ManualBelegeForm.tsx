@@ -14,8 +14,28 @@ interface AccountOption {
   name: string;
 }
 
-/** Belegtyp für die automatische PDF-Auswertung (leer = Standard/aus). */
-type SumTyp = "" | "lohn" | "bgl" | "mixvoip" | "palettecad" | "activite" | "herosoftware" | "circle";
+/** Belegtyp für die automatische PDF-Auswertung ("" = aus, "auto" = automatisch erkennen). */
+type SumTyp =
+  | ""
+  | "auto"
+  | "lohn"
+  | "bgl"
+  | "mixvoip"
+  | "palettecad"
+  | "activite"
+  | "herosoftware"
+  | "circle";
+
+/** Bezeichnung des summierten Betrags je erkanntem Typ (für die Meldung). */
+const KIND_AMOUNT_LABEL: Record<string, string> = {
+  lohn: "Total Brutto",
+  bgl: "Total TTC",
+  mixvoip: "Grand Total",
+  palettecad: "Gesamtbetrag",
+  activite: "Endbetrag",
+  herosoftware: "Total",
+  circle: "Total TTC",
+};
 
 /** Subset of a manual receipt needed to prefill the edit form. */
 export interface EditableReceipt {
@@ -58,21 +78,9 @@ export default function ManualBelegeForm({
   const dateInputRef = useRef<HTMLInputElement>(null);
   const supplierInputRef = useRef<HTMLInputElement>(null);
   const descInputRef = useRef<HTMLInputElement>(null);
-  const [belegTyp, setBelegTyp] = useState<SumTyp>("");
+  const [belegTyp, setBelegTyp] = useState<SumTyp>("auto");
   const [sumBusy, startSum] = useTransition();
   const [sumMsg, setSumMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const sumLabel =
-    belegTyp === "bgl" || belegTyp === "circle"
-      ? "Total TTC"
-      : belegTyp === "mixvoip"
-        ? "Grand Total"
-        : belegTyp === "palettecad"
-          ? "Gesamtbetrag"
-          : belegTyp === "activite"
-            ? "Endbetrag"
-            : belegTyp === "herosoftware"
-              ? "Total"
-              : "Total Brutto";
   const isSumType = belegTyp !== "";
 
   // Konto vorauswählen (echtes HERO-Konto anhand Nummer, sonst Fallbackname).
@@ -105,7 +113,10 @@ export default function ManualBelegeForm({
         if (res.description && descInputRef.current) descInputRef.current.value = res.description;
         // Konto vorschlagen (BGL nur bei erkanntem Fahrzeug – von der Action entschieden).
         if (res.accountNumber) applyAccount(res.accountNumber, res.accountName);
-        const perInvoice = belegTyp !== "lohn" && belegTyp !== "bgl";
+        // Falls automatisch erkannt: Typ in der Auswahl übernehmen.
+        if (belegTyp === "auto" && res.kind) setBelegTyp(res.kind);
+        const k = res.kind ?? (belegTyp === "auto" ? undefined : belegTyp);
+        const perInvoice = k !== "lohn" && k !== "bgl";
         const unit = perInvoice
           ? res.count === 1
             ? "Rechnung"
@@ -113,13 +124,15 @@ export default function ManualBelegeForm({
           : res.count === 1
             ? "Seite"
             : "Seiten";
+        const amountLabel = (k && KIND_AMOUNT_LABEL[k]) || "Betrag";
         setSumMsg({
           ok: true,
           text:
-            `${res.count} ${unit} · Summe ${sumLabel} ${res.total.toLocaleString(
-              "de-DE",
-              { minimumFractionDigits: 2, maximumFractionDigits: 2 }
-            )} €` +
+            (res.kindLabel ? `Erkannt: ${res.kindLabel} · ` : "") +
+            `${res.count} ${unit} · Summe ${amountLabel} ${res.total.toLocaleString("de-DE", {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })} €` +
             (res.vatRate != null ? ` · MwSt ${res.vatRate} %` : "") +
             (res.date ? ` · Datum ${res.date.split("-").reverse().join(".")}` : "") +
             (res.accountNumber
@@ -235,7 +248,8 @@ export default function ManualBelegeForm({
                     title="Automatisch aus dem PDF ausfüllen (Summe, MwSt, Datum, Lieferant, Konto)"
                     className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 outline-none focus:border-brand-red/60"
                   >
-                    <option value="">Typ: Standard</option>
+                    <option value="auto">Typ: Automatisch erkennen</option>
+                    <option value="">Typ: Standard (kein Auto-Ausfüllen)</option>
                     <option value="lohn">Typ: Lohn</option>
                     <option value="bgl">Typ: BGL-Leasing</option>
                     <option value="mixvoip">Typ: Mixvoip</option>
@@ -249,10 +263,16 @@ export default function ManualBelegeForm({
                       type="button"
                       onClick={runSum}
                       disabled={sumBusy}
-                      title={`Liest je Seite „${sumLabel}" und trägt die Summe als Betrag ein`}
+                      title="Wertet das PDF automatisch aus (Betrag, MwSt, Datum, Lieferant, Beschreibung, Konto)"
                       className="rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900 disabled:opacity-50"
                     >
-                      {sumBusy ? "Rechne …" : `🧮 ${sumLabel}-Summe aus PDF`}
+                      {sumBusy
+                        ? belegTyp === "auto"
+                          ? "Erkenne …"
+                          : "Rechne …"
+                        : belegTyp === "auto"
+                          ? "🔎 Beleg automatisch auswerten"
+                          : "🧮 Summe aus PDF"}
                     </button>
                   )}
                   {sumMsg && (

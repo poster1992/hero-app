@@ -178,8 +178,23 @@ export interface BelegSumResult {
   accountNumber?: string;
   /** Fallback-Kontoname, falls die Nummer nicht in der HERO-Kontenliste ist. */
   accountName?: string;
+  /** Tatsächlich verwendeter Belegtyp (v. a. bei automatischer Erkennung). */
+  kind?: BelegSumKind;
+  /** Anzeigename des Belegtyps. */
+  kindLabel?: string;
   error?: string;
 }
+
+/** Anzeigename je Belegtyp. */
+const KIND_LABEL: Record<BelegSumKind, string> = {
+  lohn: "Lohn",
+  bgl: "BGL-Leasing",
+  mixvoip: "Mixvoip",
+  palettecad: "Palette CAD",
+  activite: "Activité",
+  herosoftware: "Hero-Software",
+  circle: "Circle",
+};
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -340,10 +355,12 @@ export async function computeBelegSumAction(formData: FormData): Promise<BelegSu
     "herosoftware",
     "circle",
   ];
-  const kind: BelegSumKind = allowedKinds.includes(kindRaw as BelegSumKind)
-    ? (kindRaw as BelegSumKind)
-    : "lohn";
-  const cfg = SUM_CONFIG[kind];
+  const requested: BelegSumKind | "auto" =
+    kindRaw === "auto"
+      ? "auto"
+      : allowedKinds.includes(kindRaw as BelegSumKind)
+        ? (kindRaw as BelegSumKind)
+        : "lohn";
 
   const upload = formData.get("file");
   if (!upload || typeof upload !== "object" || !("arrayBuffer" in upload) || (upload as File).size === 0) {
@@ -361,6 +378,48 @@ export async function computeBelegSumAction(formData: FormData): Promise<BelegSu
 
   try {
     const client = new Anthropic({ maxRetries: 2, timeout: 120_000 });
+
+    // Belegtyp bestimmen: automatisch erkennen oder vorgegeben.
+    let kind: BelegSumKind;
+    if (requested === "auto") {
+      const cls = await client.messages.create({
+        model: "claude-haiku-4-5",
+        max_tokens: 20,
+        messages: [
+          {
+            role: "user",
+            content: [
+              block,
+              {
+                type: "text",
+                text:
+                  "Klassifiziere diesen Beleg anhand des Rechnungsstellers/Inhalts. Antworte NUR mit genau " +
+                  "EINEM dieser Wörter: circle (Circle K Tankrechnung), mixvoip (Mixvoip-Telefonrechnung), " +
+                  "bgl (BNP Paribas Lease/BGL-Leasingrechnung), palettecad (Palette-CAD-Rechnung), " +
+                  "herosoftware (HERO Software GmbH), activite (Activité Lensterbierg – Miete/Nebenkosten), " +
+                  "lohn (Lohnabrechnung/Lohnjournal), oder unbekannt. Nur das eine Wort, keine Erklärung.",
+              },
+            ],
+          },
+        ],
+      });
+      const ctb = cls.content.find((b) => b.type === "text");
+      const word = ctb && ctb.type === "text" ? ctb.text.trim().toLowerCase().replace(/[^a-z]/g, "") : "";
+      const detected = (
+        ["circle", "mixvoip", "bgl", "palettecad", "herosoftware", "activite", "lohn"] as BelegSumKind[]
+      ).find((k) => word === k);
+      if (!detected) {
+        return {
+          ok: false,
+          error: "Belegtyp konnte nicht automatisch erkannt werden – bitte Typ manuell wählen.",
+        };
+      }
+      kind = detected;
+    } else {
+      kind = requested;
+    }
+    const cfg = SUM_CONFIG[kind];
+
     const res = await client.messages.create({
       model: "claude-haiku-4-5",
       max_tokens: 6000,
@@ -457,6 +516,8 @@ export async function computeBelegSumAction(formData: FormData): Promise<BelegSu
       isVehicle,
       accountNumber,
       accountName,
+      kind,
+      kindLabel: KIND_LABEL[kind],
     };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "OCR fehlgeschlagen." };
