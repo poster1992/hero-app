@@ -7,6 +7,7 @@ import { getAllowedModules } from "@/lib/role-store";
 import {
   createVehicle,
   updateVehicle,
+  updateVehicleNote,
   deleteVehicle,
   addVehicleDocument,
   updateVehicleDocumentLabel,
@@ -70,6 +71,22 @@ export async function updateVehicleAction(
   }
   revalidatePath(PATH);
   return { success: "Fahrzeug gespeichert." };
+}
+
+/** Speichert die Notiz eines Fahrzeugs (Direkt-Speichern aus dem Panel). */
+export async function updateVehicleNoteAction(
+  vehicleId: number,
+  note: string
+): Promise<UploadDocResult> {
+  if (!(await requireAccess())) return { ok: false, error: "Kein Zugriff." };
+  if (!Number.isFinite(vehicleId) || vehicleId <= 0) return { ok: false, error: "Ungültiges Fahrzeug." };
+  try {
+    await updateVehicleNote(vehicleId, note);
+  } catch {
+    return { ok: false, error: "Notiz konnte nicht gespeichert werden." };
+  }
+  revalidatePath(PATH);
+  return { ok: true };
 }
 
 export async function deleteVehicleAction(formData: FormData): Promise<void> {

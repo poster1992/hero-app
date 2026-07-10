@@ -72,7 +72,7 @@ export async function createVehicle(input: {
   if (!name) return null;
   const [res] = await getPool().query(
     "INSERT INTO vehicles (name, plate, note) VALUES (?, ?, ?)",
-    [name.slice(0, 191), input.plate?.trim().slice(0, 64) || null, input.note?.trim().slice(0, 255) || null]
+    [name.slice(0, 191), input.plate?.trim().slice(0, 64) || null, input.note?.trim().slice(0, 5000) || null]
   );
   return (res as { insertId: number }).insertId;
 }
@@ -90,10 +90,18 @@ export async function updateVehicle(input: {
     [
       name.slice(0, 191),
       input.plate?.trim().slice(0, 64) || null,
-      input.note?.trim().slice(0, 255) || null,
+      input.note?.trim().slice(0, 5000) || null,
       input.id,
     ]
   );
+}
+
+/** Speichert nur die Notiz eines Fahrzeugs. */
+export async function updateVehicleNote(id: number, note: string | null): Promise<void> {
+  await getPool().query("UPDATE vehicles SET note = ? WHERE id = ?", [
+    note?.trim().slice(0, 5000) || null,
+    id,
+  ]);
 }
 
 /** Löscht ein Fahrzeug samt aller Dokumente (inkl. Dateien auf der Platte). */

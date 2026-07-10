@@ -5,6 +5,7 @@ import {
   createVehicleAction,
   updateVehicleAction,
   deleteVehicleAction,
+  updateVehicleNoteAction,
   uploadVehicleDocAction,
   renameVehicleDocAction,
   deleteVehicleDocAction,
@@ -216,6 +217,16 @@ function VehiclePanel({
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [editState, editAction] = useActionState<VehicleActionState, FormData>(updateVehicleAction, {});
   const [showEdit, setShowEdit] = useState(false);
+  // Notizfeld (mehrzeilig) – direkt speichern.
+  const [note, setNote] = useState(vehicle.note ?? "");
+  const [savingNote, startSaveNote] = useTransition();
+  const [noteMsg, setNoteMsg] = useState<string | null>(null);
+  const saveNote = () => {
+    startSaveNote(async () => {
+      const res = await updateVehicleNoteAction(vehicle.id, note);
+      setNoteMsg(res.ok ? "Gespeichert ✓" : res.error ?? "Fehler beim Speichern");
+    });
+  };
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropRef = useRef<HTMLDivElement>(null);
 
@@ -295,10 +306,7 @@ function VehiclePanel({
       <div className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-gray-300 bg-white p-4 shadow-lg shadow-black/10">
         <div>
           <h2 className="text-lg font-semibold text-gray-900">{vehicle.name}</h2>
-          <p className="text-sm text-gray-600">
-            {vehicle.plate ?? "— kein Kennzeichen —"}
-            {vehicle.note ? ` · ${vehicle.note}` : ""}
-          </p>
+          <p className="text-sm text-gray-600">{vehicle.plate ?? "— kein Kennzeichen —"}</p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -323,13 +331,46 @@ function VehiclePanel({
         </div>
       </div>
 
+      {/* Notizfeld je Fahrzeug (mehrzeilig, direkt speichern) */}
+      <div className="rounded-xl border border-gray-300 bg-white p-4 shadow-lg shadow-black/10">
+        <div className="mb-2 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-gray-900">Notiz</h3>
+          {noteMsg && (
+            <span className={`text-xs ${noteMsg.startsWith("Gespeichert") ? "text-emerald-700" : "text-rose-600"}`}>
+              {noteMsg}
+            </span>
+          )}
+        </div>
+        <textarea
+          value={note}
+          onChange={(e) => {
+            setNote(e.target.value);
+            setNoteMsg(null);
+          }}
+          rows={4}
+          placeholder="Notizen zum Fahrzeug (z. B. TÜV/HU-Termin, Wartung, Schäden, Reifenwechsel) …"
+          className="w-full resize-y rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-brand-red/60"
+        />
+        <div className="mt-2 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={saveNote}
+            disabled={savingNote || note === (vehicle.note ?? "")}
+            className="rounded-md bg-brand-red px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
+          >
+            {savingNote ? "Speichert …" : "Notiz speichern"}
+          </button>
+        </div>
+      </div>
+
       {showEdit && (
-        <form action={editAction} className="grid grid-cols-1 gap-2 rounded-xl border border-gray-300 bg-white p-4 shadow-lg shadow-black/10 sm:grid-cols-3">
+        <form action={editAction} className="grid grid-cols-1 gap-2 rounded-xl border border-gray-300 bg-white p-4 shadow-lg shadow-black/10 sm:grid-cols-2">
           <input type="hidden" name="id" value={vehicle.id} />
+          {/* Notiz wird separat im Notizfeld gepflegt; hier den bestehenden Wert erhalten. */}
+          <input type="hidden" name="note" value={vehicle.note ?? ""} />
           <input name="name" defaultValue={vehicle.name} placeholder="Bezeichnung *" className={inputClass} required />
           <input name="plate" defaultValue={vehicle.plate ?? ""} placeholder="Kennzeichen" className={inputClass} />
-          <input name="note" defaultValue={vehicle.note ?? ""} placeholder="Notiz" className={inputClass} />
-          <div className="sm:col-span-3 flex items-center gap-2">
+          <div className="sm:col-span-2 flex items-center gap-2">
             <button type="submit" className="rounded-md bg-brand-red px-3 py-2 text-sm font-semibold text-white hover:opacity-90">
               Speichern
             </button>
