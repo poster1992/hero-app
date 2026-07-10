@@ -175,6 +175,24 @@ function RuleFields({
         </select>
       </div>
 
+      {/* Verkettung: Rechnungsbuchung (Posteingang) → Rechnungsprüfung */}
+      {trigger === "new_manual_beleg" && (
+        <label className="sm:col-span-2 flex items-start gap-2 rounded-md border border-amber-400/40 bg-amber-50 px-3 py-2 text-xs text-gray-700">
+          <input
+            type="checkbox"
+            name="chainReview"
+            defaultChecked={cfg?.chainReview === true}
+            className="mt-0.5 accent-brand-red"
+          />
+          <span>
+            <strong>Nach Erledigung Rechnungsprüfung starten:</strong> Wird die erzeugte Aufgabe auf
+            „erledigt" gesetzt, wird für denselben Beleg automatisch die Rechnungsprüfung angelegt
+            (Prüfer aus der aktiven Rechnungsprüfungs-Regel) – inkl. PDF-Vorschau und „Geprüft &amp;
+            abschließen".
+          </span>
+        </label>
+      )}
+
       {isReview ? (
         <div className="sm:col-span-2 rounded-md border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-xs text-gray-300">
           Aktion „Rechnungsprüfung": Der Beleg wird auf <strong>„in Prüfung"</strong> gesetzt und der Prüfer

@@ -9,6 +9,7 @@ import { getGoogleReviewUrl } from "@/lib/settings";
 import { buildReviewEmailHtml } from "@/lib/review-mail";
 import { wasReviewEmailSent, markReviewEmailSent } from "@/lib/review-emails";
 import { addLogbookEntry } from "@/app/dashboard/logbook-actions";
+import { startReviewChainForManualTask } from "@/lib/workflow-engine";
 import {
   createTaskNotification,
   acknowledgeNotification,
@@ -233,6 +234,15 @@ export async function setStatusAction(formData: FormData): Promise<void> {
 
   await setTaskStatus(id, status, meId, note ? note.slice(0, 2000) : null);
 
+  // Verkettung: Rechnungsbuchung erledigt → Rechnungsprüfung für denselben Beleg.
+  if (status === "erledigt") {
+    try {
+      await startReviewChainForManualTask({ id, description: task.description });
+    } catch {
+      /* Verkettung optional – Fehler blockiert das Erledigen nicht. */
+    }
+  }
+
   // Rückmeldung an den Ersteller (sofern nicht er selbst geändert hat).
   await notifyCreator(task, meId, {
     subject: "Aufgabe aktualisiert",
@@ -363,6 +373,11 @@ export async function taskButtonAction(formData: FormData): Promise<void> {
   if (!may) return;
 
   await setTaskStatus(id, "erledigt", me.id, `Antwort: ${label}`);
+  try {
+    await startReviewChainForManualTask({ id, description: task.description });
+  } catch {
+    /* Verkettung optional */
+  }
   await notifyCreator(task, me.id, {
     subject: "Aufgabe beantwortet",
     eventLine: `Antwort: „${label}" – Aufgabe erledigt.`,

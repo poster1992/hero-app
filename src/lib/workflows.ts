@@ -38,6 +38,12 @@ export interface WorkflowConfig {
   excludedAssigneeId: number | null;
   /** Nur new_beleg: manuelle Belege (ohne Dokument) ausschließen. */
   excludeManual: boolean;
+  /**
+   * Nur new_manual_beleg (Aufgabe): Wenn die erzeugte Aufgabe auf „erledigt"
+   * gesetzt wird, für denselben Beleg automatisch die Rechnungsprüfung starten
+   * (Verkettung Rechnungsbuchung → Rechnungsprüfung).
+   */
+  chainReview: boolean;
 }
 
 export interface Workflow {
@@ -94,6 +100,7 @@ function parseConfig(value: unknown): WorkflowConfig {
         ? Number(o.excludedAssigneeId)
         : null,
     excludeManual: o.excludeManual === true,
+    chainReview: o.chainReview === true,
   };
 }
 

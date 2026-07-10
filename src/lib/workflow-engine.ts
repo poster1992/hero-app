@@ -12,7 +12,7 @@ import {
   type CustomerInvoice,
 } from "./hero-api";
 import { getCustomerName, getDocumentUrl, getReceiptProjects } from "./invoices";
-import { listInboxReceipts } from "./manual-receipts";
+import { listInboxReceipts, getManualReceipt } from "./manual-receipts";
 import { createTask, createReviewTask } from "./tasks";
 import { assignReviewer, getReceiptReview } from "./receipt-reviews";
 import { sendPushToUsers } from "./push";
@@ -315,6 +315,81 @@ function effectiveAssignee(c: WorkflowConfig, supplier: string): number {
     c.excludedSuppliers.length > 0 &&
     c.excludedSuppliers.some((s) => supplier.toLowerCase().includes(s.toLowerCase()));
   return excluded && c.excludedAssigneeId ? c.excludedAssigneeId : c.assigneeId;
+}
+
+/**
+ * Verkettung Rechnungsbuchung → Rechnungsprüfung: Wird eine vom „Rechnungsbuchung"-
+ * Workflow (Auslöser new_manual_beleg, chainReview aktiv) erzeugte Aufgabe auf
+ * „erledigt" gesetzt, wird für denselben manuellen Beleg automatisch eine
+ * Prüf-Aufgabe angelegt (Prüfer aus der aktiven Rechnungsprüfungs-Regel), inkl.
+ * PDF-Vorschau/Bearbeiten (Marker [BELEGPRUEF:id]). Idempotent je Beleg.
+ */
+export async function startReviewChainForManualTask(task: {
+  id: number;
+  description: string | null;
+}): Promise<void> {
+  const m = task.description?.match(/\[BELEGPRUEF:(\d+)\]/);
+  if (!m) return;
+  const belegId = Number(m[1]);
+  if (!Number.isFinite(belegId) || belegId <= 0) return;
+
+  // Ist die Verkettung überhaupt aktiv (Rechnungsbuchung-Regel mit chainReview)?
+  const sourceWfs = await listActiveWorkflows("new_manual_beleg");
+  if (!sourceWfs.some((w) => w.config.chainReview)) return;
+
+  // Ziel: die aktive Rechnungsprüfungs-Regel (Auslöser new_beleg, Aktion review).
+  const reviewWfs = (await listActiveWorkflows("new_beleg")).filter(
+    (w) => w.config.actionType === "review"
+  );
+  const reviewWf = reviewWfs[0] ?? null;
+  if (!reviewWf) return; // Keine Rechnungsprüfungs-Regel → nichts zu starten.
+
+  const beleg = await getManualReceipt(belegId).catch(() => null);
+  const supplier = beleg?.supplier ?? "";
+  const assignee = effectiveAssignee(reviewWf.config, supplier);
+  if (!assignee) return;
+
+  // Idempotenz: je Beleg nur einmal starten (an der Rechnungsprüfungs-Regel gemerkt).
+  const ref = `chain-manual-${belegId}`;
+  const seen = await getRuleSeen(reviewWf.id);
+  if (seen.has(ref)) return;
+  await markRuleSeen(reviewWf.id, [ref]);
+
+  const nr = beleg?.invoiceNumber ? beleg.invoiceNumber : `#${belegId}`;
+  const betrag = euro.format(beleg?.gross ?? 0);
+  const datum = beleg?.date ?? "";
+  const title = (
+    reviewWf.config.title
+      .replace(/\{nr\}/g, nr)
+      .replace(/\{lieferant\}/g, supplier)
+      .replace(/\{betrag\}/g, betrag)
+      .replace(/\{datum\}/g, datum)
+      .trim() || `Rechnung prüfen: ${nr}`
+  ).slice(0, 255);
+
+  const noteLines = [
+    `Beleg ${nr}`,
+    supplier ? `Lieferant: ${supplier}` : null,
+    `Betrag: ${betrag}`,
+    datum ? `Belegdatum: ${fmtDay(datum)}` : null,
+    reviewWf.config.description?.trim() || null,
+    `[BELEGPRUEF:${belegId}]`,
+  ].filter(Boolean) as string[];
+
+  const dueDate = new Date(Date.now() + (reviewWf.config.dueOffsetDays || 0) * 24 * 3600 * 1000)
+    .toISOString()
+    .slice(0, 10);
+
+  await createTask({
+    title,
+    description: noteLines.join("\n"),
+    createdBy: reviewWf.createdBy ?? assignee,
+    assignedTo: [assignee],
+    dueDate,
+    actionButtons: reviewWf.config.buttons,
+  });
+  await notifyAssignee(assignee, title);
+  await addWorkflowLog(reviewWf.id, ref, `Rechnungsprüfung (verkettet) gestartet: ${title} → Prüfer #${assignee}`);
 }
 
 /**

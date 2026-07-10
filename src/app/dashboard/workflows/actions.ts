@@ -80,6 +80,7 @@ function readConfig(formData: FormData): WorkflowConfig {
     excludedSuppliers: Array.from(new Set(formData.getAll("excludedSuppliers").map((s) => String(s).trim()).filter(Boolean))).slice(0, 100),
     excludedAssigneeId: Number(formData.get("excludedAssigneeId")) > 0 ? Number(formData.get("excludedAssigneeId")) : null,
     excludeManual: formData.get("excludeManual") === "on" || formData.get("excludeManual") === "1",
+    chainReview: formData.get("chainReview") === "on" || formData.get("chainReview") === "1",
   };
 }
 
