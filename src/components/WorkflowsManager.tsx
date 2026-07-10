@@ -26,6 +26,7 @@ const TRIGGER_OPTIONS = [
   { key: "angebot_alt_ohne_ab", label: "Angebot zu alt ohne AB (Pipeline 'Angebot offen')" },
   { key: "stunden_ohne_abschlag", label: "Stunden gebucht, aber keine Abschlagsrechnung" },
   { key: "endrechnung", label: "Endrechnung erstellt (Schluss-/Vollrechnung, keine Teil-/Abschlagsrechnung)" },
+  { key: "lager_min_erreicht", label: "Lager-Minimum erreicht (Bestand ≤ Minimum)" },
 ] as const;
 
 function triggerLabel(key: string): string {
@@ -35,12 +36,14 @@ function placeholdersFor(key: string): string {
   if (key === "angebot_alt_ohne_ab") return "{projekt} {nr} {kunde} {betrag} {tage} {angebotsdatum}";
   if (key === "stunden_ohne_abschlag") return "{projekt} {nr} {kunde} {stunden} {mitarbeiter} {zeitraum}";
   if (key === "endrechnung") return "{kunde} {nr} {projekt} {betrag} {datum}";
+  if (key === "lager_min_erreicht") return "{artikel} {nr} {bestand} {min} {einheit}";
   return "{nr} {lieferant} {betrag} {datum}";
 }
 function defaultTitleFor(key: string): string {
   if (key === "angebot_alt_ohne_ab") return "Angebot nachfassen: {projekt} ({tage} Tage alt)";
   if (key === "stunden_ohne_abschlag") return "Abschlagsrechnung erstellen: {projekt} {nr} ({stunden} h)";
   if (key === "endrechnung") return "Kunde anrufen – Zufriedenheit erfragen: {kunde} ({projekt})";
+  if (key === "lager_min_erreicht") return "Lager nachbestellen: {artikel} (Bestand {bestand}, Min {min})";
   return "Beleg prüfen: {nr} – {lieferant}";
 }
 

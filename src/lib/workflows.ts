@@ -8,6 +8,7 @@ export const WORKFLOW_TRIGGERS = [
   { key: "angebot_alt_ohne_ab", label: "Angebot zu alt ohne AB (Pipeline 'Angebot offen')" },
   { key: "stunden_ohne_abschlag", label: "Stunden gebucht, aber keine Abschlagsrechnung" },
   { key: "endrechnung", label: "Endrechnung erstellt (Schluss-/Vollrechnung, keine Teil-/Abschlagsrechnung)" },
+  { key: "lager_min_erreicht", label: "Lager-Minimum erreicht (Bestand ≤ Minimum)" },
 ] as const;
 
 export const WORKFLOW_TRIGGER_KEYS = WORKFLOW_TRIGGERS.map((t) => t.key);
@@ -202,6 +203,15 @@ export async function markRuleSeen(workflowId: number, refs: string[]): Promise<
   if (refs.length === 0) return;
   await getPool().query("INSERT IGNORE INTO workflow_rule_seen (workflow_id, ref) VALUES ?", [
     refs.map((ref) => [workflowId, ref]),
+  ]);
+}
+
+/** Entfernt Merker wieder (z. B. Lager wieder über Minimum → erneut melden können). */
+export async function unmarkRuleSeen(workflowId: number, refs: string[]): Promise<void> {
+  if (refs.length === 0) return;
+  await getPool().query("DELETE FROM workflow_rule_seen WHERE workflow_id = ? AND ref IN (?)", [
+    workflowId,
+    refs,
   ]);
 }
 

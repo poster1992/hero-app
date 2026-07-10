@@ -14,6 +14,7 @@ import {
 import { getCustomerName, getDocumentUrl, getReceiptProjects } from "./invoices";
 import { listInboxReceipts, getManualReceipt, getManualDuplicateKeys } from "./manual-receipts";
 import { receiptDupKey } from "./receipt-duplicates";
+import { getLagerMinStatus } from "./materials";
 import { createTask, createReviewTask } from "./tasks";
 import { assignReviewer, getReceiptReview } from "./receipt-reviews";
 import { sendPushToUsers } from "./push";
@@ -26,6 +27,7 @@ import {
   touchWorkflowLastRun,
   getRuleSeen,
   markRuleSeen,
+  unmarkRuleSeen,
   addWorkflowLog,
   addWorkflowRun,
   WORKFLOW_TRIGGER_KEYS,
@@ -197,6 +199,38 @@ async function collectEvents(triggerKey: string): Promise<WfEvent[]> {
             .replace(/\{lieferant\}/g, supplier)
             .replace(/\{betrag\}/g, euro.format(r.gross || 0))
             .replace(/\{datum\}/g, r.date ?? ""),
+      };
+    });
+  }
+
+  if (triggerKey === "lager_min_erreicht") {
+    // Artikel, deren lokaler Bestand das gesetzte Minimum erreicht/unterschritten hat.
+    const { below } = await getLagerMinStatus();
+    const today = new Date().toISOString().slice(0, 10);
+    return below.map((a) => {
+      const bestand = `${a.quantity} ${a.unit}`.trim();
+      const minTxt = `${a.min} ${a.unit}`.trim();
+      const note = [
+        `Artikel: ${a.name}`,
+        a.sku ? `Artikel-Nr.: ${a.sku}` : null,
+        `Bestand: ${bestand}`,
+        `Minimum: ${minTxt}`,
+      ]
+        .filter(Boolean)
+        .join("\n");
+      return {
+        ref: `lagermin-${a.heroArticleId}`,
+        supplier: a.name, // erlaubt optional den „Lieferant/Name enthält"-Filter
+        amount: a.quantity,
+        eventDate: today,
+        note,
+        fill: (tpl: string) =>
+          tpl
+            .replace(/\{artikel\}/g, a.name)
+            .replace(/\{nr\}/g, a.sku ?? "")
+            .replace(/\{bestand\}/g, bestand)
+            .replace(/\{min\}/g, String(a.min))
+            .replace(/\{einheit\}/g, a.unit),
       };
     });
   }
@@ -490,6 +524,20 @@ async function runTrigger(triggerKey: string, force = false): Promise<{ created:
   if (workflows.length === 0) return { created: 0, checked: 0 };
 
   await touchWorkflowLastRun(triggerKey); // sofort sperren
+
+  // Lager-Minimum: Artikel, die wieder ÜBER dem Minimum sind, aus den Merkern
+  // entfernen – so löst ein erneutes Unterschreiten wieder eine Aufgabe aus.
+  if (triggerKey === "lager_min_erreicht") {
+    try {
+      const { okIds } = await getLagerMinStatus();
+      if (okIds.length > 0) {
+        const refs = okIds.map((id) => `lagermin-${id}`);
+        for (const wf of workflows) await unmarkRuleSeen(wf.id, refs);
+      }
+    } catch {
+      /* optional */
+    }
+  }
 
   let events: WfEvent[];
   try {

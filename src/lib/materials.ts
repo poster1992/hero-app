@@ -118,6 +118,40 @@ export async function getLocalMinMax(): Promise<Map<number, { min: number | null
   return map;
 }
 
+/**
+ * Lager-Minimum-Status: Artikel mit gesetztem Minimum, aufgeteilt in solche unter/
+ * gleich dem Minimum (below) und solche darüber (okIds – für den Erholungs-Reset).
+ */
+export async function getLagerMinStatus(): Promise<{
+  below: { heroArticleId: number; name: string; sku: string | null; unit: string; quantity: number; min: number }[];
+  okIds: number[];
+}> {
+  const [rows] = await getPool().query<RowDataPacket[]>(
+    `SELECT hero_article_id, name, sku, unit, quantity, min_stock
+     FROM materials
+     WHERE hero_article_id IS NOT NULL AND min_stock IS NOT NULL`
+  );
+  const below: { heroArticleId: number; name: string; sku: string | null; unit: string; quantity: number; min: number }[] = [];
+  const okIds: number[] = [];
+  for (const r of rows as {
+    hero_article_id: number;
+    name: string;
+    sku: string | null;
+    unit: string;
+    quantity: string | number;
+    min_stock: string | number;
+  }[]) {
+    const quantity = num(r.quantity);
+    const min = num(r.min_stock);
+    if (quantity <= min) {
+      below.push({ heroArticleId: r.hero_article_id, name: r.name, sku: r.sku, unit: r.unit, quantity, min });
+    } else {
+      okIds.push(r.hero_article_id);
+    }
+  }
+  return { below, okIds };
+}
+
 /** Setzt Lager-Minimum/-Maximum eines Artikels (upsert – Stammdaten aus HERO). */
 export async function setMaterialMinMaxByArticle(
   article: { heroArticleId: number; name: string; unit: string },
