@@ -11,6 +11,7 @@ import {
   loadPersonTasksAction,
   loadCompletedTasksAction,
   sendReviewEmailAction,
+  deleteBelegAndTaskAction,
   type CreateTaskState,
 } from "@/app/dashboard/aufgaben/actions";
 import BelegDetailModal from "@/components/BelegDetailModal";
@@ -51,7 +52,8 @@ function belegPruefId(description: string | null): string | null {
 
 /** Removes internal markers (e.g. [RECHNPRUEF:..], [EKREQ:..], [BEWERTUNG:..]) from display text. */
 function cleanDescription(description: string | null): string {
-  return (description ?? "").replace(/\s*\[[A-Z]+:[^\]]*\]/g, "").trim();
+  // Entfernt interne Marker: [WORT:wert] und markerlose wie [DUPLIKAT].
+  return (description ?? "").replace(/\s*\[[A-Z]+(?::[^\]]*)?\]/g, "").trim();
 }
 
 /** Extracts the customer email + name from a satisfaction-call task's [BEWERTUNG:email|name|projectKey] marker. */
@@ -218,7 +220,20 @@ function TaskCard({
   const overdue = isOverdue(task.dueDate, effectiveStatus);
   const heroId = reviewHeroId(task.description);
   const belegId = belegPruefId(task.description);
+  const isDuplicate = /\[DUPLIKAT\]/.test(task.description ?? "");
   const desc = cleanDescription(task.description);
+  const [deletingBeleg, setDeletingBeleg] = useState(false);
+  const deleteBelegTask = async () => {
+    if (!window.confirm("Diesen Beleg (inkl. Dokument) und die Aufgabe endgültig löschen?")) return;
+    setDeletingBeleg(true);
+    try {
+      await deleteBelegAndTaskAction(task.id);
+      closeBeleg();
+      router.refresh();
+    } finally {
+      setDeletingBeleg(false);
+    }
+  };
 
   // Beleg-Werte (samt Konten/Projekten) laden, sobald das Beleg-Fenster geöffnet wird.
   useEffect(() => {
@@ -316,6 +331,24 @@ function TaskCard({
         <StatusBadge status={effectiveStatus} />
       </div>
       {desc && <p className="mt-1 whitespace-pre-wrap text-sm text-gray-600">{desc}</p>}
+
+      {isDuplicate && (
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-800">
+          <span className="font-semibold">
+            ⚠ Achtung: Hier handelt es sich um ein Duplikat (gleicher Lieferant, Betrag &amp; Datum).
+          </span>
+          {belegId && effectiveStatus !== "erledigt" && (
+            <button
+              type="button"
+              disabled={deletingBeleg}
+              onClick={deleteBelegTask}
+              className="rounded-md bg-rose-600 px-2.5 py-1 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+            >
+              {deletingBeleg ? "Löscht …" : "🗑 Beleg & Aufgabe löschen"}
+            </button>
+          )}
+        </div>
+      )}
       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
         <span className="inline-flex items-center gap-1">
           <span aria-hidden>👤</span>
@@ -518,21 +551,32 @@ function TaskCard({
           hasFile={belegEdit.receipt.fileName != null}
           onClose={closeBeleg}
           extraFooter={
-            effectiveStatus === "erledigt" ? (
-              <span className="text-xs font-medium text-emerald-600">✓ Bereits erledigt</span>
-            ) : (
+            <>
               <button
                 type="button"
-                disabled={changing}
-                onClick={async () => {
-                  await changeStatus("erledigt");
-                  closeBeleg();
-                }}
-                className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                disabled={deletingBeleg}
+                onClick={deleteBelegTask}
+                title="Beleg (Dokument) und diese Aufgabe löschen"
+                className="rounded-md border border-rose-300 px-3 py-1.5 text-xs font-semibold text-rose-700 transition-colors hover:bg-rose-50 disabled:opacity-50"
               >
-                {changing ? "…" : "✓ Geprüft & abschließen"}
+                {deletingBeleg ? "Löscht …" : "🗑 Beleg & Aufgabe löschen"}
               </button>
-            )
+              {effectiveStatus === "erledigt" ? (
+                <span className="text-xs font-medium text-emerald-600">✓ Bereits erledigt</span>
+              ) : (
+                <button
+                  type="button"
+                  disabled={changing}
+                  onClick={async () => {
+                    await changeStatus("erledigt");
+                    closeBeleg();
+                  }}
+                  className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                >
+                  {changing ? "…" : "✓ Geprüft & abschließen"}
+                </button>
+              )}
+            </>
           }
         />
       )}

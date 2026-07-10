@@ -10,6 +10,7 @@ import { buildReviewEmailHtml } from "@/lib/review-mail";
 import { wasReviewEmailSent, markReviewEmailSent } from "@/lib/review-emails";
 import { addLogbookEntry } from "@/app/dashboard/logbook-actions";
 import { startReviewChainForManualTask } from "@/lib/workflow-engine";
+import { deleteManualReceipt } from "@/lib/manual-receipts";
 import {
   createTaskNotification,
   acknowledgeNotification,
@@ -21,6 +22,7 @@ import {
   forwardTask,
   addTaskNote,
   getTaskById,
+  deleteTask,
   listTasksForPerson,
   listTasksCompletedOn,
   taskStatusLabel,
@@ -384,6 +386,41 @@ export async function taskButtonAction(formData: FormData): Promise<void> {
     fromName: me.displayName || me.username,
   });
   revalidatePath(PATH);
+}
+
+/**
+ * Löscht den zur Aufgabe gehörenden manuellen Beleg (inkl. Datei) UND die Aufgabe
+ * selbst – z. B. bei einem erkannten Duplikat. Die Beleg-ID wird sicher aus dem
+ * Aufgaben-Marker [BELEGPRUEF:id] gelesen.
+ */
+export async function deleteBelegAndTaskAction(taskId: number): Promise<{ ok: boolean; error?: string }> {
+  const me = await currentUser();
+  if (!me) return { ok: false, error: "Nicht angemeldet." };
+  if (!Number.isFinite(taskId) || taskId <= 0) return { ok: false, error: "Ungültige Aufgabe." };
+
+  const task = await getTaskById(taskId);
+  if (!task) return { ok: false, error: "Aufgabe nicht gefunden." };
+  const may = task.createdById === me.id || task.assignees.some((a) => a.id === me.id);
+  if (!may) return { ok: false, error: "Kein Zugriff." };
+
+  const m = task.description?.match(/\[BELEGPRUEF:(\d+)\]/);
+  if (m) {
+    const belegId = Number(m[1]);
+    if (Number.isFinite(belegId) && belegId > 0) {
+      try {
+        await deleteManualReceipt(belegId);
+      } catch {
+        /* Beleg evtl. schon weg – Aufgabe trotzdem löschen. */
+      }
+    }
+  }
+  try {
+    await deleteTask(taskId);
+  } catch {
+    return { ok: false, error: "Aufgabe konnte nicht gelöscht werden." };
+  }
+  revalidatePath(PATH);
+  return { ok: true };
 }
 
 export interface SendReviewResult {

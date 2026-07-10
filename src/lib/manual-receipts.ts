@@ -193,6 +193,27 @@ export interface InboxReceipt {
   gross: number;
 }
 
+/**
+ * Dubletten-Schlüssel (Lieferant+Betrag+Datum), die unter den manuellen Belegen
+ * mindestens doppelt vorkommen – für die Duplikat-Warnung im Workflow.
+ */
+export async function getManualDuplicateKeys(): Promise<Set<string>> {
+  const [rows] = await getPool().query<RowDataPacket[]>(
+    `SELECT LOWER(TRIM(supplier)) AS s, ROUND(gross, 2) AS g, DATE(beleg_date) AS d, COUNT(*) AS n
+     FROM manual_receipts
+     WHERE supplier IS NOT NULL AND supplier <> '' AND beleg_date IS NOT NULL AND gross <> 0
+     GROUP BY s, g, d HAVING n >= 2`
+  );
+  const keys = new Set<string>();
+  for (const r of rows as { s: string; g: string | number; d: string | Date; n: number }[]) {
+    const s = String(r.s).replace(/\s+/g, " ");
+    const g = Number(r.g).toFixed(2);
+    const d = String(r.d).slice(0, 10);
+    keys.add(`${s}|${g}|${d}`);
+  }
+  return keys;
+}
+
 /** Im Posteingang (source='inbox') erfasste Belege – für die Workflow-Auslösung. */
 export async function listInboxReceipts(): Promise<InboxReceipt[]> {
   const [rows] = await getPool().query<RowDataPacket[]>(

@@ -401,6 +401,19 @@ export async function createReviewTask(
   });
 }
 
+/** Löscht eine Aufgabe samt Zuweisungen, Verlauf und Benachrichtigungen. */
+export async function deleteTask(id: number): Promise<void> {
+  const pool = getPool();
+  await pool.query("DELETE FROM task_assignees WHERE task_id = ?", [id]);
+  await pool.query("DELETE FROM task_history WHERE task_id = ?", [id]);
+  try {
+    await pool.query("DELETE FROM task_notifications WHERE task_id = ?", [id]);
+  } catch {
+    /* Tabelle evtl. mit ON DELETE CASCADE – dann nicht nötig. */
+  }
+  await pool.query("DELETE FROM tasks WHERE id = ?", [id]);
+}
+
 /** Completes open review tasks for a receipt once it was decided. */
 export async function completeReviewTasks(heroReceiptId: string, byUserId: number): Promise<void> {
   const marker = reviewMarker(heroReceiptId);

@@ -12,7 +12,8 @@ import {
   type CustomerInvoice,
 } from "./hero-api";
 import { getCustomerName, getDocumentUrl, getReceiptProjects } from "./invoices";
-import { listInboxReceipts, getManualReceipt } from "./manual-receipts";
+import { listInboxReceipts, getManualReceipt, getManualDuplicateKeys } from "./manual-receipts";
+import { receiptDupKey } from "./receipt-duplicates";
 import { createTask, createReviewTask } from "./tasks";
 import { assignReviewer, getReceiptReview } from "./receipt-reviews";
 import { sendPushToUsers } from "./push";
@@ -161,17 +162,24 @@ async function collectEvents(triggerKey: string): Promise<WfEvent[]> {
 
   if (triggerKey === "new_manual_beleg") {
     // Im Sammel-Posteingang automatisch erfasste Belege (source='inbox').
-    const receipts = await listInboxReceipts();
+    const [receipts, dupKeys] = await Promise.all([
+      listInboxReceipts(),
+      getManualDuplicateKeys().catch(() => new Set<string>()),
+    ]);
     return receipts.map((r) => {
       const supplier = r.supplier ?? "";
       const nr = `#${r.id}`;
+      // Duplikat, wenn Lieferant+Betrag+Datum mehrfach unter den manuellen Belegen vorkommt.
+      const dupKey = receiptDupKey(supplier, r.gross || 0, r.date);
+      const isDuplicate = dupKey != null && dupKeys.has(dupKey);
       const note = [
         `Erfasster Beleg ${nr}`,
         supplier ? `Lieferant: ${supplier}` : null,
         `Betrag: ${euro.format(r.gross || 0)}`,
         r.date ? `Belegdatum: ${fmtDay(r.date)}` : null,
         r.description ? `Beschreibung: ${r.description}` : null,
-        // Marker (wird in der Aufgabe ausgeblendet) – ermöglicht die Beleg-Vorschau + Abschluss.
+        // Marker (werden in der Aufgabe ausgeblendet).
+        isDuplicate ? "[DUPLIKAT]" : null,
         `[BELEGPRUEF:${r.id}]`,
       ]
         .filter(Boolean)
