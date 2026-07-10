@@ -7,6 +7,7 @@ import {
   bookStockByArticle,
   listArticlesWithoutEk,
   setMaterialEkByArticle,
+  setMaterialMinMaxByArticle,
 } from "@/lib/materials";
 import { createEkPriceRequest, completeEkPriceRequests } from "@/lib/tasks";
 import { getAllowedModules } from "@/lib/role-store";
@@ -149,5 +150,32 @@ export async function setMaterialEkAction(formData: FormData): Promise<void> {
 
   await setMaterialEkByArticle(heroArticleId, price);
   if (price > 0) await completeEkPriceRequests(heroArticleId, user.id);
+  revalidatePath(PATH);
+}
+
+/** Setzt Lager-Minimum/-Maximum eines Artikels (leeres Feld = kein Wert). */
+export async function setMaterialMinMaxAction(formData: FormData): Promise<void> {
+  const session = await getSession();
+  if (!session) return;
+  const user = await getUserByUsername(session.username);
+  if (!user) return;
+  const allowed = await getAllowedModules(user.role);
+  if (!allowed.includes("lager")) return;
+
+  const heroArticleId = Number(formData.get("heroArticleId"));
+  const name = String(formData.get("name") ?? "").trim();
+  const unit = String(formData.get("unit") ?? "").trim() || "Stk";
+  if (!Number.isFinite(heroArticleId) || heroArticleId <= 0) return;
+
+  const parse = (v: FormDataEntryValue | null): number | null => {
+    const s = String(v ?? "").trim().replace(",", ".");
+    if (s === "") return null;
+    const n = Number(s);
+    return Number.isFinite(n) && n >= 0 ? n : null;
+  };
+  const min = parse(formData.get("min"));
+  const max = parse(formData.get("max"));
+
+  await setMaterialMinMaxByArticle({ heroArticleId, name, unit }, min, max);
   revalidatePath(PATH);
 }

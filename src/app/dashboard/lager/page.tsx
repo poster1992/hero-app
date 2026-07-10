@@ -3,6 +3,7 @@ import { getSession } from "@/lib/session";
 import {
   getLocalQuantities,
   getLocalEkPrices,
+  getLocalMinMax,
   listRecentMovements,
   syncArticleMaster,
 } from "@/lib/materials";
@@ -39,17 +40,26 @@ export default async function LagerPage() {
         purchasePrice: a.purchasePrice,
       }))
     );
-    const [localQ, localEk] = await Promise.all([getLocalQuantities(), getLocalEkPrices()]);
-    items = articles.map((a) => ({
-      id: a.id,
-      name: a.name,
-      itemNumber: a.itemNumber,
-      qrId: a.qrId,
-      unit: a.unit,
-      category: a.category,
-      quantity: localQ.get(a.id) ?? 0, // lokaler Bestand aus MySQL (HERO-Bestand ignoriert)
-      ekPrice: localEk.get(a.id) ?? 0,
-    }));
+    const [localQ, localEk, localMinMax] = await Promise.all([
+      getLocalQuantities(),
+      getLocalEkPrices(),
+      getLocalMinMax(),
+    ]);
+    items = articles.map((a) => {
+      const mm = localMinMax.get(a.id);
+      return {
+        id: a.id,
+        name: a.name,
+        itemNumber: a.itemNumber,
+        qrId: a.qrId,
+        unit: a.unit,
+        category: a.category,
+        quantity: localQ.get(a.id) ?? 0, // lokaler Bestand aus MySQL (HERO-Bestand ignoriert)
+        ekPrice: localEk.get(a.id) ?? 0,
+        minStock: mm?.min ?? null,
+        maxStock: mm?.max ?? null,
+      };
+    });
     movements = mv;
     projects = projs.map((p) => ({ id: p.id, relativeId: p.relativeId, name: p.name }));
   } catch (e) {

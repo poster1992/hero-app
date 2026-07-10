@@ -4,7 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { StockMovement } from "@/lib/material-types";
 import BookingScanModal from "@/components/BookingScanModal";
-import { setMaterialEkAction } from "@/app/dashboard/lager/actions";
+import { setMaterialEkAction, setMaterialMinMaxAction } from "@/app/dashboard/lager/actions";
 
 export interface LagerItem {
   id: number; // HERO article (stock material) id
@@ -15,6 +15,8 @@ export interface LagerItem {
   category: string | null;
   quantity: number; // local stock (MySQL)
   ekPrice: number; // EK price (MySQL), 0 = nicht hinterlegt
+  minStock: number | null; // Lager-Minimum (MySQL)
+  maxStock: number | null; // Lager-Maximum (MySQL)
 }
 
 /** Inline EK editor: saves the price via server action. */
@@ -56,6 +58,65 @@ function EkCell({ item }: { item: LagerItem }) {
         onClick={save}
         disabled={pending}
         className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 transition-colors hover:border-brand-red/50 disabled:opacity-50"
+      >
+        ✓
+      </button>
+    </div>
+  );
+}
+
+/** Inline-Editor für Lager-Minimum/-Maximum eines Artikels. */
+function MinMaxCell({ item }: { item: LagerItem }) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const fmtVal = (v: number | null) => (v == null ? "" : String(v).replace(".", ","));
+  const [min, setMin] = useState(fmtVal(item.minStock));
+  const [max, setMax] = useState(fmtVal(item.maxStock));
+
+  const dirty = min !== fmtVal(item.minStock) || max !== fmtVal(item.maxStock);
+  const save = () => {
+    const fd = new FormData();
+    fd.set("heroArticleId", String(item.id));
+    fd.set("name", item.name);
+    fd.set("unit", item.unit);
+    fd.set("min", min);
+    fd.set("max", max);
+    startTransition(async () => {
+      await setMaterialMinMaxAction(fd);
+      router.refresh();
+    });
+  };
+  const inputCls =
+    "w-16 rounded-md border border-gray-300 px-2 py-1 text-right text-sm outline-none focus:border-brand-red/60";
+
+  return (
+    <div className="flex items-center justify-end gap-1">
+      <input
+        type="text"
+        inputMode="decimal"
+        value={min}
+        onChange={(e) => setMin(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), save())}
+        placeholder="Min"
+        title="Lager-Minimum"
+        className={inputCls}
+      />
+      <span className="text-gray-300">/</span>
+      <input
+        type="text"
+        inputMode="decimal"
+        value={max}
+        onChange={(e) => setMax(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), save())}
+        placeholder="Max"
+        title="Lager-Maximum"
+        className={inputCls}
+      />
+      <button
+        type="button"
+        onClick={save}
+        disabled={pending || !dirty}
+        className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 transition-colors hover:border-brand-red/50 disabled:opacity-40"
       >
         ✓
       </button>
@@ -157,28 +218,47 @@ export default function LagerHero({
                 <th className="px-4 py-2 font-semibold">Bezeichnung</th>
                 <th className="px-4 py-2 font-semibold">Kategorie</th>
                 <th className="px-4 py-2 text-right font-semibold">Bestand</th>
+                <th className="px-4 py-2 text-right font-semibold">Min / Max</th>
                 {canSeeEk && <th className="px-4 py-2 text-right font-semibold">EK-Preis</th>}
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={canSeeEk ? 5 : 4} className="px-4 py-4 text-sm text-gray-400">
+                  <td colSpan={canSeeEk ? 6 : 5} className="px-4 py-4 text-sm text-gray-400">
                     Keine Artikel gefunden.
                   </td>
                 </tr>
               ) : (
-                filtered.map((a) => (
+                filtered.map((a) => {
+                  const under = a.minStock != null && a.quantity < a.minStock;
+                  const over = a.maxStock != null && a.quantity > a.maxStock;
+                  return (
                   <tr key={a.id} className="border-t border-gray-100 align-top">
                     <td className="px-4 py-2 text-gray-500">{a.itemNumber || "—"}</td>
                     <td className="px-4 py-2 font-medium text-gray-900">{a.name}</td>
                     <td className="px-4 py-2 text-gray-500">{a.category ?? "—"}</td>
                     <td className="px-4 py-2 text-right">
                       <span
-                        className={`font-semibold ${a.quantity < 0 ? "text-rose-600" : "text-gray-900"}`}
+                        className={`font-semibold ${
+                          a.quantity < 0 || under ? "text-rose-600" : over ? "text-amber-600" : "text-gray-900"
+                        }`}
                       >
                         {numberFmt.format(a.quantity)} {a.unit}
                       </span>
+                      {under && (
+                        <span className="ml-1.5 whitespace-nowrap rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-semibold text-rose-700">
+                          ↓ unter Min
+                        </span>
+                      )}
+                      {over && (
+                        <span className="ml-1.5 whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                          ↑ über Max
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2 text-right">
+                      <MinMaxCell item={a} />
                     </td>
                     {canSeeEk && (
                       <td className="px-4 py-2 text-right">
@@ -186,7 +266,8 @@ export default function LagerHero({
                       </td>
                     )}
                   </tr>
-                ))
+                  );
+                })
               )}
             </tbody>
           </table>

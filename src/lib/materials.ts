@@ -103,6 +103,35 @@ export async function listArticlesWithoutEk(
   return rows.map((r) => ({ heroArticleId: r.hero_article_id as number, name: r.name as string }));
 }
 
+/** Lager-Minimum/-Maximum je HERO-Artikel-ID (lokal gepflegt). */
+export async function getLocalMinMax(): Promise<Map<number, { min: number | null; max: number | null }>> {
+  const [rows] = await getPool().query<RowDataPacket[]>(
+    "SELECT hero_article_id, min_stock, max_stock FROM materials WHERE hero_article_id IS NOT NULL"
+  );
+  const map = new Map<number, { min: number | null; max: number | null }>();
+  for (const r of rows as { hero_article_id: number; min_stock: string | number | null; max_stock: string | number | null }[]) {
+    map.set(r.hero_article_id, {
+      min: r.min_stock == null ? null : num(r.min_stock),
+      max: r.max_stock == null ? null : num(r.max_stock),
+    });
+  }
+  return map;
+}
+
+/** Setzt Lager-Minimum/-Maximum eines Artikels (upsert – Stammdaten aus HERO). */
+export async function setMaterialMinMaxByArticle(
+  article: { heroArticleId: number; name: string; unit: string },
+  min: number | null,
+  max: number | null
+): Promise<void> {
+  await getPool().query(
+    `INSERT INTO materials (hero_article_id, name, sku, unit, quantity, min_stock, max_stock)
+     VALUES (?, ?, NULL, ?, 0, ?, ?)
+     ON DUPLICATE KEY UPDATE min_stock = VALUES(min_stock), max_stock = VALUES(max_stock)`,
+    [article.heroArticleId, article.name.slice(0, 255), article.unit || "Stk", min, max]
+  );
+}
+
 /** Local stock quantity per HERO article id (item master comes from HERO). */
 export async function getLocalQuantities(): Promise<Map<number, number>> {
   const [rows] = await getPool().query<QtyRow[]>(
