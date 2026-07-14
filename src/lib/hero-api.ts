@@ -27,7 +27,18 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  * Preis dafür: ein zusätzlicher (leerer) Request am Ende jeder Paginierung.
  */
 const HERO_PAGE_SIZE = 1000;
-/** tracking_times ist der größte Datensatz (~4.700 Einträge) – hier lohnt die volle Seite. */
+/**
+ * ACHTUNG – HERO begrenzt nicht die Seitengröße, sondern die QUERY-KOMPLEXITÄT:
+ * `first` × Anzahl der selektierten Felder darf **50.000** nicht überschreiten
+ * ("Max query complexity should be 50000 but got …"). Feldreiche Queries brauchen
+ * deshalb eine kleinere Seite: Kalender-Termine und Projekt-Adressen wiegen ~52–54
+ * Punkte je Datensatz und sprengen das Limit bereits bei `first: 1000`.
+ *
+ * 500 lässt bewusst Reserve: Wer dieser Query später ein Feld hinzufügt, soll nicht
+ * die Seite lahmlegen. Wird hier je erhöht, vorher mit dem echten Feldsatz messen.
+ */
+const HERO_PAGE_SIZE_RICH = 500;
+/** tracking_times ist der größte Datensatz (~4.700 Einträge) und wählt nur 3 Felder – volle Seite. */
 const HERO_TRACKING_PAGE_SIZE = 5000;
 /** Reines Sicherheitsnetz gegen Endlosschleifen; die Paginierung endet normal über die leere Seite. */
 const HERO_MAX_PAGES = 100;
@@ -437,7 +448,8 @@ export interface ProjectLocation {
 
 /** Projects (project_matches) that have geocoded addresses, for plotting on a map. */
 export async function getProjectLocations(): Promise<ProjectLocation[]> {
-  const pageSize = HERO_PAGE_SIZE;
+  // Feldreich (Adresse + Kunde) → Komplexitätslimit, siehe HERO_PAGE_SIZE_RICH.
+  const pageSize = HERO_PAGE_SIZE_RICH;
   const maxPages = HERO_MAX_PAGES;
   const result: ProjectLocation[] = [];
   // Auftragsbestätigung = 1057579, Rechnung = 1057585; status 1000 = gelöscht.
@@ -613,7 +625,8 @@ export interface CalendarEventLite {
 
 /** Calendar events overlapping [from, to] (ISO datetime), with assigned partners. */
 export async function getCalendarEvents(from: string, to: string): Promise<CalendarEventLite[]> {
-  const pageSize = HERO_PAGE_SIZE;
+  // Feldreich (Termin + Partner + Projekt) → Komplexitätslimit, siehe HERO_PAGE_SIZE_RICH.
+  const pageSize = HERO_PAGE_SIZE_RICH;
   const maxPages = HERO_MAX_PAGES;
   const result: CalendarEventLite[] = [];
 
@@ -674,7 +687,8 @@ export async function getCalendarEvents(from: string, to: string): Promise<Calen
 export async function getCalendarEventsForProject(
   projectMatchId: number
 ): Promise<CalendarEventLite[]> {
-  const pageSize = HERO_PAGE_SIZE;
+  // Feldreich (Termin + Partner + Projekt) → Komplexitätslimit, siehe HERO_PAGE_SIZE_RICH.
+  const pageSize = HERO_PAGE_SIZE_RICH;
   const maxPages = HERO_MAX_PAGES;
   const result: CalendarEventLite[] = [];
 
