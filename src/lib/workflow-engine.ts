@@ -132,6 +132,107 @@ function fillStunden(tpl: string, p: ProjectSummary, det: ProjectHourDetail): st
     .replace(/\{zeitraum\}/g, zeitraumText(det));
 }
 
+// --- Wiederkehrende Aufgaben (Auslöser "wiederkehrend") ---
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** "YYYY-MM-DD" → Date (UTC-Mitternacht, damit Zeitzonen nicht ins Datum hineinrutschen). */
+function isoToDate(iso: string): Date {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d));
+}
+
+function dateToIso(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+/** Heutiges Datum in der Zeitzone des Servers. */
+function todayIso(): string {
+  const n = new Date();
+  const p = (x: number) => String(x).padStart(2, "0");
+  return `${n.getFullYear()}-${p(n.getMonth() + 1)}-${p(n.getDate())}`;
+}
+
+/**
+ * Der zuletzt fällige Termin einer wiederkehrenden Regel (≤ heute), oder null,
+ * wenn noch keiner fällig war.
+ *
+ * Bewusst nur der LETZTE Termin und nicht alle seit Start: Sonst würde eine
+ * täglich laufende Regel, die eine Weile pausiert war, beim nächsten Lauf den
+ * gesamten Zeitraum nachträglich als Aufgaben-Schwall anlegen.
+ */
+export function lastDueOccurrence(
+  cfg: Pick<WorkflowConfig, "repeatKind" | "repeatWeekday" | "repeatDayOfMonth" | "repeatEveryDays">,
+  startIso: string,
+  todayStr: string = todayIso()
+): string | null {
+  const today = isoToDate(todayStr);
+  const start = isoToDate(startIso);
+  if (today < start) return null;
+
+  let occ: Date;
+
+  switch (cfg.repeatKind) {
+    case "daily":
+      occ = today;
+      break;
+
+    case "weekly": {
+      // config: 1 = Montag … 7 = Sonntag; JS: 0 = Sonntag … 6 = Samstag.
+      const targetJsDay = cfg.repeatWeekday % 7;
+      const backDays = (today.getUTCDay() - targetJsDay + 7) % 7;
+      occ = new Date(today.getTime() - backDays * DAY_MS);
+      break;
+    }
+
+    case "monthly": {
+      // Tag im Monat; kürzere Monate (z.B. „31." im Februar) nehmen den letzten Tag.
+      const dayIn = (year: number, month: number) => {
+        const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+        return new Date(Date.UTC(year, month, Math.min(cfg.repeatDayOfMonth, lastDay)));
+      };
+      occ = dayIn(today.getUTCFullYear(), today.getUTCMonth());
+      if (occ > today) {
+        // Der Termin dieses Monats liegt noch in der Zukunft → der aus dem Vormonat gilt.
+        occ = dayIn(today.getUTCFullYear(), today.getUTCMonth() - 1);
+      }
+      break;
+    }
+
+    case "interval": {
+      const every = Math.max(1, cfg.repeatEveryDays);
+      const elapsed = Math.floor((today.getTime() - start.getTime()) / DAY_MS);
+      occ = new Date(start.getTime() + Math.floor(elapsed / every) * every * DAY_MS);
+      break;
+    }
+
+    default:
+      return null;
+  }
+
+  // Termine vor dem Start der Regel zählen nicht.
+  return occ < start ? null : dateToIso(occ);
+}
+
+/** Das (höchstens eine) fällige Ereignis einer wiederkehrenden Regel. */
+function recurringEvents(wf: Workflow): WfEvent[] {
+  // Start: „gilt ab", sonst das Anlagedatum der Regel – nie rückwirkend davor.
+  const start = wf.config.validFrom ?? wf.createdAt?.slice(0, 10) ?? todayIso();
+  const occ = lastDueOccurrence(wf.config, start);
+  if (!occ) return [];
+
+  const human = fmtDay(occ);
+  return [
+    {
+      ref: `wiederkehrend-${occ}`,
+      supplier: "",
+      amount: 0,
+      eventDate: occ,
+      fill: (tpl) => tpl.replace(/\{datum\}/g, human).replace(/\{termin\}/g, human),
+    },
+  ];
+}
+
 async function collectEvents(triggerKey: string): Promise<WfEvent[]> {
   if (triggerKey === "new_beleg") {
     const now = new Date();
@@ -331,9 +432,13 @@ async function collectEvents(triggerKey: string): Promise<WfEvent[]> {
 /** Untergrenze für das Ereignis-Datum: „gilt ab" oder (bei Belegen) das Erstelldatum der Regel. */
 function effectiveValidFrom(triggerKey: string, wf: Workflow): string | null {
   if (wf.config.validFrom) return wf.config.validFrom;
-  // Beleg-/Rechnungs-Regeln ohne „gilt ab" gelten ab Anlage der Regel (kein Altbestand-Schwall).
+  // Beleg-/Rechnungs- und Wiederhol-Regeln ohne „gilt ab" gelten ab Anlage der Regel
+  // (kein Altbestand-Schwall bzw. keine rückwirkenden Termine).
   if (
-    (triggerKey === "new_beleg" || triggerKey === "new_manual_beleg" || triggerKey === "endrechnung") &&
+    (triggerKey === "new_beleg" ||
+      triggerKey === "new_manual_beleg" ||
+      triggerKey === "endrechnung" ||
+      triggerKey === "wiederkehrend") &&
     wf.createdAt
   )
     return wf.createdAt.slice(0, 10);
@@ -539,23 +644,32 @@ async function runTrigger(triggerKey: string, force = false): Promise<{ created:
     }
   }
 
-  let events: WfEvent[];
-  try {
-    events = await collectEvents(triggerKey);
-  } catch {
-    return { created: 0, checked: 0 };
+  // Wiederkehrende Aufgaben haben je Regel ihren eigenen Zeitplan – ihre Ereignisse
+  // entstehen deshalb pro Regel, nicht einmal gemeinsam für den ganzen Auslöser.
+  const isRecurring = triggerKey === "wiederkehrend";
+
+  let events: WfEvent[] = [];
+  if (!isRecurring) {
+    try {
+      events = await collectEvents(triggerKey);
+    } catch {
+      return { created: 0, checked: 0 };
+    }
+    if (events.length === 0) return { created: 0, checked: 0 };
   }
-  if (events.length === 0) return { created: 0, checked: 0 };
 
   let created = 0;
+  let recurringChecked = 0;
   // Je Regel: Ereignisse ab dem „gilt ab"-Datum, die diese Regel noch nicht getaskt hat.
   for (const wf of workflows) {
     if (created >= MAX_PER_RUN) break;
     if (!wf.config.assigneeId) continue;
     const seen = await getRuleSeen(wf.id);
     const effFrom = effectiveValidFrom(triggerKey, wf);
+    const ruleEvents = isRecurring ? recurringEvents(wf) : events;
+    if (isRecurring) recurringChecked += ruleEvents.length;
 
-    for (const ev of events) {
+    for (const ev of ruleEvents) {
       if (created >= MAX_PER_RUN) break;
       if (seen.has(ev.ref)) continue;
       if (effFrom && (!ev.eventDate || ev.eventDate < effFrom)) continue;
@@ -571,7 +685,7 @@ async function runTrigger(triggerKey: string, force = false): Promise<{ created:
       }
     }
   }
-  return { created, checked: events.length };
+  return { created, checked: isRecurring ? recurringChecked : events.length };
 }
 
 /**

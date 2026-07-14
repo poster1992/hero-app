@@ -10,6 +10,9 @@ import {
   runWorkflowsNowAction,
   type WorkflowFormState,
 } from "@/app/dashboard/workflows/actions";
+// Wichtig: Zeitplan-Konstanten aus workflow-schedule (ohne DB-Import), sonst landet
+// mysql2 über lib/workflows im Browser-Bundle und der Build bricht ab.
+import { REPEAT_KINDS, WEEKDAYS } from "@/lib/workflow-schedule";
 import type { Workflow, WorkflowConfig, WorkflowLogItem, WorkflowRun } from "@/lib/workflows";
 
 interface UserOption {
@@ -27,6 +30,7 @@ const TRIGGER_OPTIONS = [
   { key: "stunden_ohne_abschlag", label: "Stunden gebucht, aber keine Abschlagsrechnung" },
   { key: "endrechnung", label: "Endrechnung erstellt (Schluss-/Vollrechnung, keine Teil-/Abschlagsrechnung)" },
   { key: "lager_min_erreicht", label: "Lager-Minimum erreicht (Bestand ≤ Minimum)" },
+  { key: "wiederkehrend", label: "Wiederkehrende Aufgabe (fester Zeitplan)" },
 ] as const;
 
 function triggerLabel(key: string): string {
@@ -37,6 +41,7 @@ function placeholdersFor(key: string): string {
   if (key === "stunden_ohne_abschlag") return "{projekt} {nr} {kunde} {stunden} {mitarbeiter} {zeitraum}";
   if (key === "endrechnung") return "{kunde} {nr} {projekt} {betrag} {datum}";
   if (key === "lager_min_erreicht") return "{artikel} {nr} {bestand} {min} {einheit}";
+  if (key === "wiederkehrend") return "{datum} {termin}";
   return "{nr} {lieferant} {betrag} {datum}";
 }
 function defaultTitleFor(key: string): string {
@@ -44,7 +49,19 @@ function defaultTitleFor(key: string): string {
   if (key === "stunden_ohne_abschlag") return "Abschlagsrechnung erstellen: {projekt} {nr} ({stunden} h)";
   if (key === "endrechnung") return "Kunde anrufen – Zufriedenheit erfragen: {kunde} ({projekt})";
   if (key === "lager_min_erreicht") return "Lager nachbestellen: {artikel} (Bestand {bestand}, Min {min})";
+  if (key === "wiederkehrend") return "Wiederkehrende Aufgabe ({datum})";
   return "Beleg prüfen: {nr} – {lieferant}";
+}
+
+/** Klartext-Beschreibung des Zeitplans, z.B. „jeden Montag". */
+function repeatText(cfg: Partial<WorkflowConfig>): string {
+  const kind = cfg.repeatKind ?? "weekly";
+  if (kind === "daily") return "täglich";
+  if (kind === "weekly") {
+    return `jeden ${WEEKDAYS.find((d) => d.key === (cfg.repeatWeekday ?? 1))?.label ?? "Montag"}`;
+  }
+  if (kind === "monthly") return `jeden ${cfg.repeatDayOfMonth ?? 1}. im Monat`;
+  return `alle ${cfg.repeatEveryDays ?? 14} Tage`;
 }
 
 function fmtStamp(s: string | null): string {
@@ -107,10 +124,13 @@ function RuleFields({
   const [trigger, setTrigger] = useState(triggerKey);
   const [title, setTitle] = useState(cfg?.title ?? defaultTitleFor(triggerKey));
   const [actionType, setActionType] = useState<"task" | "review">(cfg?.actionType === "review" ? "review" : "task");
+  const [repeatKind, setRepeatKind] = useState<string>(cfg?.repeatKind ?? "weekly");
   const isAngebot = trigger === "angebot_alt_ohne_ab";
   const isStunden = trigger === "stunden_ohne_abschlag";
   const isEndrechnung = trigger === "endrechnung";
   const isReview = trigger === "new_beleg" && actionType === "review";
+  // Wiederkehrende Aufgaben haben keinen Lieferanten/Betrag – die Filter entfallen.
+  const isRecurring = trigger === "wiederkehrend";
   const kundeLabel = isAngebot || isStunden || isEndrechnung ? "Kunde" : "Lieferant";
 
   const onTriggerChange = (key: string) => {
@@ -164,6 +184,82 @@ function RuleFields({
         <div>
           <label className="mb-1 block text-sm text-gray-600">Angebot älter als (Tage) *</label>
           <input name="minAgeDays" type="number" min={1} defaultValue={cfg?.minAgeDays ?? 21} className={inputClass} />
+        </div>
+      )}
+
+      {/* Zeitplan der wiederkehrenden Aufgabe */}
+      {isRecurring && (
+        <div className="sm:col-span-2 rounded-md border border-gray-200 bg-gray-50 p-3">
+          <p className="mb-2 text-sm font-medium text-gray-700">Zeitplan *</p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-sm text-gray-600">Wiederholung</label>
+              <select
+                name="repeatKind"
+                value={repeatKind}
+                onChange={(e) => setRepeatKind(e.target.value)}
+                className={inputClass}
+              >
+                {REPEAT_KINDS.map((r) => (
+                  <option key={r.key} value={r.key}>
+                    {r.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {repeatKind === "weekly" && (
+              <div>
+                <label className="mb-1 block text-sm text-gray-600">Wochentag</label>
+                <select name="repeatWeekday" defaultValue={cfg?.repeatWeekday ?? 1} className={inputClass}>
+                  {WEEKDAYS.map((d) => (
+                    <option key={d.key} value={d.key}>
+                      {d.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {repeatKind === "monthly" && (
+              <div>
+                <label className="mb-1 block text-sm text-gray-600">Tag im Monat</label>
+                <input
+                  name="repeatDayOfMonth"
+                  type="number"
+                  min={1}
+                  max={31}
+                  defaultValue={cfg?.repeatDayOfMonth ?? 1}
+                  className={inputClass}
+                />
+                <p className="mt-1 text-xs text-gray-400">
+                  Monate ohne diesen Tag (z.B. der 31. im Februar) nehmen den letzten Tag des Monats.
+                </p>
+              </div>
+            )}
+
+            {repeatKind === "interval" && (
+              <div>
+                <label className="mb-1 block text-sm text-gray-600">Abstand in Tagen</label>
+                <input
+                  name="repeatEveryDays"
+                  type="number"
+                  min={1}
+                  max={365}
+                  defaultValue={cfg?.repeatEveryDays ?? 14}
+                  className={inputClass}
+                />
+                <p className="mt-1 text-xs text-gray-400">
+                  Gerechnet ab dem Startdatum unten bzw. der Anlage der Regel.
+                </p>
+              </div>
+            )}
+          </div>
+          <p className="mt-2 text-xs text-gray-500">
+            Der Dienst prüft alle 10 Minuten und legt je fälligem Termin <strong>genau eine</strong> Aufgabe an –
+            auch dann, wenn die vorherige noch offen ist. Verpasste Termine (z.B. Server aus) werden{" "}
+            <strong>nicht</strong> nachträglich gesammelt nachgeholt, es entsteht nur der zuletzt fällige.
+          </p>
         </div>
       )}
       <div>
@@ -246,26 +342,32 @@ function RuleFields({
         </>
       )}
       <div>
-        <label className="mb-1 block text-sm text-gray-600">Regel gilt ab (optional)</label>
+        <label className="mb-1 block text-sm text-gray-600">
+          {isRecurring ? "Startet ab (optional)" : "Regel gilt ab (optional)"}
+        </label>
         <input name="validFrom" type="date" defaultValue={cfg?.validFrom ?? ""} className={inputClass} />
         <p className="mt-1 text-xs text-gray-400">
-          {isStunden
-            ? "Regel ab diesem Datum aktiv (greift dann auch bestehende Projekte ab)."
-            : `Nur Ereignisse ab diesem Datum (${isAngebot ? "Angebotsdatum" : "Belegdatum"}) lösen aus.`}
+          {isRecurring
+            ? "Vor diesem Datum entsteht kein Termin. Leer = ab Anlage der Regel."
+            : isStunden
+              ? "Regel ab diesem Datum aktiv (greift dann auch bestehende Projekte ab)."
+              : `Nur Ereignisse ab diesem Datum (${isAngebot ? "Angebotsdatum" : "Belegdatum"}) lösen aus.`}
         </p>
       </div>
-      <div className="grid grid-cols-2 gap-2">
-        <div>
-          <label className="mb-1 block text-sm text-gray-600">Filter: {kundeLabel}</label>
-          <input name="filterSupplier" defaultValue={cfg?.filterSupplier ?? ""} placeholder="enthält …" className={inputClass} />
+      {!isRecurring && (
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="mb-1 block text-sm text-gray-600">Filter: {kundeLabel}</label>
+            <input name="filterSupplier" defaultValue={cfg?.filterSupplier ?? ""} placeholder="enthält …" className={inputClass} />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm text-gray-600">
+              {isStunden ? "Filter: ab Stunden" : `Filter: ab ${isAngebot ? "Angebotssumme" : "Betrag"} €`}
+            </label>
+            <input name="filterMinAmount" type="number" min={0} step={isStunden ? "0.5" : "0.01"} defaultValue={cfg?.filterMinAmount ?? ""} className={inputClass} />
+          </div>
         </div>
-        <div>
-          <label className="mb-1 block text-sm text-gray-600">
-            {isStunden ? "Filter: ab Stunden" : `Filter: ab ${isAngebot ? "Angebotssumme" : "Betrag"} €`}
-          </label>
-          <input name="filterMinAmount" type="number" min={0} step={isStunden ? "0.5" : "0.01"} defaultValue={cfg?.filterMinAmount ?? ""} className={inputClass} />
-        </div>
-      </div>
+      )}
 
       {/* Manuelle Belege ausschließen (nur Beleg-Auslöser) */}
       {trigger === "new_beleg" && (
@@ -278,35 +380,57 @@ function RuleFields({
       )}
 
       {/* Split nach Lieferant: ausgewaehlte Lieferanten gehen an einen anderen Bearbeiter */}
-      <div className="sm:col-span-2 rounded-md border border-gray-200 p-3">
-        <p className="mb-2 text-sm font-medium text-gray-700">
-          Lieferanten-Split <span className="font-normal text-gray-400">(optional)</span>
-        </p>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div>
-            <label className="mb-1 block text-sm text-gray-600">Ausgeschlossene Lieferanten</label>
-            <SupplierMultiSelect suppliers={suppliers} selected={cfg?.excludedSuppliers ?? []} />
+      {!isRecurring && (
+        <div className="sm:col-span-2 rounded-md border border-gray-200 p-3">
+          <p className="mb-2 text-sm font-medium text-gray-700">
+            Lieferanten-Split <span className="font-normal text-gray-400">(optional)</span>
+          </p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-sm text-gray-600">Ausgeschlossene Lieferanten</label>
+              <SupplierMultiSelect suppliers={suppliers} selected={cfg?.excludedSuppliers ?? []} />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm text-gray-600">… gehen stattdessen an</label>
+              <select name="excludedAssigneeId" defaultValue={cfg?.excludedAssigneeId ?? ""} className={inputClass}>
+                <option value="">— niemand (überspringen) —</option>
+                {users.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
-          <div>
-            <label className="mb-1 block text-sm text-gray-600">… gehen stattdessen an</label>
-            <select name="excludedAssigneeId" defaultValue={cfg?.excludedAssigneeId ?? ""} className={inputClass}>
-              <option value="">— niemand (überspringen) —</option>
-              {users.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          <p className="mt-1 text-xs text-gray-400">
+            {isReview
+              ? "Belege dieser Lieferanten gehen zur Prüfung an die hier gewählte Person, alle anderen an den Prüfer oben."
+              : "Vorgänge dieser Lieferanten gehen an die hier gewählte Person, alle anderen an den Bearbeiter oben."}
+          </p>
         </div>
-        <p className="mt-1 text-xs text-gray-400">
-          {isReview
-            ? "Belege dieser Lieferanten gehen zur Prüfung an die hier gewählte Person, alle anderen an den Prüfer oben."
-            : "Vorgänge dieser Lieferanten gehen an die hier gewählte Person, alle anderen an den Bearbeiter oben."}
-        </p>
-      </div>
+      )}
     </div>
   );
+}
+
+/** Kurzbeschreibung des Auslösers für die Regel-Liste. */
+function triggerSummary(wf: Workflow): string {
+  switch (wf.triggerKey) {
+    case "angebot_alt_ohne_ab":
+      return `Angebot offen > ${wf.config.minAgeDays ?? 21} Tage ohne AB`;
+    case "stunden_ohne_abschlag":
+      return "Stunden gebucht, keine Abschlagsrechnung";
+    case "endrechnung":
+      return "Endrechnung erstellt";
+    case "lager_min_erreicht":
+      return "Lager-Minimum erreicht";
+    case "new_manual_beleg":
+      return "Neuer erfasster Beleg";
+    case "wiederkehrend":
+      return `Zeitplan: ${repeatText(wf.config)}`;
+    default:
+      return "Neuer Beleg";
+  }
 }
 
 function WorkflowRow({ wf, users, suppliers }: { wf: Workflow; users: UserOption[]; suppliers: string[] }) {
@@ -341,13 +465,7 @@ function WorkflowRow({ wf, users, suppliers }: { wf: Workflow; users: UserOption
       <div className="min-w-0 flex-1">
         <p className="font-medium text-gray-900">{wf.name}</p>
         <p className="text-xs text-gray-500">
-          {wf.triggerKey === "angebot_alt_ohne_ab"
-            ? `Angebot offen > ${wf.config.minAgeDays ?? 21} Tage ohne AB`
-            : wf.triggerKey === "stunden_ohne_abschlag"
-              ? "Stunden gebucht, keine Abschlagsrechnung"
-              : wf.triggerKey === "endrechnung"
-                ? "Endrechnung erstellt"
-                : "Neuer Beleg"}{" "}
+          {triggerSummary(wf)}{" "}
           → {wf.config.actionType === "review" ? "Rechnungsprüfung" : "Aufgabe"} an{" "}
           <span className="text-gray-700">{assignee}</span>
           {wf.config.actionType === "review" ? "" : ` · fällig in ${wf.config.dueOffsetDays} Tagen`}

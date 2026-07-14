@@ -1,5 +1,6 @@
 import type { RowDataPacket, ResultSetHeader } from "mysql2";
 import { getPool } from "./db";
+import { REPEAT_KINDS, type RepeatKind } from "./workflow-schedule";
 
 /** Aktuell unterstützte Auslöser. */
 export const WORKFLOW_TRIGGERS = [
@@ -9,6 +10,7 @@ export const WORKFLOW_TRIGGERS = [
   { key: "stunden_ohne_abschlag", label: "Stunden gebucht, aber keine Abschlagsrechnung" },
   { key: "endrechnung", label: "Endrechnung erstellt (Schluss-/Vollrechnung, keine Teil-/Abschlagsrechnung)" },
   { key: "lager_min_erreicht", label: "Lager-Minimum erreicht (Bestand ≤ Minimum)" },
+  { key: "wiederkehrend", label: "Wiederkehrende Aufgabe (fester Zeitplan)" },
 ] as const;
 
 export const WORKFLOW_TRIGGER_KEYS = WORKFLOW_TRIGGERS.map((t) => t.key);
@@ -45,6 +47,16 @@ export interface WorkflowConfig {
    * (Verkettung Rechnungsbuchung → Rechnungsprüfung).
    */
   chainReview: boolean;
+
+  // --- Nur „wiederkehrend": der Zeitplan ---
+  /** Rhythmus der Wiederholung. */
+  repeatKind: RepeatKind;
+  /** Nur "weekly": Wochentag (1 = Montag … 7 = Sonntag). */
+  repeatWeekday: number;
+  /** Nur "monthly": Tag im Monat (1–31; kürzere Monate nehmen den letzten Tag). */
+  repeatDayOfMonth: number;
+  /** Nur "interval": Abstand in Tagen, gerechnet ab „gilt ab" bzw. Anlage der Regel. */
+  repeatEveryDays: number;
 }
 
 export interface Workflow {
@@ -102,7 +114,19 @@ function parseConfig(value: unknown): WorkflowConfig {
         : null,
     excludeManual: o.excludeManual === true,
     chainReview: o.chainReview === true,
+    repeatKind: REPEAT_KINDS.some((r) => r.key === o.repeatKind)
+      ? (o.repeatKind as RepeatKind)
+      : "weekly",
+    repeatWeekday: clamp(Number(o.repeatWeekday), 1, 7, 1),
+    repeatDayOfMonth: clamp(Number(o.repeatDayOfMonth), 1, 31, 1),
+    repeatEveryDays: clamp(Number(o.repeatEveryDays), 1, 365, 14),
   };
+}
+
+/** Zahl auf einen Bereich begrenzen; bei Unsinn den Standardwert nehmen. */
+function clamp(value: number, min: number, max: number, fallback: number): number {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(value)));
 }
 
 function mapRow(r: WorkflowRow): Workflow {

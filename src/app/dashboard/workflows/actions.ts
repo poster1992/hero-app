@@ -11,6 +11,7 @@ import {
   WORKFLOW_TRIGGER_KEYS,
   type WorkflowConfig,
 } from "@/lib/workflows";
+import { REPEAT_KINDS, type RepeatKind } from "@/lib/workflow-schedule";
 import { runWorkflowScan } from "@/lib/workflow-engine";
 
 const PATH = "/dashboard/workflows";
@@ -81,6 +82,13 @@ function readConfig(formData: FormData): WorkflowConfig {
     excludedAssigneeId: Number(formData.get("excludedAssigneeId")) > 0 ? Number(formData.get("excludedAssigneeId")) : null,
     excludeManual: formData.get("excludeManual") === "on" || formData.get("excludeManual") === "1",
     chainReview: formData.get("chainReview") === "on" || formData.get("chainReview") === "1",
+    // Zeitplan der wiederkehrenden Aufgabe (parseConfig begrenzt die Werte nochmal).
+    repeatKind: REPEAT_KINDS.some((r) => r.key === String(formData.get("repeatKind")))
+      ? (String(formData.get("repeatKind")) as RepeatKind)
+      : "weekly",
+    repeatWeekday: num(formData.get("repeatWeekday")) ?? 1,
+    repeatDayOfMonth: num(formData.get("repeatDayOfMonth")) ?? 1,
+    repeatEveryDays: num(formData.get("repeatEveryDays")) ?? 14,
   };
 }
 
