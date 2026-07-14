@@ -13,6 +13,25 @@ interface GraphQLResponse<T> {
 const TRANSIENT_STATUS = new Set([429, 500, 502, 503, 504]);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * Seitengröße der Offset-Paginierer.
+ *
+ * HERO erlaubt große Seiten – gemessen: `first: 5000` liefert alle 4.713 Zeiteinträge
+ * in EINEM Request (~1,0 s) statt in 24 seriellen Seiten à 200 (~5,4 s). Da jede Seite
+ * ein eigener HTTP-Roundtrip (~260 ms) ist, ist die Seitengröße der größte Hebel.
+ *
+ * Die Schleifen brechen bewusst NUR bei einer leeren Seite ab und rücken um die
+ * TATSÄCHLICH gelieferte Anzahl weiter (nicht um `pageSize`). Würde HERO die Seitengröße
+ * intern deckeln (z.B. 5000 angefordert, nur 1000 geliefert), fehlten sonst kommentarlos
+ * Daten – der schlimmste Fehlertyp, weil die Seite weiter plausible Zahlen zeigt.
+ * Preis dafür: ein zusätzlicher (leerer) Request am Ende jeder Paginierung.
+ */
+const HERO_PAGE_SIZE = 1000;
+/** tracking_times ist der größte Datensatz (~4.700 Einträge) – hier lohnt die volle Seite. */
+const HERO_TRACKING_PAGE_SIZE = 5000;
+/** Reines Sicherheitsnetz gegen Endlosschleifen; die Paginierung endet normal über die leere Seite. */
+const HERO_MAX_PAGES = 100;
+
 export async function heroGraphQL<T>(
   query: string,
   variables?: Record<string, unknown>,
@@ -132,7 +151,7 @@ interface ReceiptConnection {
 const RECEIPTS_QUERY = `
   query ReceiptsInRange($from: DateTime!, $to: DateTime!, $after: String) {
     Receipt_Receipts(
-      first: 200
+      first: 1000
       after: $after
       filters: { receiptDate: { greaterThanOrEqual: $from, lessThanOrEqual: $to } }
       sortings: [RECEIPT_DATE_ASC]
@@ -340,14 +359,14 @@ export async function getCustomerInvoices(): Promise<CustomerInvoice[]> {
 
 /** Fetches all customer documents of the given document type ids, paginated. */
 export async function getCustomerDocumentsByType(typeIds: number[]): Promise<CustomerInvoice[]> {
-  const pageSize = 200;
-  const maxPages = 30; // safety cap (~6000 documents)
+  const pageSize = HERO_PAGE_SIZE;
+  const maxPages = HERO_MAX_PAGES;
   const result: CustomerInvoice[] = [];
 
-  for (let page = 0; page < maxPages; page++) {
+  for (let guard = 0, offset = 0; guard < maxPages; guard++) {
     const data = await heroGraphQL<{ customer_documents: RawCustomerDocument[] }>(
       CUSTOMER_INVOICES_QUERY,
-      { typeIds, first: pageSize, offset: page * pageSize }
+      { typeIds, first: pageSize, offset }
     );
     const docs = data.customer_documents ?? [];
     for (const d of docs) {
@@ -391,7 +410,8 @@ export async function getCustomerDocumentsByType(typeIds: number[]): Promise<Cus
         invoiceStyle: d.metadata?.invoice_style ?? null,
       });
     }
-    if (docs.length < pageSize) break;
+    if (docs.length === 0) break;
+    offset += docs.length;
   }
 
   return result;
@@ -417,13 +437,13 @@ export interface ProjectLocation {
 
 /** Projects (project_matches) that have geocoded addresses, for plotting on a map. */
 export async function getProjectLocations(): Promise<ProjectLocation[]> {
-  const pageSize = 200;
-  const maxPages = 30;
+  const pageSize = HERO_PAGE_SIZE;
+  const maxPages = HERO_MAX_PAGES;
   const result: ProjectLocation[] = [];
   // Auftragsbestätigung = 1057579, Rechnung = 1057585; status 1000 = gelöscht.
   const ORDER_DOC_TYPES = new Set([1057579, 1057585]);
 
-  for (let page = 0; page < maxPages; page++) {
+  for (let guard = 0, offset = 0; guard < maxPages; guard++) {
     const data = await heroGraphQL<{
       project_matches: {
         id: number;
@@ -450,7 +470,7 @@ export async function getProjectLocations(): Promise<ProjectLocation[]> {
           address { city street zipcode latitude longitude }
         }
       }`,
-      { first: pageSize, offset: page * pageSize }
+      { first: pageSize, offset }
     );
     const matches = data.project_matches ?? [];
     for (const m of matches) {
@@ -478,7 +498,8 @@ export async function getProjectLocations(): Promise<ProjectLocation[]> {
         hasOrder,
       });
     }
-    if (matches.length < pageSize) break;
+    if (matches.length === 0) break;
+    offset += matches.length;
   }
 
   return result;
@@ -518,11 +539,11 @@ export async function findContactNameBySearch(search: string): Promise<string | 
 
 /** All contacts (customers/suppliers), paginated. */
 export async function getCustomers(): Promise<CustomerSummary[]> {
-  const pageSize = 200;
-  const maxPages = 60;
+  const pageSize = HERO_PAGE_SIZE;
+  const maxPages = HERO_MAX_PAGES;
   const result: CustomerSummary[] = [];
 
-  for (let page = 0; page < maxPages; page++) {
+  for (let guard = 0, offset = 0; guard < maxPages; guard++) {
     const data = await heroGraphQL<{
       contacts: {
         id: number;
@@ -549,7 +570,7 @@ export async function getCustomers(): Promise<CustomerSummary[]> {
           address { street zipcode city }
         }
       }`,
-      { first: pageSize, offset: page * pageSize }
+      { first: pageSize, offset }
     );
     const contacts = data.contacts ?? [];
     for (const c of contacts) {
@@ -566,7 +587,8 @@ export async function getCustomers(): Promise<CustomerSummary[]> {
         categoryName: c.category_name,
       });
     }
-    if (contacts.length < pageSize) break;
+    if (contacts.length === 0) break;
+    offset += contacts.length;
   }
 
   return result;
@@ -591,11 +613,11 @@ export interface CalendarEventLite {
 
 /** Calendar events overlapping [from, to] (ISO datetime), with assigned partners. */
 export async function getCalendarEvents(from: string, to: string): Promise<CalendarEventLite[]> {
-  const pageSize = 200;
-  const maxPages = 60;
+  const pageSize = HERO_PAGE_SIZE;
+  const maxPages = HERO_MAX_PAGES;
   const result: CalendarEventLite[] = [];
 
-  for (let page = 0; page < maxPages; page++) {
+  for (let guard = 0, offset = 0; guard < maxPages; guard++) {
     const data = await heroGraphQL<{
       calendar_events: {
         id: number;
@@ -620,7 +642,7 @@ export async function getCalendarEvents(from: string, to: string): Promise<Calen
           project_match { id relative_id name }
         }
       }`,
-      { start: from, end: to, first: pageSize, offset: page * pageSize }
+      { start: from, end: to, first: pageSize, offset }
     );
     const events = data.calendar_events ?? [];
     for (const e of events) {
@@ -641,7 +663,8 @@ export async function getCalendarEvents(from: string, to: string): Promise<Calen
         projectName: e.project_match?.name ?? null,
       });
     }
-    if (events.length < pageSize) break;
+    if (events.length === 0) break;
+    offset += events.length;
   }
 
   return result;
@@ -651,11 +674,11 @@ export async function getCalendarEvents(from: string, to: string): Promise<Calen
 export async function getCalendarEventsForProject(
   projectMatchId: number
 ): Promise<CalendarEventLite[]> {
-  const pageSize = 200;
-  const maxPages = 60;
+  const pageSize = HERO_PAGE_SIZE;
+  const maxPages = HERO_MAX_PAGES;
   const result: CalendarEventLite[] = [];
 
-  for (let page = 0; page < maxPages; page++) {
+  for (let guard = 0, offset = 0; guard < maxPages; guard++) {
     const data = await heroGraphQL<{
       calendar_events: {
         id: number;
@@ -680,7 +703,7 @@ export async function getCalendarEventsForProject(
           project_match { id relative_id name }
         }
       }`,
-      { pid: projectMatchId, first: pageSize, offset: page * pageSize }
+      { pid: projectMatchId, first: pageSize, offset }
     );
     const events = data.calendar_events ?? [];
     for (const e of events) {
@@ -701,7 +724,8 @@ export async function getCalendarEventsForProject(
         projectName: e.project_match?.name ?? null,
       });
     }
-    if (events.length < pageSize) break;
+    if (events.length === 0) break;
+    offset += events.length;
   }
 
   return result;
@@ -761,11 +785,11 @@ export interface StockArticle {
 
 /** All stock materials (articles with stock) from HERO, deduplicated by id. */
 export async function getStockArticles(): Promise<StockArticle[]> {
-  const pageSize = 200;
-  const maxPages = 60;
+  const pageSize = HERO_PAGE_SIZE;
+  const maxPages = HERO_MAX_PAGES;
   const byId = new Map<number, StockArticle>();
 
-  for (let page = 0; page < maxPages; page++) {
+  for (let guard = 0, offset = 0; guard < maxPages; guard++) {
     const data = await heroGraphQL<{
       supply_product_versions: {
         base_price: number | null;
@@ -804,7 +828,7 @@ export async function getStockArticles(): Promise<StockArticle[]> {
           }
         }
       }`,
-      { first: pageSize, offset: page * pageSize }
+      { first: pageSize, offset }
     );
     const versions = data.supply_product_versions ?? [];
     for (const v of versions) {
@@ -826,7 +850,8 @@ export async function getStockArticles(): Promise<StockArticle[]> {
         });
       }
     }
-    if (versions.length < pageSize) break;
+    if (versions.length === 0) break;
+    offset += versions.length;
   }
 
   return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name, "de"));
@@ -857,11 +882,11 @@ export interface AbsenceLite {
 
 /** Approved/submitted absences overlapping [from, to] (yyyy-mm-dd). */
 export async function getAbsences(from: string, to: string): Promise<AbsenceLite[]> {
-  const pageSize = 200;
-  const maxPages = 30;
+  const pageSize = HERO_PAGE_SIZE;
+  const maxPages = HERO_MAX_PAGES;
   const result: AbsenceLite[] = [];
 
-  for (let page = 0; page < maxPages; page++) {
+  for (let guard = 0, offset = 0; guard < maxPages; guard++) {
     const data = await heroGraphQL<{
       absences: {
         id: number;
@@ -893,7 +918,7 @@ export async function getAbsences(from: string, to: string): Promise<AbsenceLite
           partner { id name role }
         }
       }`,
-      { start: from, end: to, first: pageSize, offset: page * pageSize }
+      { start: from, end: to, first: pageSize, offset }
     );
     const absences = data.absences ?? [];
     for (const a of absences) {
@@ -912,7 +937,8 @@ export async function getAbsences(from: string, to: string): Promise<AbsenceLite
         partnerRole: a.partner.role ?? null,
       });
     }
-    if (absences.length < pageSize) break;
+    if (absences.length === 0) break;
+    offset += absences.length;
   }
 
   return result;
@@ -937,11 +963,11 @@ export interface TrackingTimeEntry {
 
 /** All time-tracking entries in [start, end) (yyyy-mm-dd), across all employees. */
 export async function getTrackingTimes(start: string, end: string): Promise<TrackingTimeEntry[]> {
-  const pageSize = 200;
-  const maxPages = 60;
+  const pageSize = HERO_PAGE_SIZE;
+  const maxPages = HERO_MAX_PAGES;
   const result: TrackingTimeEntry[] = [];
 
-  for (let page = 0; page < maxPages; page++) {
+  for (let guard = 0, offset = 0; guard < maxPages; guard++) {
     const data = await heroGraphQL<{
       tracking_times: {
         id: number;
@@ -969,7 +995,7 @@ export async function getTrackingTimes(start: string, end: string): Promise<Trac
           project_match { id relative_id name }
         }
       }`,
-      { start, end, first: pageSize, offset: page * pageSize }
+      { start, end, first: pageSize, offset }
     );
     const entries = data.tracking_times ?? [];
     for (const e of entries) {
@@ -988,7 +1014,8 @@ export async function getTrackingTimes(start: string, end: string): Promise<Trac
         comment: e.comment ?? "",
       });
     }
-    if (entries.length < pageSize) break;
+    if (entries.length === 0) break;
+    offset += entries.length;
   }
 
   return result;
@@ -996,11 +1023,11 @@ export async function getTrackingTimes(start: string, end: string): Promise<Trac
 
 /** Total worked hours per project (project_match id), across all time. */
 export async function getHoursByProject(): Promise<Map<number, number>> {
-  const pageSize = 200;
-  const maxPages = 200;
+  const pageSize = HERO_TRACKING_PAGE_SIZE;
+  const maxPages = HERO_MAX_PAGES;
   const byProject = new Map<number, number>();
 
-  for (let page = 0; page < maxPages; page++) {
+  for (let guard = 0, offset = 0; guard < maxPages; guard++) {
     const data = await heroGraphQL<{
       tracking_times: { project_match_id: number | null; start: string | null; end: string | null }[];
     }>(
@@ -1011,7 +1038,7 @@ export async function getHoursByProject(): Promise<Map<number, number>> {
           end
         }
       }`,
-      { first: pageSize, offset: page * pageSize }
+      { first: pageSize, offset }
     );
     const entries = data.tracking_times ?? [];
     for (const e of entries) {
@@ -1020,7 +1047,8 @@ export async function getHoursByProject(): Promise<Map<number, number>> {
       if (ms <= 0) continue;
       byProject.set(e.project_match_id, (byProject.get(e.project_match_id) ?? 0) + ms / 3_600_000);
     }
-    if (entries.length < pageSize) break;
+    if (entries.length === 0) break;
+    offset += entries.length;
   }
 
   for (const [k, v] of byProject) byProject.set(k, Math.round(v * 100) / 100);
@@ -1036,12 +1064,12 @@ export interface HoursByProjectEmployee {
 
 /** Worked hours per project AND employee (all time), for profit allocation. */
 export async function getHoursByProjectAndEmployee(): Promise<HoursByProjectEmployee> {
-  const pageSize = 200;
-  const maxPages = 200;
+  const pageSize = HERO_TRACKING_PAGE_SIZE;
+  const maxPages = HERO_MAX_PAGES;
   const byProject = new Map<number, Map<number, number>>();
   const names = new Map<number, string>();
 
-  for (let page = 0; page < maxPages; page++) {
+  for (let guard = 0, offset = 0; guard < maxPages; guard++) {
     const data = await heroGraphQL<{
       tracking_times: {
         project_match_id: number | null;
@@ -1058,7 +1086,7 @@ export async function getHoursByProjectAndEmployee(): Promise<HoursByProjectEmpl
           partner { id name }
         }
       }`,
-      { first: pageSize, offset: page * pageSize }
+      { first: pageSize, offset }
     );
     const entries = data.tracking_times ?? [];
     for (const e of entries) {
@@ -1071,7 +1099,8 @@ export async function getHoursByProjectAndEmployee(): Promise<HoursByProjectEmpl
       emp.set(e.partner.id, (emp.get(e.partner.id) ?? 0) + hours);
       byProject.set(e.project_match_id, emp);
     }
-    if (entries.length < pageSize) break;
+    if (entries.length === 0) break;
+    offset += entries.length;
   }
 
   for (const emp of byProject.values()) {
@@ -1092,14 +1121,14 @@ export interface ProjectHourDetail {
 
 /** Stundendetails je Projekt: Summe, Mitarbeiter und Erfassungszeitraum (für Workflows). */
 export async function getProjectHourDetails(): Promise<Map<number, ProjectHourDetail>> {
-  const pageSize = 200;
-  const maxPages = 200;
+  const pageSize = HERO_TRACKING_PAGE_SIZE;
+  const maxPages = HERO_MAX_PAGES;
   const acc = new Map<
     number,
     { hours: number; emp: Map<string, number>; first: string | null; last: string | null; entries: number }
   >();
 
-  for (let page = 0; page < maxPages; page++) {
+  for (let guard = 0, offset = 0; guard < maxPages; guard++) {
     const data = await heroGraphQL<{
       tracking_times: {
         project_match_id: number | null;
@@ -1116,7 +1145,7 @@ export async function getProjectHourDetails(): Promise<Map<number, ProjectHourDe
           partner { id name }
         }
       }`,
-      { first: pageSize, offset: page * pageSize }
+      { first: pageSize, offset }
     );
     const entries = data.tracking_times ?? [];
     for (const e of entries) {
@@ -1136,7 +1165,8 @@ export async function getProjectHourDetails(): Promise<Map<number, ProjectHourDe
       if (!cur.last || day > cur.last) cur.last = day;
       acc.set(e.project_match_id, cur);
     }
-    if (entries.length < pageSize) break;
+    if (entries.length === 0) break;
+    offset += entries.length;
   }
 
   const out = new Map<number, ProjectHourDetail>();
@@ -1190,8 +1220,8 @@ export interface ProjectPipeline {
 }
 
 export async function getProjectPipeline(): Promise<ProjectPipeline> {
-  const pageSize = 200;
-  const maxPages = 30;
+  const pageSize = HERO_PAGE_SIZE;
+  const maxPages = HERO_MAX_PAGES;
   const byStep = new Map<
     string,
     {
@@ -1207,7 +1237,7 @@ export async function getProjectPipeline(): Promise<ProjectPipeline> {
 
   const offerByProject = await getOfferInfoByProject();
 
-  for (let page = 0; page < maxPages; page++) {
+  for (let guard = 0, offset = 0; guard < maxPages; guard++) {
     const data = await heroGraphQL<{
       project_matches: {
         id: number;
@@ -1234,7 +1264,7 @@ export async function getProjectPipeline(): Promise<ProjectPipeline> {
           }
         }
       }`,
-      { first: pageSize, offset: page * pageSize }
+      { first: pageSize, offset }
     );
     const matches = data.project_matches ?? [];
     for (const m of matches) {
@@ -1263,7 +1293,8 @@ export async function getProjectPipeline(): Promise<ProjectPipeline> {
       });
       byStep.set(key, entry);
     }
-    if (matches.length < pageSize) break;
+    if (matches.length === 0) break;
+    offset += matches.length;
   }
 
   const stages: PipelineStage[] = [...byStep.entries()]
@@ -1329,11 +1360,11 @@ const PROJECT_DONE_STATUS_CODE = 2000;
  * and that entered that status in `year`.
  */
 export async function getEvaluableProjectIds(year: number): Promise<Set<number>> {
-  const pageSize = 200;
-  const maxPages = 60;
+  const pageSize = HERO_PAGE_SIZE;
+  const maxPages = HERO_MAX_PAGES;
   const ids = new Set<number>();
 
-  for (let page = 0; page < maxPages; page++) {
+  for (let guard = 0, offset = 0; guard < maxPages; guard++) {
     const data = await heroGraphQL<{
       project_matches: {
         id: number;
@@ -1351,7 +1382,7 @@ export async function getEvaluableProjectIds(year: number): Promise<Set<number>>
           current_project_match_status { status_code created modified step { name } }
         }
       }`,
-      { first: pageSize, offset: page * pageSize }
+      { first: pageSize, offset }
     );
     const rows = data.project_matches ?? [];
     for (const p of rows) {
@@ -1363,7 +1394,8 @@ export async function getEvaluableProjectIds(year: number): Promise<Set<number>>
       const date = st.created || st.modified;
       if (date && new Date(date).getUTCFullYear() === year) ids.add(p.id);
     }
-    if (rows.length < pageSize) break;
+    if (rows.length === 0) break;
+    offset += rows.length;
   }
   return ids;
 }
@@ -1387,13 +1419,13 @@ const STORNO_DOCUMENT_TYPE_ID = 1057595;
 
 /** Net volume of offers, order confirmations and invoiced amount for a year (excludes deleted). */
 export async function getOfferConfirmationVolume(year: number): Promise<DocumentVolume> {
-  const pageSize = 200;
-  const maxPages = 60;
+  const pageSize = HERO_PAGE_SIZE;
+  const maxPages = HERO_MAX_PAGES;
   let offers = 0;
   let confirmations = 0;
   let invoiced = 0;
 
-  for (let page = 0; page < maxPages; page++) {
+  for (let guard = 0, offset = 0; guard < maxPages; guard++) {
     const data = await heroGraphQL<{
       customer_documents: {
         document_type_id: number | null;
@@ -1419,7 +1451,7 @@ export async function getOfferConfirmationVolume(year: number): Promise<Document
           STORNO_DOCUMENT_TYPE_ID,
         ],
         first: pageSize,
-        offset: page * pageSize,
+        offset,
       }
     );
     const docs = data.customer_documents ?? [];
@@ -1443,7 +1475,8 @@ export async function getOfferConfirmationVolume(year: number): Promise<Document
           break;
       }
     }
-    if (docs.length < pageSize) break;
+    if (docs.length === 0) break;
+    offset += docs.length;
   }
 
   return {
@@ -1457,12 +1490,12 @@ export async function getOfferConfirmationVolume(year: number): Promise<Document
 export async function getOfferConfirmationByMonth(
   year: number
 ): Promise<{ offers: number[]; confirmations: number[] }> {
-  const pageSize = 200;
-  const maxPages = 60;
+  const pageSize = HERO_PAGE_SIZE;
+  const maxPages = HERO_MAX_PAGES;
   const offers = new Array(12).fill(0);
   const confirmations = new Array(12).fill(0);
 
-  for (let page = 0; page < maxPages; page++) {
+  for (let guard = 0, offset = 0; guard < maxPages; guard++) {
     const data = await heroGraphQL<{
       customer_documents: {
         document_type_id: number | null;
@@ -1482,7 +1515,7 @@ export async function getOfferConfirmationByMonth(
       {
         ids: [OFFER_DOCUMENT_TYPE_ID, CONFIRMATION_DOCUMENT_TYPE_ID],
         first: pageSize,
-        offset: page * pageSize,
+        offset,
       }
     );
     const docs = data.customer_documents ?? [];
@@ -1495,7 +1528,8 @@ export async function getOfferConfirmationByMonth(
       if (d.document_type_id === OFFER_DOCUMENT_TYPE_ID) offers[m] += value;
       else if (d.document_type_id === CONFIRMATION_DOCUMENT_TYPE_ID) confirmations[m] += value;
     }
-    if (docs.length < pageSize) break;
+    if (docs.length === 0) break;
+    offset += docs.length;
   }
 
   const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -1511,11 +1545,11 @@ export interface OfferInfo {
 
 /** Offer net sum and latest send date per project_match id (excludes deleted). */
 export async function getOfferInfoByProject(): Promise<Map<number, OfferInfo>> {
-  const pageSize = 200;
-  const maxPages = 60;
+  const pageSize = HERO_PAGE_SIZE;
+  const maxPages = HERO_MAX_PAGES;
   const byProject = new Map<number, OfferInfo>();
 
-  for (let page = 0; page < maxPages; page++) {
+  for (let guard = 0, offset = 0; guard < maxPages; guard++) {
     const data = await heroGraphQL<{
       customer_documents: {
         project_match_id: number | null;
@@ -1532,7 +1566,7 @@ export async function getOfferInfoByProject(): Promise<Map<number, OfferInfo>> {
           date
         }
       }`,
-      { ids: [OFFER_DOCUMENT_TYPE_ID], first: pageSize, offset: page * pageSize }
+      { ids: [OFFER_DOCUMENT_TYPE_ID], first: pageSize, offset }
     );
     const docs = data.customer_documents ?? [];
     for (const d of docs) {
@@ -1545,7 +1579,8 @@ export async function getOfferInfoByProject(): Promise<Map<number, OfferInfo>> {
       }
       byProject.set(d.project_match_id, entry);
     }
-    if (docs.length < pageSize) break;
+    if (docs.length === 0) break;
+    offset += docs.length;
   }
 
   for (const [k, v] of byProject) byProject.set(k, { ...v, sum: Math.round(v.sum * 100) / 100 });
@@ -1557,11 +1592,11 @@ export async function getOfferInfoByProject(): Promise<Map<number, OfferInfo>> {
  * Stornorechnung (each subtracted by magnitude), deleted documents excluded.
  */
 export async function getInvoiceNetByProject(): Promise<Map<number, number>> {
-  const pageSize = 200;
-  const maxPages = 30;
+  const pageSize = HERO_PAGE_SIZE;
+  const maxPages = HERO_MAX_PAGES;
   const byProject = new Map<number, number>();
 
-  for (let page = 0; page < maxPages; page++) {
+  for (let guard = 0, offset = 0; guard < maxPages; guard++) {
     const data = await heroGraphQL<{
       customer_documents: {
         document_type_id: number | null;
@@ -1578,7 +1613,7 @@ export async function getInvoiceNetByProject(): Promise<Map<number, number>> {
           status_code
         }
       }`,
-      { ids: INVOICE_DOCUMENT_TYPE_IDS, first: pageSize, offset: page * pageSize }
+      { ids: INVOICE_DOCUMENT_TYPE_IDS, first: pageSize, offset }
     );
     const docs = data.customer_documents ?? [];
     for (const d of docs) {
@@ -1588,7 +1623,8 @@ export async function getInvoiceNetByProject(): Promise<Map<number, number>> {
         d.document_type_id === RECHNUNG_DOCUMENT_TYPE_ID ? value : -Math.abs(value);
       byProject.set(d.project_match_id, (byProject.get(d.project_match_id) ?? 0) + contribution);
     }
-    if (docs.length < pageSize) break;
+    if (docs.length === 0) break;
+    offset += docs.length;
   }
 
   for (const [k, v] of byProject) byProject.set(k, Math.round(v * 100) / 100);
@@ -1646,11 +1682,11 @@ export interface ProjectCalculation {
 
 /** Calculated (planned) hours and material cost per project, from the Auftragsbestätigung drafts. */
 export async function getCalculatedByProject(): Promise<Map<number, ProjectCalculation>> {
-  const pageSize = 100;
-  const maxPages = 60;
+  const pageSize = HERO_PAGE_SIZE;
+  const maxPages = HERO_MAX_PAGES;
   const byProject = new Map<number, ProjectCalculation>();
 
-  for (let page = 0; page < maxPages; page++) {
+  for (let guard = 0, offset = 0; guard < maxPages; guard++) {
     const data = await heroGraphQL<{
       customer_documents: {
         project_match_id: number | null;
@@ -1665,7 +1701,7 @@ export async function getCalculatedByProject(): Promise<Map<number, ProjectCalcu
           published_customer_document_draft { data }
         }
       }`,
-      { ids: [CONFIRMATION_DOCUMENT_TYPE_ID], first: pageSize, offset: page * pageSize }
+      { ids: [CONFIRMATION_DOCUMENT_TYPE_ID], first: pageSize, offset }
     );
     const docs = data.customer_documents ?? [];
     for (const d of docs) {
@@ -1686,7 +1722,8 @@ export async function getCalculatedByProject(): Promise<Map<number, ProjectCalcu
       cur.laborCost += acc.laborCost;
       byProject.set(d.project_match_id, cur);
     }
-    if (docs.length < pageSize) break;
+    if (docs.length === 0) break;
+    offset += docs.length;
   }
 
   for (const [k, v] of byProject) {
@@ -1860,11 +1897,11 @@ export interface ConfirmationInfo {
 }
 
 export async function getConfirmationNetByProject(): Promise<Map<number, ConfirmationInfo>> {
-  const pageSize = 200;
-  const maxPages = 30;
+  const pageSize = HERO_PAGE_SIZE;
+  const maxPages = HERO_MAX_PAGES;
   const byProject = new Map<number, ConfirmationInfo>();
 
-  for (let page = 0; page < maxPages; page++) {
+  for (let guard = 0, offset = 0; guard < maxPages; guard++) {
     const data = await heroGraphQL<{
       customer_documents: {
         project_match_id: number | null;
@@ -1881,7 +1918,7 @@ export async function getConfirmationNetByProject(): Promise<Map<number, Confirm
           date
         }
       }`,
-      { ids: [CONFIRMATION_DOCUMENT_TYPE_ID], first: pageSize, offset: page * pageSize }
+      { ids: [CONFIRMATION_DOCUMENT_TYPE_ID], first: pageSize, offset }
     );
     const docs = data.customer_documents ?? [];
     for (const d of docs) {
@@ -1891,7 +1928,8 @@ export async function getConfirmationNetByProject(): Promise<Map<number, Confirm
       if (d.date && (!entry.date || d.date > entry.date)) entry.date = d.date;
       byProject.set(d.project_match_id, entry);
     }
-    if (docs.length < pageSize) break;
+    if (docs.length === 0) break;
+    offset += docs.length;
   }
 
   for (const [k, v] of byProject) byProject.set(k, { ...v, net: Math.round(v.net * 100) / 100 });
@@ -1900,14 +1938,14 @@ export async function getConfirmationNetByProject(): Promise<Map<number, Confirm
 
 /** Fetches all projects (project_matches of type "project"), paginated. */
 export async function getProjects(): Promise<ProjectSummary[]> {
-  const pageSize = 200;
-  const maxPages = 30;
+  const pageSize = HERO_PAGE_SIZE;
+  const maxPages = HERO_MAX_PAGES;
   const result: ProjectSummary[] = [];
 
-  for (let page = 0; page < maxPages; page++) {
+  for (let guard = 0, offset = 0; guard < maxPages; guard++) {
     const data = await heroGraphQL<{ project_matches: RawProjectMatch[] }>(PROJECTS_QUERY, {
       first: pageSize,
-      offset: page * pageSize,
+      offset,
     });
     const matches = data.project_matches ?? [];
     for (const p of matches) {
@@ -1922,7 +1960,8 @@ export async function getProjects(): Promise<ProjectSummary[]> {
         status: status ? status.step?.name || status.name || null : null,
       });
     }
-    if (matches.length < pageSize) break;
+    if (matches.length === 0) break;
+    offset += matches.length;
   }
 
   return result;

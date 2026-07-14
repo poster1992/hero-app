@@ -17,7 +17,9 @@ function createPool(): mysql.Pool {
     user: MYSQL_USER,
     password: MYSQL_PASSWORD ?? "",
     waitForConnections: true,
-    connectionLimit: 5,
+    // Das Dashboard-Layout allein feuert bis zu 6 Queries, dazu die Seite selbst und der
+    // parallel laufende Workflow-Scan – mit 5 Verbindungen stauten die sich hintereinander.
+    connectionLimit: 15,
     charset: "utf8mb4",
     // DATE/DATETIME als String liefern (z.B. "2026-06-20"), nicht als JS-Date,
     // damit Datumsformatierung ohne Zeitzonen-Verschiebung funktioniert.
