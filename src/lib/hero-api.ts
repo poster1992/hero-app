@@ -2059,3 +2059,80 @@ export async function getProjectPhotos(
     })
     .sort((a, b) => (b.created ?? "").localeCompare(a.created ?? ""));
 }
+
+/** REST-Upload-Endpoint von HERO (nicht Teil der GraphQL-API, aber mit demselben Bearer-Token nutzbar). */
+const HERO_UPLOAD_ENDPOINT = "https://login.hero-software.de/FileUploads/ajax_upload";
+
+interface AjaxUploadResponse {
+  status?: string;
+  data?: { id?: number; uuid?: string };
+}
+
+/**
+ * Lädt ein Foto nach HERO hoch und hängt es an ein Projekt.
+ *
+ * Drei Schritte, alle drei nötig:
+ *  1. Datei an den REST-Endpoint posten. WICHTIG: ohne `section`/`category` posten –
+ *     HERO legt sie dann als `temp` ab. Setzt man `section` hier schon selbst, meldet
+ *     `upload_image` in Schritt 2 zwar Erfolg, verknüpft die Datei aber NICHT mit dem
+ *     Projekt (sie liegt dann unauffindbar in HERO herum).
+ *  2. `upload_image` verschiebt die temporäre Datei zum Projekt und verlinkt sie.
+ *  3. `update_file_upload` setzt die Bild-Kategorie (z. B. "Dokumentation"), damit das
+ *     Foto im richtigen Ordner der Galerie auftaucht.
+ */
+export async function uploadProjectPhoto(
+  projectMatchId: number,
+  imageCategory: string,
+  file: { buffer: Buffer; filename: string; mime: string }
+): Promise<number> {
+  const token = process.env.HERO_API_TOKEN;
+  if (!token) throw new Error("HERO_API_TOKEN is not configured");
+
+  // 1. Datei als temporären Upload hochladen → liefert die uuid.
+  const form = new FormData();
+  form.append("file", new Blob([new Uint8Array(file.buffer)], { type: file.mime }), file.filename);
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 120_000);
+  let res: Response;
+  try {
+    res = await fetch(HERO_UPLOAD_ENDPOINT, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
+      cache: "no-store",
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+  if (!res.ok) throw new Error(`HERO-Upload fehlgeschlagen (HTTP ${res.status}).`);
+
+  const uploaded = (await res.json()) as AjaxUploadResponse;
+  const uuid = uploaded.data?.uuid;
+  if (!uuid) throw new Error("HERO hat keine Datei-UUID zurückgegeben.");
+
+  // 2. Temporäre Datei dem Projekt zuordnen.
+  const linked = await heroGraphQL<{ upload_image: { id: number } | null }>(
+    `mutation ($uuid: String!, $target: Int!) {
+      upload_image(file_upload_uuid: $uuid, target: project_match, target_id: $target) {
+        id
+      }
+    }`,
+    { uuid, target: projectMatchId }
+  );
+  const fileId = linked.upload_image?.id;
+  if (!fileId) throw new Error("Foto konnte nicht mit dem Projekt verknüpft werden.");
+
+  // 3. Bild-Kategorie setzen, damit das Foto im richtigen Ordner erscheint.
+  await heroGraphQL(
+    `mutation ($id: Int!, $category: String!) {
+      update_file_upload(id: $id, image_category: $category) {
+        id
+      }
+    }`,
+    { id: fileId, category: imageCategory }
+  );
+
+  return fileId;
+}

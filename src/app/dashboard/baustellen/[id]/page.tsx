@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { getBaustelle } from "@/lib/baustellen-docs";
 import { getProjectPhotos, type ProjectPhoto } from "@/lib/hero-api";
 import PhotoGallery from "@/components/PhotoGallery";
+import PhotoUploadButton from "@/components/PhotoUploadButton";
 
 export default async function BaustelleGalleryPage({
   params,
@@ -23,12 +24,15 @@ export default async function BaustelleGalleryPage({
 
   return (
     <div className="flex w-full max-w-none flex-1 flex-col gap-6 px-6 py-8">
-      <header>
-        <h1 className="text-2xl font-semibold text-gray-900">{baustelle.label}</h1>
-        <p className="mt-1 text-sm text-gray-600">
-          📁 {baustelle.imageCategory} · {baustelle.projectNr}
-          {baustelle.projectName ? ` – ${baustelle.projectName}` : ""} · {photos.length} Fotos
-        </p>
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-900">{baustelle.label}</h1>
+          <p className="mt-1 text-sm text-gray-600">
+            📁 {baustelle.imageCategory} · {baustelle.projectNr}
+            {baustelle.projectName ? ` – ${baustelle.projectName}` : ""} · {photos.length} Fotos
+          </p>
+        </div>
+        <PhotoUploadButton baustelleId={baustelle.id} />
       </header>
 
       {error ? (

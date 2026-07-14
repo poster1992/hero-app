@@ -10,6 +10,67 @@ import {
   setBaustellenBelegAmount,
 } from "@/lib/baustellen-belege";
 import { ocrBaustellenBeleg } from "@/lib/baustellen-beleg-ocr";
+import { getBaustelle } from "@/lib/baustellen-docs";
+import { uploadProjectPhoto } from "@/lib/hero-api";
+
+/**
+ * Lädt Fotos zu einem Baustellen-Ordner direkt nach HERO hoch (FormData: baustelleId, files).
+ * Die Fotos landen am HERO-Projekt in der Bild-Kategorie des Ordners und werden danach
+ * von der Galerie wieder live aus HERO gelesen – wir speichern sie nirgends selbst.
+ */
+export async function uploadBaustellenFotosAction(
+  formData: FormData
+): Promise<{ ok: boolean; uploaded: number; error?: string }> {
+  const session = await getSession();
+  if (!session) return { ok: false, uploaded: 0, error: "Nicht angemeldet." };
+
+  const baustelleId = Number(formData.get("baustelleId"));
+  if (!Number.isFinite(baustelleId) || baustelleId <= 0) {
+    return { ok: false, uploaded: 0, error: "Ungültiger Ordner." };
+  }
+
+  const baustelle = await getBaustelle(baustelleId);
+  if (!baustelle) return { ok: false, uploaded: 0, error: "Ordner nicht gefunden." };
+
+  const files = formData
+    .getAll("files")
+    .filter((f): f is File => typeof f === "object" && f !== null && "arrayBuffer" in f && f.size > 0);
+  if (files.length === 0) return { ok: false, uploaded: 0, error: "Kein Foto gewählt." };
+
+  let uploaded = 0;
+  const failed: string[] = [];
+
+  for (const f of files) {
+    if (!f.type.startsWith("image/")) {
+      failed.push(`${f.name} (kein Bild)`);
+      continue;
+    }
+    if (f.size > 25 * 1024 * 1024) {
+      failed.push(`${f.name} (größer als 25 MB)`);
+      continue;
+    }
+    try {
+      await uploadProjectPhoto(baustelle.projectMatchId, baustelle.imageCategory, {
+        buffer: Buffer.from(await f.arrayBuffer()),
+        filename: f.name || "foto.jpg",
+        mime: f.type,
+      });
+      uploaded++;
+    } catch (e) {
+      failed.push(`${f.name} (${e instanceof Error ? e.message : "Fehler"})`);
+    }
+  }
+
+  revalidatePath(`/dashboard/baustellen/${baustelleId}`);
+
+  if (uploaded === 0) {
+    return { ok: false, uploaded, error: `Upload fehlgeschlagen: ${failed.join(", ")}` };
+  }
+  if (failed.length > 0) {
+    return { ok: true, uploaded, error: `${failed.length} nicht hochgeladen: ${failed.join(", ")}` };
+  }
+  return { ok: true, uploaded };
+}
 
 /** Lädt einen Beleg zu einem Baustellen-Ordner hoch (FormData: baustelleId, file). */
 export async function uploadBaustellenBelegAction(
