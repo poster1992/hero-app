@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import type { ProjectPhoto } from "@/lib/hero-api";
 
 const dateFmt = new Intl.DateTimeFormat("de-DE", { dateStyle: "medium" });
@@ -24,7 +25,17 @@ export default function PhotoGallery({ photos }: { photos: ProjectPhoto[] }) {
       if (e.key === "ArrowLeft") setOpen((i) => (i === null ? i : (i - 1 + photos.length) % photos.length));
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+
+    // Scrollen der Seite hinter dem Bild sperren. Ohne das richtet iOS das
+    // „fixed" Overlay am Layout-Viewport aus, sobald die Seite gescrollt ist –
+    // das Bild erscheint dann verschoben statt mittig.
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
   }, [open, photos.length]);
 
   const current = open === null ? null : photos[open];
@@ -56,11 +67,15 @@ export default function PhotoGallery({ photos }: { photos: ProjectPhoto[] }) {
         ))}
       </div>
 
-      {current && (
-        <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 p-4"
-          onClick={() => setOpen(null)}
-        >
+      {/* Per Portal direkt an <body>: so kann kein Eltern-Element (z.B. mit transform
+          oder eigenem Scroll-Bereich) das „fixed" Overlay aus der Bildschirmmitte ziehen.
+          Beim Server-Rendern ist `current` null, deshalb ist der document-Zugriff sicher. */}
+      {current &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 p-4"
+            onClick={() => setOpen(null)}
+          >
           <button
             type="button"
             onClick={() => setOpen(null)}
@@ -120,8 +135,9 @@ export default function PhotoGallery({ photos }: { photos: ProjectPhoto[] }) {
               </a>
             </div>
           </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
     </>
   );
 }
