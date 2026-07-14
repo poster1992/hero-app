@@ -34,6 +34,7 @@ export const MODULES: AppModule[] = [
   { key: "cockpit_benzin", label: "Benzin / Tankkosten", group: "Cockpit" },
   { key: "cockpit_rechnungen", label: "Rechnungen", group: "Cockpit" },
   { key: "cockpit_arbeitszeiten", label: "Arbeitszeiten", group: "Cockpit" },
+  { key: "cockpit_zeitfreigabe", label: "Arbeitszeit-Freigabe (Tage in HERO bestätigen)", group: "Cockpit" },
   { key: "cockpit_abc", label: "ABC-Analyse", group: "Cockpit" },
   { key: "cockpit_preisvergleich", label: "Preisvergleich", group: "Cockpit" },
   { key: "cockpit_artikel", label: "Artikel-Auswertung", group: "Cockpit" },

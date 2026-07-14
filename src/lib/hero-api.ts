@@ -1,5 +1,14 @@
 const HERO_GRAPHQL_ENDPOINT = "https://login.hero-software.de/api/external/v7/graphql";
 
+/**
+ * INTERNER GraphQL-Endpoint von HERO (den die eigene Weboberfläche nutzt).
+ * Er kennt Dinge, die die externe API NICHT hat – u.a. `tracking_workdays` und die
+ * Freigabe-Mutation `confirm_tracking_workdays` (Arbeitszeit-Tagesfreigabe). Unser
+ * Bearer-Token wird akzeptiert. Undokumentiert – kann sich bei HERO-Updates ändern.
+ * Named Operations müssen als `?op=<Name>` in der URL wiederholt werden.
+ */
+const HERO_INTERNAL_ENDPOINT = "https://login.hero-software.de/Api/graphql";
+
 interface GraphQLError {
   message: string;
 }
@@ -101,6 +110,183 @@ export async function heroGraphQL<T>(
 
   throw lastError ?? new Error("HERO API request failed");
 }
+
+/**
+ * Ruft den internen HERO-Endpoint (`/Api/graphql`) auf. `operationName` MUSS zum Namen
+ * in der Query passen und wird zusätzlich als `?op=` an die URL gehängt (so macht es
+ * HEROs eigene Oberfläche). Sonst identisch zu heroGraphQL (Bearer, Retry, Timeout).
+ */
+async function heroInternalGraphQL<T>(
+  operationName: string,
+  query: string,
+  variables?: Record<string, unknown>,
+  retries = 3
+): Promise<T> {
+  const token = process.env.HERO_API_TOKEN;
+  if (!token) throw new Error("HERO_API_TOKEN is not configured");
+
+  const url = `${HERO_INTERNAL_ENDPOINT}?op=${encodeURIComponent(operationName)}`;
+  const body = JSON.stringify({ operationName, query, variables });
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30_000);
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body,
+        cache: "no-store",
+        signal: controller.signal,
+      });
+    } catch (e) {
+      clearTimeout(timer);
+      lastError = e instanceof Error ? e : new Error("HERO internal API network error");
+      if (attempt < retries) {
+        await sleep(400 * (attempt + 1));
+        continue;
+      }
+      throw lastError;
+    }
+    clearTimeout(timer);
+
+    if (!res.ok) {
+      if (TRANSIENT_STATUS.has(res.status) && attempt < retries) {
+        await sleep(400 * (attempt + 1));
+        continue;
+      }
+      throw new Error(`HERO internal API request failed: ${res.status} ${res.statusText}`);
+    }
+
+    const json: GraphQLResponse<T> = await res.json();
+    if (json.errors?.length) throw new Error(json.errors.map((e) => e.message).join("; "));
+    if (!json.data) throw new Error("HERO internal API returned no data");
+    return json.data;
+  }
+
+  throw lastError ?? new Error("HERO internal API request failed");
+}
+
+// --- Arbeitszeit-Tagesfreigabe (tracking_workdays, interner Endpoint) ---
+
+/** Ein Arbeitstag eines Mitarbeiters mit Freigabe-Status. */
+export interface Workday {
+  id: number;
+  /** YYYY-MM-DD */
+  date: string;
+  partnerId: number;
+  partnerName: string;
+  /** Erfasste Arbeitszeit in Stunden. */
+  workedHours: number;
+  /** Soll-Arbeitszeit in Stunden (0, wenn kein Soll hinterlegt). */
+  targetHours: number;
+  /** true = in HERO freigegeben (status_code 200), false = eingereicht (100). */
+  confirmed: boolean;
+}
+
+/** HERO-Statuscodes eines Arbeitstags. */
+const WORKDAY_STATUS_SUBMITTED = 100;
+const WORKDAY_STATUS_CONFIRMED = 200;
+
+interface RawWorkday {
+  id: number;
+  date: string | null;
+  status_code: number | null;
+  partner_id: number | null;
+  worked_time: number | null; // Sekunden
+  daily_target: number | null; // Sekunden
+}
+
+/**
+ * Arbeitstage im Zeitraum [from, to] (YYYY-MM-DD) samt Freigabe-Status.
+ *
+ * Nutzt den internen Endpoint (die externe API kennt `tracking_workdays` nicht). Die
+ * Namen werden über eine schlanke separate `tracking_times`-Abfrage aufgelöst statt in
+ * die Workday-Query verschachtelt – das hielte sonst das Query-Komplexitätslimit nicht.
+ */
+export async function getWorkdays(from: string, to: string): Promise<Workday[]> {
+  // WICHTIG: ohne `first` deckelt HERO tracking_workdays still auf 50 Datensätze
+  // (gemessen). Die 6-Feld-Query bleibt bei first:5000 unter dem Komplexitätslimit.
+  // Die Freigabe-Ansicht arbeitet mit Wochen/Monaten – 5000 Tage sind reichlich Reserve.
+  const data = await heroInternalGraphQL<{ tracking_workdays: RawWorkday[] | null }>(
+    "TrackingWorkdaysQuery",
+    `query TrackingWorkdaysQuery($start: Date, $end: Date, $first: Int) {
+      tracking_workdays(start: $start, end: $end, first: $first) {
+        id
+        date
+        status_code
+        partner_id
+        worked_time
+        daily_target
+      }
+    }`,
+    { start: from, end: to, first: HERO_TRACKING_PAGE_SIZE }
+  );
+  const workdays = data.tracking_workdays ?? [];
+  if (workdays.length === 0) return [];
+
+  // Namen der beteiligten Mitarbeiter auflösen (partner_id -> Name), schlanke Query.
+  const names = await getPartnerNames(from, to);
+
+  return workdays
+    .filter((w) => w.date && w.status_code != null)
+    .map((w) => ({
+      id: w.id,
+      date: w.date as string,
+      partnerId: w.partner_id ?? 0,
+      partnerName: names.get(w.partner_id ?? -1) ?? `Mitarbeiter ${w.partner_id ?? "?"}`,
+      workedHours: Math.round(((w.worked_time ?? 0) / 3600) * 100) / 100,
+      targetHours: Math.round(((w.daily_target ?? 0) / 3600) * 100) / 100,
+      confirmed: w.status_code === WORKDAY_STATUS_CONFIRMED,
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date) || a.partnerName.localeCompare(b.partnerName, "de"));
+}
+
+/** partner_id -> Anzeigename, aus den Zeiteinträgen des Zeitraums (schlanke Query). */
+async function getPartnerNames(from: string, to: string): Promise<Map<number, string>> {
+  const data = await heroInternalGraphQL<{
+    tracking_times: { partner_id: number | null; partner: { id: number; name: string | null } | null }[] | null;
+  }>(
+    "TrackingTimePartnersQuery",
+    `query TrackingTimePartnersQuery($start: Date, $end: Date, $first: Int) {
+      tracking_times(show_all_partners: true, start: $start, end: $end, first: $first, orderBy: "id") {
+        partner_id
+        partner { id name }
+      }
+    }`,
+    { start: from, end: to, first: HERO_TRACKING_PAGE_SIZE }
+  );
+  const map = new Map<number, string>();
+  for (const t of data.tracking_times ?? []) {
+    const id = t.partner?.id ?? t.partner_id;
+    if (id != null && t.partner?.name && !map.has(id)) map.set(id, t.partner.name);
+  }
+  return map;
+}
+
+/**
+ * Gibt Arbeitstage frei (status 100 → 200) über HEROs interne Mutation.
+ *
+ * Achtung: `confirm_tracking_workdays` liefert `true` auch bei nicht existierenden IDs –
+ * der Rückgabewert ist KEIN Erfolgsbeweis. Der Aufrufer sollte die betroffenen Tage
+ * anschließend neu laden und den Status prüfen (so macht es freigabeWorkdaysAction).
+ * Getestet 2026-07: Statuswechsel 100→200 real verifiziert.
+ */
+export async function confirmWorkdays(ids: number[]): Promise<void> {
+  const clean = ids.filter((n) => Number.isFinite(n) && n > 0);
+  if (clean.length === 0) return;
+  await heroInternalGraphQL(
+    "ConfirmTrackingWorkdays",
+    `mutation ConfirmTrackingWorkdays($ids: [Int]) {
+      confirm_tracking_workdays(ids: $ids)
+    }`,
+    { ids: clean }
+  );
+}
+
+export { WORKDAY_STATUS_SUBMITTED, WORKDAY_STATUS_CONFIRMED };
 
 export type ReceiptType = "output" | "income";
 

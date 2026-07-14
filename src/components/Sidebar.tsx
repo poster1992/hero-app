@@ -55,6 +55,7 @@ const NAV_ITEMS: NavItem[] = [
       { href: "/dashboard/benzin", label: "Benzin / Tankkosten", module: "cockpit_benzin" },
       { href: "/dashboard/rechnungen", label: "Rechnungen", module: "cockpit_rechnungen" },
       { href: "/dashboard/arbeitszeiten", label: "Arbeitszeiten", module: "cockpit_arbeitszeiten" },
+      { href: "/dashboard/zeitfreigabe", label: "Arbeitszeit-Freigabe", module: "cockpit_zeitfreigabe" },
       { href: "/dashboard/abc-analyse", label: "ABC-Analyse", module: "cockpit_abc" },
       { href: "/dashboard/preisvergleich", label: "Preisvergleich", module: "cockpit_preisvergleich" },
       { href: "/dashboard/artikel-auswertung", label: "Artikel-Auswertung", module: "cockpit_artikel" },
