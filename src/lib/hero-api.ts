@@ -286,6 +286,75 @@ export async function confirmWorkdays(ids: number[]): Promise<void> {
   );
 }
 
+/** Ein einzelner Zeitabschnitt innerhalb eines Arbeitstags (für die Detailansicht). */
+export interface WorkdayTime {
+  id: number;
+  /** ISO-Datetime mit Zeitzone. */
+  start: string | null;
+  end: string | null;
+  /** Dauer in Minuten. */
+  minutes: number;
+  /** Kategorie, z.B. "Umsetzung", "Pause". */
+  category: string | null;
+  /** Projektname (leer, wenn keinem Projekt zugeordnet). */
+  project: string | null;
+  projectRelativeId: number | null;
+  comment: string;
+}
+
+interface RawWorkdayTime {
+  id: number;
+  tracking_workday_id: number | null;
+  start: string | null;
+  end: string | null;
+  duration_in_seconds: number | null;
+  comment: string | null;
+  project_match: { name: string | null; relative_id: number | null } | null;
+  tracking_times_category: { name: string | null } | null;
+}
+
+/**
+ * Die einzelnen Zeitabschnitte aller Arbeitstage eines Datums, gruppiert nach
+ * `tracking_workday_id`. Ein Tag teilt sich über alle Mitarbeiter; deshalb wird
+ * einmal pro Datum geladen und in der UI je Mitarbeiter aus der Map gezogen.
+ */
+export async function getWorkdayTimesByDate(date: string): Promise<Map<number, WorkdayTime[]>> {
+  const data = await heroInternalGraphQL<{ tracking_times: RawWorkdayTime[] | null }>(
+    "TrackingTimeDetailsQuery",
+    `query TrackingTimeDetailsQuery($start: Date, $end: Date, $first: Int) {
+      tracking_times(show_all_partners: true, start: $start, end: $end, first: $first, orderBy: "start") {
+        id
+        tracking_workday_id
+        start
+        end
+        duration_in_seconds
+        comment
+        project_match { name relative_id }
+        tracking_times_category { name }
+      }
+    }`,
+    { start: date, end: date, first: HERO_TRACKING_PAGE_SIZE }
+  );
+
+  const byWorkday = new Map<number, WorkdayTime[]>();
+  for (const t of data.tracking_times ?? []) {
+    if (t.tracking_workday_id == null) continue;
+    const list = byWorkday.get(t.tracking_workday_id) ?? [];
+    list.push({
+      id: t.id,
+      start: t.start,
+      end: t.end,
+      minutes: Math.round((t.duration_in_seconds ?? 0) / 60),
+      category: t.tracking_times_category?.name ?? null,
+      project: t.project_match?.name ?? null,
+      projectRelativeId: t.project_match?.relative_id ?? null,
+      comment: t.comment ?? "",
+    });
+    byWorkday.set(t.tracking_workday_id, list);
+  }
+  return byWorkday;
+}
+
 export { WORKDAY_STATUS_SUBMITTED, WORKDAY_STATUS_CONFIRMED };
 
 export type ReceiptType = "output" | "income";

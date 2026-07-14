@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getEffectiveRole } from "@/lib/session";
 import { getAllowedModules } from "@/lib/role-store";
-import { confirmWorkdays, getWorkdays } from "@/lib/hero-api";
+import { confirmWorkdays, getWorkdays, getWorkdayTimesByDate, type WorkdayTime } from "@/lib/hero-api";
 
 const MODULE = "cockpit_zeitfreigabe";
 
@@ -15,6 +15,24 @@ async function mayApprove(): Promise<boolean> {
     return (await getAllowedModules(role)).includes(MODULE);
   } catch {
     return false;
+  }
+}
+
+/**
+ * Lädt die einzelnen Zeitabschnitte eines Arbeitstags (für die Detailansicht beim Klick).
+ * Gibt sie nach Workday-ID gruppiert zurück, damit ein Klick auf einen Mitarbeiter dessen
+ * Tag sofort aus dem Ergebnis ziehen kann (ein Datum teilt sich über alle Mitarbeiter).
+ */
+export async function loadWorkdayTimesAction(
+  date: string
+): Promise<{ ok: boolean; times?: Record<number, WorkdayTime[]>; error?: string }> {
+  if (!(await mayApprove())) return { ok: false, error: "Kein Zugriff." };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { ok: false, error: "Ungültiges Datum." };
+  try {
+    const map = await getWorkdayTimesByDate(date);
+    return { ok: true, times: Object.fromEntries(map) };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Details konnten nicht geladen werden." };
   }
 }
 

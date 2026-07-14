@@ -2,8 +2,8 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { confirmWorkdaysAction } from "@/app/dashboard/zeitfreigabe/actions";
-import type { Workday } from "@/lib/hero-api";
+import { confirmWorkdaysAction, loadWorkdayTimesAction } from "@/app/dashboard/zeitfreigabe/actions";
+import type { Workday, WorkdayTime } from "@/lib/hero-api";
 
 const hours = new Intl.NumberFormat("de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 2 });
 const weekday = new Intl.DateTimeFormat("de-DE", { weekday: "long", day: "2-digit", month: "2-digit" });
@@ -11,6 +11,19 @@ const weekday = new Intl.DateTimeFormat("de-DE", { weekday: "long", day: "2-digi
 function fmtDay(iso: string): string {
   const [y, m, d] = iso.split("-").map(Number);
   return weekday.format(new Date(Date.UTC(y, m - 1, d)));
+}
+
+/** "06:30" aus einem ISO-Datetime (lokale HERO-Zeit, Zeitzone im String). */
+function fmtTime(iso: string | null): string {
+  if (!iso) return "–";
+  const m = iso.match(/T(\d{2}:\d{2})/);
+  return m ? m[1] : "–";
+}
+
+function fmtDuration(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return h > 0 ? `${h}:${String(m).padStart(2, "0")} h` : `${m} min`;
 }
 
 interface DayGroup {
@@ -34,6 +47,35 @@ export default function WorkdayApproval({
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
   // Welche IDs gerade freigegeben werden (für die Zeilen-Anzeige).
   const [busyIds, setBusyIds] = useState<Set<number>>(new Set());
+
+  // Detailansicht: aufgeklappte Workday-IDs + geladene Zeitabschnitte je Datum.
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const [detailsByDate, setDetailsByDate] = useState<Map<string, Record<number, WorkdayTime[]>>>(new Map());
+  const [loadingDate, setLoadingDate] = useState<string | null>(null);
+  const [detailError, setDetailError] = useState<string | null>(null);
+
+  function toggleDetails(w: Workday) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(w.id)) next.delete(w.id);
+      else next.add(w.id);
+      return next;
+    });
+    // Details des Tages einmal laden (gilt für alle Mitarbeiter desselben Datums).
+    if (!detailsByDate.has(w.date)) {
+      setLoadingDate(w.date);
+      setDetailError(null);
+      loadWorkdayTimesAction(w.date)
+        .then((res) => {
+          if (res.ok && res.times) {
+            setDetailsByDate((prev) => new Map(prev).set(w.date, res.times!));
+          } else {
+            setDetailError(res.error ?? "Details konnten nicht geladen werden.");
+          }
+        })
+        .finally(() => setLoadingDate(null));
+    }
+  }
 
   // Nach Tag gruppieren (workdays kommen bereits nach Datum sortiert).
   const groups = useMemo<DayGroup[]>(() => {
@@ -157,29 +199,91 @@ export default function WorkdayApproval({
             <ul className="divide-y divide-gray-100">
               {g.entries.map((w) => {
                 const busy = busyIds.has(w.id);
+                const open = expanded.has(w.id);
+                const times = detailsByDate.get(w.date)?.[w.id];
                 return (
-                  <li key={w.id} className="flex items-center gap-3 px-5 py-2.5">
-                    <span className="w-5">
-                      {!w.confirmed && (
-                        <input
-                          type="checkbox"
-                          checked={selected.has(w.id)}
-                          onChange={() => toggle(w.id)}
-                          disabled={pending}
-                        />
-                      )}
-                    </span>
-                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-900">{w.partnerName}</span>
-                    <span className="shrink-0 text-sm tabular-nums text-gray-600">{hours.format(w.workedHours)} h</span>
-                    <span className="w-24 shrink-0 text-right text-xs">
-                      {busy ? (
-                        <span className="text-gray-400">…</span>
-                      ) : w.confirmed ? (
-                        <span className="font-medium text-green-600">✓ freigegeben</span>
-                      ) : (
-                        <span className="text-amber-600">eingereicht</span>
-                      )}
-                    </span>
+                  <li key={w.id}>
+                    <div className="flex items-center gap-3 px-5 py-2.5">
+                      <span className="w-5">
+                        {!w.confirmed && (
+                          <input
+                            type="checkbox"
+                            checked={selected.has(w.id)}
+                            onChange={() => toggle(w.id)}
+                            disabled={pending}
+                          />
+                        )}
+                      </span>
+                      {/* Klick auf den Namen öffnet die Detailansicht des Tages. */}
+                      <button
+                        type="button"
+                        onClick={() => toggleDetails(w)}
+                        className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                        title="Zeiten dieses Tages anzeigen"
+                      >
+                        <span className="w-3 text-xs text-gray-400">{open ? "▾" : "▸"}</span>
+                        <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-900 hover:text-brand-red">
+                          {w.partnerName}
+                        </span>
+                      </button>
+                      <span className="shrink-0 text-sm tabular-nums text-gray-600">{hours.format(w.workedHours)} h</span>
+                      <span className="w-24 shrink-0 text-right text-xs">
+                        {busy ? (
+                          <span className="text-gray-400">…</span>
+                        ) : w.confirmed ? (
+                          <span className="font-medium text-green-600">✓ freigegeben</span>
+                        ) : (
+                          <span className="text-amber-600">eingereicht</span>
+                        )}
+                      </span>
+                    </div>
+
+                    {open && (
+                      <div className="border-t border-gray-100 bg-gray-50 px-5 py-3">
+                        {loadingDate === w.date && !times ? (
+                          <p className="text-xs text-gray-400">Zeiten werden geladen …</p>
+                        ) : detailError && !times ? (
+                          <p className="text-xs text-red-500">{detailError}</p>
+                        ) : !times || times.length === 0 ? (
+                          <p className="text-xs text-gray-400">Keine einzelnen Zeitabschnitte hinterlegt.</p>
+                        ) : (
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="text-left text-gray-400">
+                                <th className="py-1 pr-3 font-medium">Von</th>
+                                <th className="py-1 pr-3 font-medium">Bis</th>
+                                <th className="py-1 pr-3 font-medium">Dauer</th>
+                                <th className="py-1 pr-3 font-medium">Kategorie</th>
+                                <th className="py-1 pr-3 font-medium">Projekt</th>
+                                <th className="py-1 font-medium">Kommentar</th>
+                              </tr>
+                            </thead>
+                            <tbody className="align-top">
+                              {times.map((t) => (
+                                <tr key={t.id} className="border-t border-gray-200/70">
+                                  <td className="py-1 pr-3 tabular-nums text-gray-700">{fmtTime(t.start)}</td>
+                                  <td className="py-1 pr-3 tabular-nums text-gray-700">{fmtTime(t.end)}</td>
+                                  <td className="py-1 pr-3 tabular-nums text-gray-600">{fmtDuration(t.minutes)}</td>
+                                  <td className="py-1 pr-3 text-gray-700">
+                                    {t.category === "Pause" ? (
+                                      <span className="text-gray-400">Pause</span>
+                                    ) : (
+                                      t.category ?? "–"
+                                    )}
+                                  </td>
+                                  <td className="py-1 pr-3 text-gray-700">
+                                    {t.project
+                                      ? `${t.projectRelativeId ? `#${t.projectRelativeId} ` : ""}${t.project}`
+                                      : "–"}
+                                  </td>
+                                  <td className="py-1 whitespace-pre-wrap text-gray-600">{t.comment || "–"}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        )}
+                      </div>
+                    )}
                   </li>
                 );
               })}
