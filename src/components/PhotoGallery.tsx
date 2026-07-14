@@ -64,7 +64,10 @@ export default function PhotoGallery({ photos }: { photos: ProjectPhoto[] }) {
           <button
             type="button"
             onClick={() => setOpen(null)}
-            className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-2xl text-white hover:bg-white/20"
+            // Ohne die Safe Area liegt das ✕ auf dem iPhone unter der Dynamic Island
+            // bzw. der Statusleiste und ist nicht antippbar.
+            style={{ top: "calc(env(safe-area-inset-top) + 1rem)" }}
+            className="absolute right-4 flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-2xl text-white hover:bg-white/20"
             aria-label="Schließen"
           >
             ✕

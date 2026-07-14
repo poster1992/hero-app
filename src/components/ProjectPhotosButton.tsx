@@ -55,9 +55,10 @@ export default function ProjectPhotosButton({ projectId }: { projectId: number }
       className="fixed inset-0 z-[110] flex flex-col bg-black/90"
       onClick={() => setOpen(false)}
     >
-      {/* Kopf */}
+      {/* Kopf – Safe Area, sonst liegt der Schließen-Knopf auf dem iPhone unter der Dynamic Island. */}
       <div
         className="flex items-center justify-between gap-3 border-b border-white/10 px-5 py-3 text-white"
+        style={{ paddingTop: "calc(env(safe-area-inset-top) + 0.75rem)" }}
         onClick={(e) => e.stopPropagation()}
       >
         <h3 className="text-sm font-medium">
@@ -118,6 +119,7 @@ export default function ProjectPhotosButton({ projectId }: { projectId: number }
         >
           <div
             className="flex items-center justify-between gap-3 px-5 py-3 text-white"
+            style={{ paddingTop: "calc(env(safe-area-inset-top) + 0.75rem)" }}
             onClick={(e) => e.stopPropagation()}
           >
             <span className="truncate text-sm">
