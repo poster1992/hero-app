@@ -2085,32 +2085,8 @@ export async function uploadProjectPhoto(
   imageCategory: string,
   file: { buffer: Buffer; filename: string; mime: string }
 ): Promise<number> {
-  const token = process.env.HERO_API_TOKEN;
-  if (!token) throw new Error("HERO_API_TOKEN is not configured");
-
   // 1. Datei als temporären Upload hochladen → liefert die uuid.
-  const form = new FormData();
-  form.append("file", new Blob([new Uint8Array(file.buffer)], { type: file.mime }), file.filename);
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 120_000);
-  let res: Response;
-  try {
-    res = await fetch(HERO_UPLOAD_ENDPOINT, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-      body: form,
-      cache: "no-store",
-      signal: controller.signal,
-    });
-  } finally {
-    clearTimeout(timer);
-  }
-  if (!res.ok) throw new Error(`HERO-Upload fehlgeschlagen (HTTP ${res.status}).`);
-
-  const uploaded = (await res.json()) as AjaxUploadResponse;
-  const uuid = uploaded.data?.uuid;
-  if (!uuid) throw new Error("HERO hat keine Datei-UUID zurückgegeben.");
+  const uuid = await heroTempUpload(file);
 
   // 2. Temporäre Datei dem Projekt zuordnen.
   const linked = await heroGraphQL<{ upload_image: { id: number } | null }>(
@@ -2135,4 +2111,142 @@ export async function uploadProjectPhoto(
   );
 
   return fileId;
+}
+
+/** Lädt eine Datei als temporären Upload zu HERO hoch und liefert deren uuid. */
+async function heroTempUpload(file: {
+  buffer: Buffer;
+  filename: string;
+  mime: string;
+}): Promise<string> {
+  const token = process.env.HERO_API_TOKEN;
+  if (!token) throw new Error("HERO_API_TOKEN is not configured");
+
+  const form = new FormData();
+  // Bewusst ohne section/category: HERO legt die Datei dann als "temp" ab. Nur so
+  // ordnen upload_image/upload_document sie danach korrekt zu (siehe uploadProjectPhoto).
+  form.append("file", new Blob([new Uint8Array(file.buffer)], { type: file.mime }), file.filename);
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 120_000);
+  let res: Response;
+  try {
+    res = await fetch(HERO_UPLOAD_ENDPOINT, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
+      cache: "no-store",
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+  if (!res.ok) throw new Error(`HERO-Upload fehlgeschlagen (HTTP ${res.status}).`);
+
+  const uploaded = (await res.json()) as AjaxUploadResponse;
+  const uuid = uploaded.data?.uuid;
+  if (!uuid) throw new Error("HERO hat keine Datei-UUID zurückgegeben.");
+  return uuid;
+}
+
+/** Ein Dokumenten-Ordner aus HERO (z. B. "Angebote", "Schriftverkehr"). */
+export interface HeroFolder {
+  id: number;
+  name: string;
+}
+
+/** Alle (nicht gelöschten) Dokumenten-Ordner aus HERO – die Ordnerstruktur der Projektakte. */
+export async function getFileUploadFolders(): Promise<HeroFolder[]> {
+  const data = await heroGraphQL<{
+    file_upload_folders: { id: number; name: string | null; is_deleted: boolean | null }[] | null;
+  }>(
+    `query {
+      file_upload_folders(first: 200) {
+        id
+        name
+        is_deleted
+      }
+    }`
+  );
+  return (data.file_upload_folders ?? [])
+    .filter((f) => !f.is_deleted && f.name)
+    .map((f) => ({ id: f.id, name: f.name as string }))
+    .sort((a, b) => a.name.localeCompare(b.name, "de"));
+}
+
+/**
+ * Die Dokumenttyp-ID für "Allgemein" (base_type "generic"). `upload_document`
+ * verlangt zwingend eine `document_type_id`; der Ordner wird davon unabhängig
+ * gewählt. Wird pro Prozess gecacht (ändert sich praktisch nie).
+ */
+let genericDocumentTypeId: number | null = null;
+
+export async function getGenericDocumentTypeId(): Promise<number> {
+  if (genericDocumentTypeId !== null) return genericDocumentTypeId;
+
+  const data = await heroGraphQL<{
+    document_types: { id: number; base_type: string | null; is_active: boolean | null }[] | null;
+  }>(
+    `query {
+      document_types(first: 100) {
+        id
+        base_type
+        is_active
+      }
+    }`
+  );
+  const generic = (data.document_types ?? []).find((t) => t.base_type === "generic" && t.is_active);
+  if (!generic) throw new Error('In HERO existiert kein Dokumenttyp "Allgemein" (base_type generic).');
+
+  genericDocumentTypeId = generic.id;
+  return generic.id;
+}
+
+/**
+ * Lädt ein Dokument nach HERO hoch und legt es im gewählten Ordner der Projektakte ab.
+ *
+ * Anders als Fotos (uploadProjectPhoto) läuft das über `upload_document`: Der Ordner
+ * hängt in HERO nicht an der Datei, sondern am zugehörigen CustomerDocument
+ * (`file_upload_folder_id`). `document_type_id` ist Pflicht – ohne sie schlägt die
+ * Mutation mit "Validation failed" fehl.
+ *
+ * Achtung: So hochgeladene Dokumente erscheinen NICHT in `project_matches.file_uploads`,
+ * sondern nur über `customer_documents` – deshalb liest getProjectDocuments beide Quellen.
+ */
+export async function uploadProjectDocument(
+  projectMatchId: number,
+  folderId: number,
+  file: { buffer: Buffer; filename: string; mime: string }
+): Promise<number> {
+  const [uuid, documentTypeId] = await Promise.all([
+    heroTempUpload(file),
+    getGenericDocumentTypeId(),
+  ]);
+
+  const created = await heroGraphQL<{ upload_document: { id: number } | null }>(
+    `mutation ($doc: CustomerDocumentInput!, $uuid: String!, $target: Int!) {
+      upload_document(
+        document: $doc
+        file_upload_uuid: $uuid
+        target: project_match
+        target_id: $target
+      ) {
+        id
+      }
+    }`,
+    {
+      doc: {
+        project_match_id: projectMatchId,
+        file_upload_folder_id: folderId,
+        document_type_id: documentTypeId,
+        type: "generic",
+      },
+      uuid,
+      target: projectMatchId,
+    }
+  );
+
+  const docId = created.upload_document?.id;
+  if (!docId) throw new Error("Dokument konnte in HERO nicht abgelegt werden.");
+  return docId;
 }

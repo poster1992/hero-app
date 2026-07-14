@@ -4,7 +4,10 @@ import {
   getReceiptsInRange,
   heroGraphQL,
   getCalculatedMaterialsForProject,
+  getFileUploadFolders,
+  uploadProjectDocument,
   type ProjectMaterialCalculation,
+  type HeroFolder,
 } from "@/lib/hero-api";
 import {
   getProjectBookedMaterials as getProjectBookedMaterialsLib,
@@ -12,6 +15,7 @@ import {
 } from "@/lib/materials";
 import { getInvoiceStatus, getDocumentUrl } from "@/lib/invoices";
 import { listManualReceiptsByProject } from "@/lib/manual-receipts";
+import { getSession } from "@/lib/session";
 
 export interface ProjectPhoto {
   filename: string;
@@ -145,48 +149,178 @@ export interface ProjectDocument {
   url: string;
   /** URL zum Herunterladen. */
   downloadUrl: string;
+  /** HERO-Ordner der Projektakte (z.B. "Angebote") – "Ohne Ordner", wenn keiner gesetzt ist. */
+  folder: string;
 }
 
-/** Alle Dokumente (Nicht-Bild-Dateien) eines Projekts aus den HERO-Dateien. */
-export async function getProjectDocuments(projectId: number): Promise<ProjectDocument[]> {
+/** Dokumente eines Ordners (für die aufklappbare Ordner-Ansicht im Projekt-Popup). */
+export interface ProjectDocumentFolder {
+  name: string;
+  documents: ProjectDocument[];
+}
+
+/** Label für Dateien, die in HERO in keinem Ordner liegen. */
+const NO_FOLDER = "Ohne Ordner";
+
+interface RawDocFileUpload {
+  id: number | null;
+  filename: string | null;
+  type: string | null;
+  is_deleted: boolean | null;
+  temporary_url: string | null;
+  url_download: string | null;
+}
+
+/**
+ * Alle Dokumente (Nicht-Bild-Dateien) eines Projekts, gruppiert nach HERO-Ordner.
+ *
+ * Liest bewusst ZWEI Quellen, weil HERO die Dateien je nach Upload-Weg unterschiedlich
+ * verknüpft:
+ *  - `project_match.file_uploads` – die Dateien, die HERO selbst am Projekt verlinkt hat.
+ *  - `customer_documents` – die Dokumente der Projektakte; nur hier tauchen die über
+ *    `upload_document` (unsere "+"-Schaltfläche) abgelegten Dateien auf.
+ * Der Ordner hängt in beiden Fällen am CustomerDocument (`file_upload_folder`).
+ */
+export async function getProjectDocuments(projectId: number): Promise<ProjectDocumentFolder[]> {
   const data = await heroGraphQL<{
     project_match: {
       file_uploads:
-        | {
-            filename: string | null;
-            type: string | null;
-            is_deleted: boolean | null;
-            temporary_url: string | null;
-            url_download: string | null;
-          }[]
+        | (RawDocFileUpload & {
+            customer_document: { file_upload_folder: { name: string | null } | null } | null;
+          })[]
         | null;
     } | null;
+    customer_documents:
+      | {
+          status_code: number | null;
+          file_upload_folder: { name: string | null } | null;
+          file_upload: RawDocFileUpload | null;
+        }[]
+      | null;
   }>(
-    `query ProjectDocuments($id: Int) {
+    `query ProjectDocuments($id: Int, $ids: [Int]) {
       project_match(project_match_id: $id) {
-        file_uploads(first: 2000) { filename type is_deleted temporary_url url_download }
+        file_uploads(first: 2000) {
+          id
+          filename
+          type
+          is_deleted
+          temporary_url
+          url_download
+          customer_document { file_upload_folder { name } }
+        }
+      }
+      customer_documents(project_match_ids: $ids, first: 500) {
+        status_code
+        file_upload_folder { name }
+        file_upload { id filename type is_deleted temporary_url url_download }
       }
     }`,
-    { id: projectId }
+    { id: projectId, ids: [projectId] }
   );
-  const files = data.project_match?.file_uploads ?? [];
-  return files
-    .filter(
-      (f) =>
-        !f.is_deleted &&
-        !(f.type ?? "").startsWith("image/") &&
-        (f.temporary_url || f.url_download)
-    )
-    .map((f) => {
-      const view = (f.temporary_url || f.url_download) as string;
-      return {
-        filename: f.filename ?? "Dokument",
-        type: f.type,
-        url: view,
-        downloadUrl: f.url_download ?? view,
-      };
-    })
-    .sort((a, b) => a.filename.localeCompare(b.filename, "de"));
+
+  const usable = (f: RawDocFileUpload | null | undefined): f is RawDocFileUpload =>
+    !!f && !f.is_deleted && !(f.type ?? "").startsWith("image/") && !!(f.temporary_url || f.url_download);
+
+  // Dateien beider Quellen zusammenführen; die Datei-ID entscheidet über Duplikate.
+  const byId = new Map<number, ProjectDocument>();
+  const add = (f: RawDocFileUpload, folder: string | null | undefined) => {
+    if (!usable(f) || f.id == null || byId.has(f.id)) return;
+    const view = (f.temporary_url || f.url_download) as string;
+    byId.set(f.id, {
+      filename: f.filename ?? "Dokument",
+      type: f.type,
+      url: view,
+      downloadUrl: f.url_download ?? view,
+      folder: folder?.trim() || NO_FOLDER,
+    });
+  };
+
+  for (const f of data.project_match?.file_uploads ?? []) {
+    add(f, f.customer_document?.file_upload_folder?.name);
+  }
+  // Status 1000 = in HERO gelöschte Dokumente – die gehören nicht in die Akte.
+  for (const d of data.customer_documents ?? []) {
+    if (d.status_code === 1000 || !d.file_upload) continue;
+    add(d.file_upload, d.file_upload_folder?.name);
+  }
+
+  // Nach Ordnern gruppieren: alphabetisch, "Ohne Ordner" ans Ende.
+  const folders = new Map<string, ProjectDocument[]>();
+  for (const doc of byId.values()) {
+    const list = folders.get(doc.folder) ?? [];
+    list.push(doc);
+    folders.set(doc.folder, list);
+  }
+
+  return [...folders.entries()]
+    .map(([name, documents]) => ({
+      name,
+      documents: documents.sort((a, b) => a.filename.localeCompare(b.filename, "de")),
+    }))
+    .sort((a, b) => {
+      if (a.name === NO_FOLDER) return 1;
+      if (b.name === NO_FOLDER) return -1;
+      return a.name.localeCompare(b.name, "de");
+    });
+}
+
+/** Die Ordnerstruktur aus HERO – für die Ordner-Auswahl beim Hochladen. */
+export async function getProjectDocumentFolders(): Promise<HeroFolder[]> {
+  if (!(await getSession())) return [];
+  return getFileUploadFolders();
+}
+
+/**
+ * Lädt ein Dokument in einen HERO-Ordner der Projektakte hoch
+ * (FormData: projectId, folderId, files).
+ */
+export async function uploadProjectDocumentAction(
+  formData: FormData
+): Promise<{ ok: boolean; uploaded: number; error?: string }> {
+  if (!(await getSession())) return { ok: false, uploaded: 0, error: "Nicht angemeldet." };
+
+  const projectId = Number(formData.get("projectId"));
+  const folderId = Number(formData.get("folderId"));
+  if (!Number.isFinite(projectId) || projectId <= 0) {
+    return { ok: false, uploaded: 0, error: "Ungültiges Projekt." };
+  }
+  if (!Number.isFinite(folderId) || folderId <= 0) {
+    return { ok: false, uploaded: 0, error: "Bitte einen Ordner wählen." };
+  }
+
+  const files = formData
+    .getAll("files")
+    .filter((f): f is File => typeof f === "object" && f !== null && "arrayBuffer" in f && f.size > 0);
+  if (files.length === 0) return { ok: false, uploaded: 0, error: "Keine Datei gewählt." };
+
+  let uploaded = 0;
+  const failed: string[] = [];
+
+  for (const f of files) {
+    if (f.size > 25 * 1024 * 1024) {
+      failed.push(`${f.name} (größer als 25 MB)`);
+      continue;
+    }
+    try {
+      await uploadProjectDocument(projectId, folderId, {
+        buffer: Buffer.from(await f.arrayBuffer()),
+        filename: f.name || "dokument.pdf",
+        mime: f.type || "application/octet-stream",
+      });
+      uploaded++;
+    } catch (e) {
+      failed.push(`${f.name} (${e instanceof Error ? e.message : "Fehler"})`);
+    }
+  }
+
+  if (uploaded === 0) {
+    return { ok: false, uploaded, error: `Upload fehlgeschlagen: ${failed.join(", ")}` };
+  }
+  if (failed.length > 0) {
+    return { ok: true, uploaded, error: `${failed.length} nicht hochgeladen: ${failed.join(", ")}` };
+  }
+  return { ok: true, uploaded };
 }
 
 export interface ProjectEmployeeDay {
