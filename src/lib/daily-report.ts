@@ -17,6 +17,7 @@ import {
 import { getGlobalLogbookSystem } from "./logbook-core";
 import { sendMailWithAttachments, type MailAttachment } from "./mailer";
 import { listAdminUserIds, getUsersForNotification } from "./users";
+import { listLohnEmployees } from "./lohn-employees";
 import {
   getSetting,
   setSetting,
@@ -268,26 +269,51 @@ async function collectMissingTimeEntries(dayIso: string): Promise<Anomaly[]> {
   return out.sort((a, b) => a.title.localeCompare(b.title, "de"));
 }
 
-/** Alle Mitarbeiter mit ihren Arbeitszeiten am Tag (rot = nichts eingereicht, nicht abwesend). */
+const normName = (s: string): string => s.trim().toLowerCase().replace(/\s+/g, " ");
+
+/**
+ * Alle aktiven Mitarbeiter mit ihren Arbeitszeiten am Tag. Roster kommt aus der
+ * Lohn-Mitarbeiterliste (nicht aus HERO – dort gibt es für Nicht-Stempler keinen
+ * Datensatz), verknüpft per Name mit den HERO-Zeiten/Abwesenheiten. Rot = nichts
+ * eingereicht und nicht abwesend.
+ */
 async function collectWorkHours(dayIso: string): Promise<EmployeeDay[]> {
-  const [workdays, absences] = await Promise.all([
+  const [employees, workdays, absences] = await Promise.all([
+    listLohnEmployees(false), // nur aktive
     getWorkdays(dayIso, dayIso),
     getAbsences(dayIso, dayIso),
   ]);
-  const absenceByPartner = new Map<number, string>();
-  for (const a of absences) if (!absenceByPartner.has(a.partnerId)) absenceByPartner.set(a.partnerId, a.type);
-  const list: EmployeeDay[] = workdays.map((w) => {
-    const absType = absenceByPartner.get(w.partnerId) ?? null;
-    return {
-      partnerId: w.partnerId,
-      name: w.partnerName,
-      workedHours: w.workedHours,
-      targetHours: w.targetHours,
-      submitted: w.workedHours > 0,
+  const wdByName = new Map<string, (typeof workdays)[number]>();
+  for (const w of workdays) if (!wdByName.has(normName(w.partnerName))) wdByName.set(normName(w.partnerName), w);
+  const absByName = new Map<string, string>();
+  for (const a of absences) if (!absByName.has(normName(a.partnerName))) absByName.set(normName(a.partnerName), a.type);
+
+  const list: EmployeeDay[] = [];
+  const seen = new Set<string>();
+  const add = (name: string, wd: (typeof workdays)[number] | undefined, partnerId: number) => {
+    const key = normName(name);
+    if (seen.has(key)) return;
+    seen.add(key);
+    const absType = absByName.get(key) ?? null;
+    list.push({
+      partnerId,
+      name,
+      workedHours: wd?.workedHours ?? 0,
+      targetHours: wd?.targetHours ?? 0,
+      submitted: (wd?.workedHours ?? 0) > 0,
       absent: absType != null,
       absenceType: absType,
-    };
-  });
+    });
+  };
+
+  // 1) Alle aktiven Lohn-Mitarbeiter (das vollständige Roster).
+  for (const emp of employees) {
+    const wd = wdByName.get(normName(emp.name));
+    add(emp.name, wd, wd?.partnerId ?? emp.id);
+  }
+  // 2) HERO-Stempler, die (noch) nicht in der Lohn-Liste stehen, ergänzen.
+  for (const w of workdays) add(w.partnerName, w, w.partnerId);
+
   // Fehlende Erfassung (rot) zuerst, dann alphabetisch.
   list.sort((a, b) => {
     const aRed = !a.submitted && !a.absent;
