@@ -43,7 +43,9 @@ export default function BelegInbox() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const addFiles = useCallback((files: FileList | File[]) => {
-    const list = Array.from(files).filter((f) => f.size > 0);
+    // PDFs/Bilder haben einen MIME-Typ – in der PWA kommen Dateien teils mit
+    // size 0 an, daher NICHT nur nach Größe filtern (sonst gingen echte Dateien verloren).
+    const list = Array.from(files).filter((f) => f.type !== "" || f.size > 0);
     if (list.length === 0) return;
     setPending((prev) => [
       ...prev,
@@ -79,7 +81,21 @@ export default function BelegInbox() {
       e.preventDefault();
       dragDepth.count = 0;
       setDragOver(false);
-      addFiles(filesFromDataTransfer(e.dataTransfer));
+      const dt = e.dataTransfer;
+      const files = filesFromDataTransfer(dt);
+      // Diagnose bei Drop-Problemen (v.a. Desktop-/PWA-App).
+      const nFiles = dt?.files?.length ?? 0;
+      const nItems = dt?.items?.length ?? 0;
+      const types = dt?.types ? Array.from(dt.types).join(",") : "–";
+      if (files.length === 0) {
+        setSummary({
+          ok: false,
+          text: `Datei kam nicht durch (files=${nFiles}, items=${nItems}, types=${types}). Bitte nutze den „Datei auswählen"-Button.`,
+        });
+      } else {
+        setSummary({ ok: true, text: `${files.length} Datei(en) per Drag&Drop übernommen.` });
+      }
+      addFiles(files);
     };
     window.addEventListener("dragenter", onEnter);
     window.addEventListener("dragover", onOver);
