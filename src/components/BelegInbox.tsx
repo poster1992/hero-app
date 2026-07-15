@@ -83,18 +83,19 @@ export default function BelegInbox() {
       setDragOver(false);
       const dt = e.dataTransfer;
       const files = filesFromDataTransfer(dt);
-      // Diagnose bei Drop-Problemen (v.a. Desktop-/PWA-App).
-      const nFiles = dt?.files?.length ?? 0;
-      const nItems = dt?.items?.length ?? 0;
-      const types = dt?.types ? Array.from(dt.types).join(",") : "–";
       if (files.length === 0) {
+        // Kein echter Datei-Inhalt (z.B. Anhang direkt aus Outlook gezogen).
+        const types = dt?.types ? Array.from(dt.types) : [];
+        const fromEmail = types.some((t) => t === "attachment" || t.startsWith("chromium/"));
         setSummary({
           ok: false,
-          text: `Datei kam nicht durch (files=${nFiles}, items=${nItems}, types=${types}). Bitte nutze den „Datei auswählen"-Button.`,
+          text: fromEmail
+            ? 'E-Mail-Anhänge lassen sich nicht direkt hereinziehen (der Browser erhält keinen Datei-Inhalt). Bitte den Anhang erst speichern und dann ablegen – oder oben auf „Dateien auswählen" klicken.'
+            : 'Es kam keine Datei an. Bitte oben auf „Dateien auswählen" klicken oder die Datei aus einem Ordner ziehen.',
         });
-      } else {
-        setSummary({ ok: true, text: `${files.length} Datei(en) per Drag&Drop übernommen.` });
+        return;
       }
+      setSummary(null);
       addFiles(files);
     };
     window.addEventListener("dragenter", onEnter);
@@ -159,6 +160,10 @@ export default function BelegInbox() {
         </p>
         <p className="mt-1 text-xs text-gray-400">
           Belege werden automatisch erkannt und erfasst (Betrag, MwSt, Datum, Lieferant, Konto). Max. 25 MB je Datei.
+        </p>
+        <p className="mt-1 text-xs text-gray-400">
+          Hinweis: E-Mail-Anhänge (z.&nbsp;B. aus Outlook) bitte erst speichern und dann ablegen – direkt aus der Mail
+          gezogen erhält der Browser keinen Datei-Inhalt.
         </p>
         <input
           ref={fileInputRef}
