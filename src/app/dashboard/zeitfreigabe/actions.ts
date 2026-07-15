@@ -3,7 +3,14 @@
 import { revalidatePath } from "next/cache";
 import { getEffectiveRole } from "@/lib/session";
 import { getAllowedModules } from "@/lib/role-store";
-import { confirmWorkdays, getWorkdays, getWorkdayTimesByDate, type WorkdayTime } from "@/lib/hero-api";
+import {
+  confirmWorkdays,
+  getWorkdays,
+  getWorkdayTimesByDate,
+  updateWorkdayTimes,
+  type WorkdayTime,
+  type WorkdayTimeEdit,
+} from "@/lib/hero-api";
 
 const MODULE = "cockpit_zeitfreigabe";
 
@@ -33,6 +40,47 @@ export async function loadWorkdayTimesAction(
     return { ok: true, times: Object.fromEntries(map) };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Details konnten nicht geladen werden." };
+  }
+}
+
+/**
+ * Speichert die bearbeiteten Zeitabschnitte eines Arbeitstags in HERO.
+ *
+ * Die UI muss ALLE Zeiten des Tages mitsenden (Patch-Semantik von update_tracking_workday).
+ * Nach dem Speichern werden die Zeiten frisch zurückgelesen und zurückgegeben – die UI zeigt
+ * damit den echten HERO-Stand, kein blindes „gespeichert".
+ */
+export async function saveWorkdayTimesAction(input: {
+  workdayId: number;
+  statusCode: number;
+  date: string;
+  times: WorkdayTimeEdit[];
+}): Promise<{ ok: boolean; times?: WorkdayTime[]; error?: string }> {
+  if (!(await mayApprove())) return { ok: false, error: "Kein Zugriff." };
+  if (!Number.isFinite(input.workdayId) || input.workdayId <= 0) return { ok: false, error: "Ungültiger Tag." };
+  if (!input.times || input.times.length === 0) return { ok: false, error: "Keine Zeiten übergeben." };
+
+  // Grundvalidierung je Abschnitt: Start und Ende müssen gesetzt und Ende ≥ Start sein.
+  for (const t of input.times) {
+    if (!t.start || !t.end) return { ok: false, error: "Bitte für jeden Abschnitt Von- und Bis-Zeit angeben." };
+    if (Date.parse(t.end) < Date.parse(t.start)) {
+      return { ok: false, error: "Die Bis-Zeit darf nicht vor der Von-Zeit liegen." };
+    }
+  }
+
+  try {
+    await updateWorkdayTimes(input.workdayId, input.statusCode, input.times);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Speichern in HERO fehlgeschlagen." };
+  }
+
+  // Frisch zurücklesen (der echte Stand nach dem Speichern).
+  try {
+    const map = await getWorkdayTimesByDate(input.date);
+    revalidatePath("/dashboard/zeitfreigabe");
+    return { ok: true, times: map.get(input.workdayId) ?? [] };
+  } catch {
+    return { ok: true }; // gespeichert, nur das Nachladen scheiterte
   }
 }
 

@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getWorkdays, type Workday } from "@/lib/hero-api";
+import { getWorkdays, getTrackingCategories, getProjects, type Workday, type TrackingCategory } from "@/lib/hero-api";
 import { getEffectiveRole } from "@/lib/session";
 import { getAllowedModules } from "@/lib/role-store";
-import WorkdayApproval from "@/components/WorkdayApproval";
+import WorkdayApproval, { type ProjectOption } from "@/components/WorkdayApproval";
 
 const BASE_PATH = "/dashboard/zeitfreigabe";
 
@@ -56,9 +56,22 @@ export default async function ZeitfreigabePage({
   const to = iso(sunday);
 
   let workdays: Workday[] = [];
+  let categories: TrackingCategory[] = [];
+  let projects: ProjectOption[] = [];
   let error: string | null = null;
   try {
-    workdays = await getWorkdays(from, to);
+    // Kategorien + Projekte für die Bearbeiten-Auswahl (fehlertolerant – ohne sie
+    // bleibt die Ansicht read-only, statt ganz zu scheitern).
+    const [wd, cats, projs] = await Promise.all([
+      getWorkdays(from, to),
+      getTrackingCategories().catch(() => [] as TrackingCategory[]),
+      getProjects()
+        .then((list) => list.map((p) => ({ id: p.id, label: `${p.relativeId ? `#${p.relativeId} ` : ""}${p.name}` })))
+        .catch(() => [] as ProjectOption[]),
+    ]);
+    workdays = wd;
+    categories = cats;
+    projects = projs;
   } catch (e) {
     error = e instanceof Error ? e.message : "Arbeitszeiten konnten nicht geladen werden.";
   }
@@ -110,7 +123,13 @@ export default async function ZeitfreigabePage({
           Keine erfassten Arbeitstage in dieser Woche.
         </div>
       ) : (
-        <WorkdayApproval workdays={workdays} from={from} to={to} />
+        <WorkdayApproval
+          workdays={workdays}
+          from={from}
+          to={to}
+          categories={categories}
+          projects={projects}
+        />
       )}
     </div>
   );

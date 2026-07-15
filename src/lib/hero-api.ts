@@ -286,29 +286,38 @@ export async function confirmWorkdays(ids: number[]): Promise<void> {
   );
 }
 
-/** Ein einzelner Zeitabschnitt innerhalb eines Arbeitstags (für die Detailansicht). */
+/** Ein einzelner Zeitabschnitt innerhalb eines Arbeitstags (für Detailansicht + Bearbeiten). */
 export interface WorkdayTime {
   id: number;
+  /** Identifiziert den Eintrag beim Speichern (update_tracking_workday nutzt uuid, nicht id). */
+  uuid: string;
   /** ISO-Datetime mit Zeitzone. */
   start: string | null;
   end: string | null;
   /** Dauer in Minuten. */
   minutes: number;
-  /** Kategorie, z.B. "Umsetzung", "Pause". */
+  /** Kategorie-Name, z.B. "Umsetzung", "Pause". */
   category: string | null;
+  categoryId: number | null;
   /** Projektname (leer, wenn keinem Projekt zugeordnet). */
   project: string | null;
   projectRelativeId: number | null;
+  projectMatchId: number | null;
+  fieldServiceJobId: number | null;
   comment: string;
 }
 
 interface RawWorkdayTime {
   id: number;
+  uuid: string;
   tracking_workday_id: number | null;
   start: string | null;
   end: string | null;
   duration_in_seconds: number | null;
   comment: string | null;
+  project_match_id: number | null;
+  field_service_job_id: number | null;
+  tracking_times_category_id: number | null;
   project_match: { name: string | null; relative_id: number | null } | null;
   tracking_times_category: { name: string | null } | null;
 }
@@ -324,11 +333,15 @@ export async function getWorkdayTimesByDate(date: string): Promise<Map<number, W
     `query TrackingTimeDetailsQuery($start: Date, $end: Date, $first: Int) {
       tracking_times(show_all_partners: true, start: $start, end: $end, first: $first, orderBy: "start") {
         id
+        uuid
         tracking_workday_id
         start
         end
         duration_in_seconds
         comment
+        project_match_id
+        field_service_job_id
+        tracking_times_category_id
         project_match { name relative_id }
         tracking_times_category { name }
       }
@@ -342,17 +355,106 @@ export async function getWorkdayTimesByDate(date: string): Promise<Map<number, W
     const list = byWorkday.get(t.tracking_workday_id) ?? [];
     list.push({
       id: t.id,
+      uuid: t.uuid,
       start: t.start,
       end: t.end,
       minutes: Math.round((t.duration_in_seconds ?? 0) / 60),
       category: t.tracking_times_category?.name ?? null,
+      categoryId: t.tracking_times_category_id ?? null,
       project: t.project_match?.name ?? null,
       projectRelativeId: t.project_match?.relative_id ?? null,
+      // HERO nutzt 0 für "keinem Projekt/Auftrag zugeordnet" → als null führen, damit
+      // die Bearbeiten-Auswahl "— kein Projekt —" zeigt (0 hätte keine passende Option).
+      projectMatchId: t.project_match_id || null,
+      fieldServiceJobId: t.field_service_job_id || null,
       comment: t.comment ?? "",
     });
     byWorkday.set(t.tracking_workday_id, list);
   }
   return byWorkday;
+}
+
+/** Eine Zeiterfassungs-Kategorie (z.B. "Umsetzung", "Pause") für die Auswahl beim Bearbeiten. */
+export interface TrackingCategory {
+  id: number;
+  name: string;
+  /** false = zählt nicht als Arbeitszeit (z.B. Pause). */
+  isWorkingTime: boolean;
+}
+
+/** Alle aktiven Zeiterfassungs-Kategorien (interner Endpoint). */
+export async function getTrackingCategories(): Promise<TrackingCategory[]> {
+  const data = await heroInternalGraphQL<{
+    tracking_times_categories: { id: number; name: string | null; is_working_time: boolean | null }[] | null;
+  }>(
+    "TrackingTimesCategories",
+    `query TrackingTimesCategories($first: Int, $is_active: Boolean, $orderBy: String) {
+      tracking_times_categories(is_active: $is_active, first: $first, orderBy: $orderBy) {
+        id
+        name
+        is_working_time
+      }
+    }`,
+    { first: 200, is_active: true, orderBy: "name" }
+  );
+  return (data.tracking_times_categories ?? [])
+    .filter((c) => c.name)
+    .map((c) => ({ id: c.id, name: c.name as string, isWorkingTime: c.is_working_time !== false }));
+}
+
+/** Ein zu speichernder Zeitabschnitt beim Bearbeiten eines Arbeitstags. */
+export interface WorkdayTimeEdit {
+  /** Identifiziert den bestehenden Zeiteintrag. */
+  uuid: string;
+  /** ISO-Datetime mit Zeitzone. */
+  start: string | null;
+  end: string | null;
+  comment: string;
+  /** 0/null = keinem Projekt zugeordnet. */
+  projectMatchId: number | null;
+  categoryId: number | null;
+  fieldServiceJobId: number | null;
+}
+
+/**
+ * Speichert die Zeitabschnitte eines Arbeitstags über HEROs interne Mutation
+ * `update_tracking_workday` (die einzige, die auch EINGEREICHTE Tage bearbeiten lässt –
+ * `update_tracking_time` verweigert die mit "Bereits Eingereichte …").
+ *
+ * WICHTIG (getestet 2026-07):
+ * - Der Workday-`status_code` MUSS mitgesendet werden, sonst "status_code darf nicht leer".
+ *   Wir senden den unveränderten aktuellen Status, damit die Freigabe erhalten bleibt.
+ * - Es müssen ALLE Zeiten des Tages mitgesendet werden (Patch-Semantik). Fehlende Einträge
+ *   könnten sonst verworfen werden – der Aufrufer lädt darum immer den kompletten Tag.
+ * - `status_code` gehört NUR an den Workday, NICHT an den einzelnen Zeiteintrag.
+ */
+export async function updateWorkdayTimes(
+  workdayId: number,
+  workdayStatusCode: number,
+  times: WorkdayTimeEdit[]
+): Promise<void> {
+  await heroInternalGraphQL(
+    "UpdateTrackingWorkday",
+    `mutation UpdateTrackingWorkday($x: Employees_UpdateTrackingWorkdayInput) {
+      update_tracking_workday(tracking_workday: $x) { id status_code }
+    }`,
+    {
+      x: {
+        id: workdayId,
+        status_code: workdayStatusCode,
+        tracking_times: times.map((t) => ({
+          uuid: t.uuid,
+          start: t.start,
+          end: t.end,
+          comment: t.comment ?? "",
+          // HERO erwartet 0 (nicht null) für "kein Projekt/Auftrag" – im Test verifiziert.
+          project_match_id: t.projectMatchId ?? 0,
+          tracking_times_category_id: t.categoryId ?? null,
+          field_service_job_id: t.fieldServiceJobId ?? 0,
+        })),
+      },
+    }
+  );
 }
 
 export { WORKDAY_STATUS_SUBMITTED, WORKDAY_STATUS_CONFIRMED };
