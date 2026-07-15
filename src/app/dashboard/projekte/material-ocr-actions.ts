@@ -12,6 +12,7 @@ import {
   deleteBelegArticles,
   type BelegArticle,
 } from "@/lib/beleg-articles";
+import { isCreditError, AI_CREDIT_MESSAGE } from "@/lib/ai-error";
 
 /** Vorbereiteter Anthropic-Content-Block (PDF-Dokument oder Bild, base64). */
 type DocBlock =
@@ -279,26 +280,34 @@ export async function getProjectBelegArticles(projectMatchId: number): Promise<P
   let ocrCostEur = 0;
   if (toOcr.length > 0 && process.env.ANTHROPIC_API_KEY) {
     const client = new Anthropic({ maxRetries: 2, timeout: 120_000 });
-    const results = await Promise.all(
-      toOcr.map(async (b) => {
-        const hash = docHashOf(b.fileUpload!.src!);
-        try {
-          const { items, cost } = await ocrBelegArticles(client, b);
-          const total = round2(items.reduce((s, it) => s + it.lineTotal, 0));
-          await upsertBelegArticles({
-            heroReceiptId: b.id,
-            docHash: hash,
-            items,
-            total,
-            model: MODEL,
-            costEur: cost,
-          });
-          return { id: b.id, items, total, cost };
-        } catch {
-          return { id: b.id, items: [] as BelegArticle[], total: 0, cost: 0 };
-        }
-      })
-    );
+    let results: { id: string; items: BelegArticle[]; total: number; cost: number }[];
+    try {
+      results = await Promise.all(
+        toOcr.map(async (b) => {
+          const hash = docHashOf(b.fileUpload!.src!);
+          try {
+            const { items, cost } = await ocrBelegArticles(client, b);
+            const total = round2(items.reduce((s, it) => s + it.lineTotal, 0));
+            await upsertBelegArticles({
+              heroReceiptId: b.id,
+              docHash: hash,
+              items,
+              total,
+              model: MODEL,
+              costEur: cost,
+            });
+            return { id: b.id, items, total, cost };
+          } catch (e) {
+            if (isCreditError(e)) throw e; // globaler Guthaben-Fehler → Auswertung abbrechen
+            return { id: b.id, items: [] as BelegArticle[], total: 0, cost: 0 };
+          }
+        })
+      );
+    } catch (e) {
+      if (isCreditError(e))
+        return { items: [], total: 0, belegeCount: belege.length, ocrCostEur: 0, excluded: [], error: AI_CREDIT_MESSAGE };
+      throw e;
+    }
     for (const r of results) {
       ocrCostEur += r.cost;
       cached.set(r.id, { heroReceiptId: r.id, docHash: null, items: r.items, total: r.total });
@@ -312,26 +321,34 @@ export async function getProjectBelegArticles(projectMatchId: number): Promise<P
   });
   if (manualToOcr.length > 0 && process.env.ANTHROPIC_API_KEY) {
     const client = new Anthropic({ maxRetries: 2, timeout: 120_000 });
-    const results = await Promise.all(
-      manualToOcr.map(async (m) => {
-        const key = `manual-${m.id}`;
-        try {
-          const { items, cost } = await ocrManualArticles(client, m.id);
-          const total = round2(items.reduce((s, it) => s + it.lineTotal, 0));
-          await upsertBelegArticles({
-            heroReceiptId: key,
-            docHash: manualDocHashOf(m.id),
-            items,
-            total,
-            model: MODEL,
-            costEur: cost,
-          });
-          return { key, items, total, cost };
-        } catch {
-          return { key, items: [] as BelegArticle[], total: 0, cost: 0 };
-        }
-      })
-    );
+    let results: { key: string; items: BelegArticle[]; total: number; cost: number }[];
+    try {
+      results = await Promise.all(
+        manualToOcr.map(async (m) => {
+          const key = `manual-${m.id}`;
+          try {
+            const { items, cost } = await ocrManualArticles(client, m.id);
+            const total = round2(items.reduce((s, it) => s + it.lineTotal, 0));
+            await upsertBelegArticles({
+              heroReceiptId: key,
+              docHash: manualDocHashOf(m.id),
+              items,
+              total,
+              model: MODEL,
+              costEur: cost,
+            });
+            return { key, items, total, cost };
+          } catch (e) {
+            if (isCreditError(e)) throw e; // globaler Guthaben-Fehler → Auswertung abbrechen
+            return { key, items: [] as BelegArticle[], total: 0, cost: 0 };
+          }
+        })
+      );
+    } catch (e) {
+      if (isCreditError(e))
+        return { items: [], total: 0, belegeCount: belege.length, ocrCostEur: 0, excluded: [], error: AI_CREDIT_MESSAGE };
+      throw e;
+    }
     for (const r of results) {
       ocrCostEur += r.cost;
       cached.set(r.key, { heroReceiptId: r.key, docHash: null, items: r.items, total: r.total });

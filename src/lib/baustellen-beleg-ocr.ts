@@ -1,6 +1,7 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { getBaustellenBelegRaw, setBaustellenBelegOcr } from "./baustellen-belege";
+import { aiErrorMessage } from "./ai-error";
 
 const OCR_MODEL = "claude-haiku-4-5";
 
@@ -95,6 +96,6 @@ export async function ocrBaustellenBeleg(id: number): Promise<{ ok: boolean; err
     return { ok: true };
   } catch (e) {
     await setBaustellenBelegOcr(id, "error", { supplier: null, amount: null, date: null, text: null });
-    return { ok: false, error: e instanceof Error ? e.message : "OCR fehlgeschlagen." };
+    return { ok: false, error: aiErrorMessage(e, "OCR fehlgeschlagen.") };
   }
 }

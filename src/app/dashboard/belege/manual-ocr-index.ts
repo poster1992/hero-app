@@ -8,6 +8,7 @@ import {
   getManualReceiptFile,
   getManualOcrStatus,
 } from "@/lib/manual-receipts";
+import { isCreditError, AI_CREDIT_MESSAGE } from "@/lib/ai-error";
 
 const MODEL = "claude-haiku-4-5";
 const PRICE = { in: 1, out: 5 }; // $ / 1 Mio Tokens (Haiku)
@@ -96,21 +97,28 @@ export async function runManualOcrBackfill(): Promise<ManualOcrBackfillResult> {
   const batch = missing.slice(0, BATCH);
   const client = new Anthropic({ maxRetries: 2, timeout: 120_000 });
   let costEur = 0;
-  const costs = await Promise.all(
-    batch.map(async (id) => {
-      try {
-        return await ocrText(client, id);
-      } catch {
-        // Bei Fehler leeren Text setzen, damit nicht endlos neu versucht wird.
+  let costs: number[];
+  try {
+    costs = await Promise.all(
+      batch.map(async (id) => {
         try {
-          await setManualReceiptOcrText(id, "");
-        } catch {
-          /* ignore */
+          return await ocrText(client, id);
+        } catch (e) {
+          if (isCreditError(e)) throw e; // globaler Guthaben-Fehler → Batch abbrechen, Beleg NICHT als erledigt markieren
+          // Bei anderem Fehler leeren Text setzen, damit nicht endlos neu versucht wird.
+          try {
+            await setManualReceiptOcrText(id, "");
+          } catch {
+            /* ignore */
+          }
+          return 0;
         }
-        return 0;
-      }
-    })
-  );
+      })
+    );
+  } catch (e) {
+    if (isCreditError(e)) return { processed: 0, remaining: missing.length, total: status.total, costEur: 0, error: AI_CREDIT_MESSAGE };
+    throw e;
+  }
   for (const c of costs) costEur += c;
   return {
     processed: batch.length,

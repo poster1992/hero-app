@@ -8,6 +8,7 @@ import { getUserByUsername } from "@/lib/users";
 import { getReceiptsInRange } from "@/lib/hero-api";
 import { effectiveReceiptStatus, getCustomerName } from "@/lib/invoices";
 import { getSupplierIbanMap } from "@/lib/supplier-ibans";
+import { aiErrorMessage } from "@/lib/ai-error";
 import { getPaymentOverrideMap, setPaymentOverride } from "@/lib/receipt-payment-status";
 import {
   findStatementImport,
@@ -365,7 +366,7 @@ export async function importBankStatement(
         ? await callExtract(client, payload, 16000, ocrModel, usages)
         : await extractFromText(client, payload.text, ocrModel, usages);
   } catch (e) {
-    return { added: 0, total: 0, error: e instanceof Error ? e.message : "Auszug konnte nicht gelesen werden." };
+    return { added: 0, total: 0, error: aiErrorMessage(e, "Auszug konnte nicht gelesen werden.") };
   }
 
   const out = txns.filter((t) => t.direction === "out");

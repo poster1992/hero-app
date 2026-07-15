@@ -7,6 +7,7 @@ import { getReceiptsInRange, currentHeroToken, type Receipt } from "@/lib/hero-a
 import { getOcrHeroIds, upsertReceiptOcr } from "@/lib/receipt-ocr";
 import { getBelegArticleHeroIds, upsertBelegArticles } from "@/lib/beleg-articles";
 import { extractBelegArticles, articleDocHash, ARTICLE_OCR_MODEL } from "@/lib/beleg-article-ocr";
+import { isCreditError, AI_CREDIT_MESSAGE } from "@/lib/ai-error";
 
 const HERO_HOST = "https://login.hero-software.de";
 const MODEL = "claude-haiku-4-5";
@@ -104,8 +105,11 @@ async function ocrReceipt(client: Anthropic, receipt: Receipt): Promise<number> 
       model: MODEL,
       costEur: cost,
     });
-  } catch {
-    // Bei Fehler trotzdem einen Eintrag setzen, damit nicht endlos neu versucht wird.
+  } catch (e) {
+    // Guthaben-Fehler NICHT als „verarbeitet" markieren (sonst wird der Beleg nie
+    // wieder versucht) – nach oben durchreichen, der Batch bricht dann ab.
+    if (isCreditError(e)) throw e;
+    // Bei anderem Fehler trotzdem einen Eintrag setzen, damit nicht endlos neu versucht wird.
     try {
       await upsertReceiptOcr({ heroId: receipt.id, fullText: null, zahlungsziel: null, skontoPercent: null, skontoBetrag: null, ersparnis: null, docHash, model: MODEL, costEur: cost });
     } catch {
@@ -131,7 +135,8 @@ async function articleOcr(client: Anthropic, receipt: Receipt): Promise<number> 
       costEur: cost,
     });
     return cost;
-  } catch {
+  } catch (e) {
+    if (isCreditError(e)) throw e; // globaler Guthaben-Fehler → Batch abbrechen
     return 0;
   }
 }
@@ -192,14 +197,21 @@ export async function runOcrBackfill(): Promise<OcrBackfillResult> {
   const missing = candidates.filter((r) => !ocrDone.has(r.id) || !artDone.has(r.id));
   const batch = missing.slice(0, BATCH);
   const client = new Anthropic({ maxRetries: 2, timeout: 120_000 });
-  const costs = await Promise.all(
-    batch.map(async (r) => {
-      let c = 0;
-      if (!ocrDone.has(r.id)) c += await ocrReceipt(client, r); // Volltext + Skonto
-      if (!artDone.has(r.id)) c += await articleOcr(client, r); // Artikel + Einzelpreise
-      return c;
-    })
-  );
+  let costs: number[];
+  try {
+    costs = await Promise.all(
+      batch.map(async (r) => {
+        let c = 0;
+        if (!ocrDone.has(r.id)) c += await ocrReceipt(client, r); // Volltext + Skonto
+        if (!artDone.has(r.id)) c += await articleOcr(client, r); // Artikel + Einzelpreise
+        return c;
+      })
+    );
+  } catch (e) {
+    // Guthaben aufgebraucht → Batch sauber abbrechen (nichts als verarbeitet markiert).
+    if (isCreditError(e)) return { processed: 0, remaining: missing.length, total, costEur: 0, error: AI_CREDIT_MESSAGE };
+    throw e;
+  }
   const costEur = round2(costs.reduce((s, c) => s + c, 0) * 10000) / 10000;
   return { processed: batch.length, remaining: missing.length - batch.length, total, costEur };
 }

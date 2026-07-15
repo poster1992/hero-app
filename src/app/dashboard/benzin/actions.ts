@@ -5,6 +5,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { getSession } from "@/lib/session";
 import { getReceiptsInRange, currentHeroToken, type Receipt } from "@/lib/hero-api";
 import { getCustomerName } from "@/lib/invoices";
+import { isCreditError, AI_CREDIT_MESSAGE } from "@/lib/ai-error";
 import {
   listFuelInvoices,
   getFuelInvoicesMap,
@@ -120,7 +121,8 @@ async function ocrFuelInvoice(client: Anthropic, receipt: Receipt): Promise<OcrF
       vehicles,
       cost,
     };
-  } catch {
+  } catch (e) {
+    if (isCreditError(e)) throw e; // globaler Guthaben-Fehler → nach oben, Rechnung NICHT als leer speichern
     return { invoiceNumber: receipt.number || null, invoiceDate: receipt.receiptDate?.slice(0, 10) ?? null, totalNet: 0, totalGross: 0, vehicles: [], cost };
   }
 }
@@ -190,7 +192,9 @@ export async function runFuelOcr(): Promise<FuelOcrResult> {
         model: MODEL,
         costEur: out.cost,
       });
-    } catch {
+    } catch (e) {
+      if (isCreditError(e))
+        return { processed: 0, remaining: missing.length, total: circle.length, costEur: 0, error: AI_CREDIT_MESSAGE };
       /* einzelne Rechnung überspringen */
     }
   }

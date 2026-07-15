@@ -5,6 +5,7 @@ import { getSession } from "@/lib/session";
 import { getReceiptsInRange, currentHeroToken, type Receipt } from "@/lib/hero-api";
 import { getDocumentUrl } from "@/lib/invoices";
 import { getSupplierIbanMap } from "@/lib/supplier-ibans";
+import { aiErrorMessage } from "@/lib/ai-error";
 
 const HERO_HOST = "https://login.hero-software.de";
 
@@ -197,7 +198,7 @@ export async function analyzeReceiptsForExport(items: OcrCheckInput[]): Promise<
         if (!doc) return { ...base, error: "Beleg-Dokument konnte nicht geladen werden." };
         extracted = await extractInvoice(client, doc);
       } catch (e) {
-        return { ...base, error: e instanceof Error ? e.message : "OCR fehlgeschlagen." };
+        return { ...base, error: aiErrorMessage(e, "OCR fehlgeschlagen.") };
       }
       if (!extracted) return { ...base, error: "Rechnung konnte nicht ausgewertet werden." };
 

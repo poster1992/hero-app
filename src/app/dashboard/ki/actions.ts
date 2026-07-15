@@ -4,6 +4,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { getSession } from "@/lib/session";
 import { TOOLS, runTool } from "@/lib/ai-tools";
 import { listMemories, type MemoryItem } from "@/lib/ai-memory";
+import { isCreditError, AI_CREDIT_MESSAGE } from "@/lib/ai-error";
 
 export interface ChatMsg {
   role: "user" | "assistant";
@@ -141,6 +142,7 @@ export async function askData(history: ChatMsg[]): Promise<AskResult> {
     }
     return { answer: "", error: "Zu viele Schritte – bitte die Frage konkretisieren." };
   } catch (e) {
+    if (isCreditError(e)) return { answer: "", error: AI_CREDIT_MESSAGE };
     if (e instanceof Anthropic.APIError) {
       if (e.status === 529 || e.status === 429) {
         return {

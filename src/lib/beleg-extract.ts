@@ -1,6 +1,7 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { findContactNameBySearch } from "./hero-api";
+import { aiErrorMessage } from "./ai-error";
 
 export type BelegSumKind =
   | "lohn"
@@ -663,6 +664,6 @@ export async function extractBeleg(input: {
       skontoDueDate,
     };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "OCR fehlgeschlagen." };
+    return { ok: false, error: aiErrorMessage(e, "OCR fehlgeschlagen.") };
   }
 }
