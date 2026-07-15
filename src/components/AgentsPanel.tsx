@@ -214,7 +214,7 @@ export default function AgentsPanel({
         title="💬 KI-Assistent"
         subtitle="Daten-Assistent (Chat) für Fragen zu Umsatz, Kosten, Projekten, Lager u. a."
       >
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-col gap-2">
           <p className="text-sm text-gray-700">
             {kiConfigured ? (
               <span className="text-emerald-700">✓ KI konfiguriert (Anthropic-Schlüssel gesetzt).</span>
@@ -222,12 +222,9 @@ export default function AgentsPanel({
               <span className="text-amber-600">⚠️ Kein Anthropic-Schlüssel gesetzt – Assistent und KI-Berichtstext inaktiv.</span>
             )}
           </p>
-          <Link
-            href="/dashboard/ki"
-            className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition hover:border-brand-red/50"
-          >
-            Zum Assistenten →
-          </Link>
+          <p className="text-sm text-gray-500">
+            Der Assistent ist über den roten Chat-Button unten rechts auf jeder Seite erreichbar.
+          </p>
         </div>
       </Card>
     </div>
