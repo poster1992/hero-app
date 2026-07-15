@@ -338,10 +338,14 @@ function sevRank(s: Severity): number {
 // Aggregation
 // ---------------------------------------------------------------------------
 
-/** Sammelt alle Auffälligkeiten (tagesscharfe für den Vortag) fehlertolerant. */
-export async function collectAnomalies(): Promise<AnomalyReport> {
+/**
+ * Sammelt alle Auffälligkeiten (tagesscharfe für den Vortag) fehlertolerant.
+ * `todayOverride` (YYYY-MM-DD) erlaubt das Erzeugen des Berichts für einen
+ * bestimmten Tag (zum Nach-Testen); ohne Angabe wird der heutige Tag genutzt.
+ */
+export async function collectAnomalies(todayOverride?: string): Promise<AnomalyReport> {
   const cfg = await getDailyReportConfig();
-  const today = localDateIso();
+  const today = todayOverride ?? localDateIso();
   const dayIso = previousDayIso(today);
   const sourceErrors: string[] = [];
 
@@ -948,7 +952,7 @@ function buildDailyReportText(report: AnomalyReport): string {
  * - `force` umgeht den An/Aus-Schalter und den „nichts zu berichten"-Skip.
  */
 export async function sendDailyReport(
-  opts: { force?: boolean; recipients?: string[] } = {}
+  opts: { force?: boolean; recipients?: string[]; day?: string } = {}
 ): Promise<{ sent: boolean; reason?: string }> {
   try {
     const cfg = await getDailyReportConfig();
@@ -965,7 +969,7 @@ export async function sendDailyReport(
     }
     if (emails.size === 0) return { sent: false, reason: "keine Empfänger" };
 
-    const report = await collectAnomalies();
+    const report = await collectAnomalies(opts.day);
     if (report.totalCount === 0 && report.activity.projects.length === 0 && !cfg.sendWhenEmpty && !opts.force) {
       return { sent: false, reason: "nichts zu berichten" };
     }
