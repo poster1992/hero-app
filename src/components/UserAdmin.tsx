@@ -6,9 +6,11 @@ import {
   setActiveAction,
   setPasswordAction,
   setRoleAction,
+  setHeroTokenAction,
   type CreateUserState,
   type PasswordState,
   type RoleState,
+  type HeroTokenState,
 } from "@/app/dashboard/benutzer/actions";
 import type { AppUser } from "@/lib/users";
 
@@ -80,6 +82,37 @@ function PasswordResetForm({ userId }: { userId: number }) {
       </button>
       {state.error && <span className="text-xs text-rose-600">{state.error}</span>}
       {state.success && <span className="text-xs text-emerald-700">✓</span>}
+    </form>
+  );
+}
+
+/** Inline-Formular für den persönlichen HERO-API-Token eines Benutzers. */
+function HeroTokenForm({ userId, hasToken }: { userId: number; hasToken: boolean }) {
+  const [state, action, pending] = useActionState<HeroTokenState, FormData>(setHeroTokenAction, {});
+  return (
+    <form action={action} className="flex items-center justify-end gap-2">
+      <input type="hidden" name="id" value={userId} />
+      <input
+        name="token"
+        type="password"
+        autoComplete="off"
+        placeholder={hasToken ? "hinterlegt – neu setzen" : "HERO-Token einfügen"}
+        className="w-40 rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-900 outline-none focus:border-brand-red/60"
+      />
+      <button
+        type="submit"
+        disabled={pending}
+        className="rounded-md border border-gray-300 px-3 py-1 text-xs font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900 disabled:opacity-50"
+      >
+        {pending ? "…" : "Speichern"}
+      </button>
+      {hasToken && !state.error && !state.success && (
+        <span className="text-xs text-emerald-700" title="Token hinterlegt">
+          ✓
+        </span>
+      )}
+      {state.error && <span className="text-xs text-rose-600">{state.error}</span>}
+      {state.success && <span className="text-xs text-emerald-700">✓ {state.success}</span>}
     </form>
   );
 }
@@ -161,6 +194,7 @@ export default function UserAdmin({
               <th className="px-4 py-2 font-semibold">E-Mail</th>
               <th className="px-4 py-2 font-semibold">Rolle</th>
               <th className="px-4 py-2 font-semibold">Status</th>
+              <th className="px-4 py-2 text-right font-semibold">HERO-Token</th>
               <th className="px-4 py-2 text-right font-semibold">Passwort</th>
               <th className="px-4 py-2 text-right font-semibold">Aktion</th>
             </tr>
@@ -193,6 +227,9 @@ export default function UserAdmin({
                       inaktiv
                     </span>
                   )}
+                </td>
+                <td className="px-4 py-2 text-right">
+                  <HeroTokenForm userId={u.id} hasToken={u.hasHeroToken} />
                 </td>
                 <td className="px-4 py-2 text-right">
                   <PasswordResetForm userId={u.id} />

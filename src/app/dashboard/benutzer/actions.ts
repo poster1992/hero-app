@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getSession } from "@/lib/session";
-import { createUser, setUserActive, setUserPassword, setUserRole } from "@/lib/users";
+import { createUser, setUserActive, setUserPassword, setUserRole, setUserHeroToken } from "@/lib/users";
 import { roleExists } from "@/lib/role-store";
 
 const PATH = "/dashboard/benutzer";
@@ -116,6 +116,33 @@ export async function setRoleAction(
 
   revalidatePath(PATH);
   return { success: "Rolle geändert." };
+}
+
+export interface HeroTokenState {
+  error?: string;
+  success?: string;
+}
+
+/**
+ * Setzt (oder löscht bei leerem Feld) den persönlichen HERO-API-Token eines Benutzers.
+ * Damit laufen dessen HERO-Aktionen (v.a. Logbuch-Einträge) unter seinem echten
+ * HERO-Namen. Nur Admin. Der Token wird nie zurück an den Client gegeben.
+ */
+export async function setHeroTokenAction(
+  _prev: HeroTokenState,
+  formData: FormData
+): Promise<HeroTokenState> {
+  if (!(await ensureAdmin())) return { error: "Kein Zugriff." };
+  const id = Number(formData.get("id"));
+  const token = String(formData.get("token") ?? "");
+  if (!Number.isFinite(id)) return { error: "Ungültiger Benutzer." };
+  try {
+    await setUserHeroToken(id, token);
+  } catch {
+    return { error: "Token konnte nicht gespeichert werden." };
+  }
+  revalidatePath(PATH);
+  return { success: token.trim() ? "gespeichert" : "entfernt" };
 }
 
 export async function setActiveAction(formData: FormData): Promise<void> {

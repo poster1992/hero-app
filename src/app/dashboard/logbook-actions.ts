@@ -5,18 +5,22 @@ import { getSession } from "@/lib/session";
 import { listUsers, getUserByUsername } from "@/lib/users";
 
 /**
- * Anzeigename des aktuell angemeldeten App-Benutzers, oder null.
+ * Ermittelt für den aktuellen Benutzer, ob und wie sein Name einem Logbuch-Eintrag
+ * vorangestellt werden muss.
  *
- * HERO leitet den Logbuch-Autor immer aus dem API-Key-Besitzer ab (es gibt kein
- * Autor-Feld in der API). Um den echten Verfasser sichtbar zu machen, stellen wir
- * seinen Namen dem Eintrag voran (siehe addLogbookEntry).
+ * - Hat der Benutzer einen EIGENEN HERO-Token, schreibt HERO ihn bereits als echten
+ *   Autor → kein Präfix nötig (`prefix: null`).
+ * - Sonst läuft der Eintrag über den Firmen-Token (Autor = Key-Besitzer); dann stellen
+ *   wir den Namen voran, damit der echte Verfasser sichtbar bleibt.
  */
-async function currentUserName(): Promise<string | null> {
+async function authorPrefixFor(): Promise<string | null> {
   try {
     const session = await getSession();
     if (!session) return null;
     const user = await getUserByUsername(session.username);
-    return (user?.displayName?.trim() || session.username) ?? null;
+    if (!user) return null;
+    if (user.hasHeroToken) return null; // echter HERO-Autor → kein Präfix
+    return user.displayName?.trim() || session.username;
   } catch {
     return null;
   }
@@ -217,8 +221,9 @@ export async function addLogbookEntry(
   const note = text.trim();
   if (!note) return { ok: false, message: "Bitte einen Text eingeben." };
 
-  // Echten Verfasser voranstellen – HERO würde sonst immer den Key-Besitzer zeigen.
-  const author = prefixAuthor ? await currentUserName() : null;
+  // Verfasser nur voranstellen, wenn der Benutzer KEINEN eigenen HERO-Token hat
+  // (sonst zeigt HERO ihn bereits als echten Autor).
+  const author = prefixAuthor ? await authorPrefixFor() : null;
   const body = author ? `${author}${AUTHOR_SEP}${note}` : note;
 
   try {

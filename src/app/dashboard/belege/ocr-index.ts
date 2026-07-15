@@ -3,7 +3,7 @@
 import { createHash } from "node:crypto";
 import Anthropic from "@anthropic-ai/sdk";
 import { getSession } from "@/lib/session";
-import { getReceiptsInRange, type Receipt } from "@/lib/hero-api";
+import { getReceiptsInRange, currentHeroToken, type Receipt } from "@/lib/hero-api";
 import { getOcrHeroIds, upsertReceiptOcr } from "@/lib/receipt-ocr";
 import { getBelegArticleHeroIds, upsertBelegArticles } from "@/lib/beleg-articles";
 import { extractBelegArticles, articleDocHash, ARTICLE_OCR_MODEL } from "@/lib/beleg-article-ocr";
@@ -24,7 +24,7 @@ async function getCandidates(): Promise<Receipt[]> {
 }
 
 async function fetchDocument(src: string): Promise<{ data: string; mediaType: string } | null> {
-  const token = process.env.HERO_API_TOKEN;
+  const token = await currentHeroToken();
   if (!token) return null;
   const res = await fetch(HERO_HOST + src, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
   if (!res.ok) return null;

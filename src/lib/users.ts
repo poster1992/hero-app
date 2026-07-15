@@ -9,6 +9,8 @@ export interface AppUser {
   email: string | null;
   role: string;
   isActive: boolean;
+  /** true, wenn ein persönlicher HERO-API-Token hinterlegt ist (der Token selbst wird NIE ausgegeben). */
+  hasHeroToken: boolean;
 }
 
 interface UserRow extends RowDataPacket {
@@ -19,10 +21,11 @@ interface UserRow extends RowDataPacket {
   email: string | null;
   role: string;
   is_active: number;
+  hero_api_token: string | null;
 }
 
 const USER_COLUMNS =
-  "id, username, password_hash, display_name, email, role, is_active";
+  "id, username, password_hash, display_name, email, role, is_active, hero_api_token";
 
 /** Best email for a user: explicit email, else username if it looks like one. */
 export function userEmail(u: { email: string | null; username: string }): string | null {
@@ -64,7 +67,29 @@ function toAppUser(row: UserRow): AppUser {
     email: row.email,
     role: row.role,
     isActive: row.is_active === 1,
+    hasHeroToken: !!row.hero_api_token && row.hero_api_token.trim().length > 0,
   };
+}
+
+/**
+ * Der persönliche HERO-API-Token eines Benutzers (oder null). NUR serverseitig
+ * verwenden – dieser Wert darf niemals an den Client gelangen (deshalb nicht Teil
+ * von AppUser). Wird von currentHeroToken() genutzt, damit HERO-Aktionen unter dem
+ * echten Benutzer laufen.
+ */
+export async function getUserHeroToken(username: string): Promise<string | null> {
+  const [rows] = await getPool().query<UserRow[]>(
+    "SELECT hero_api_token FROM users WHERE username = ? AND is_active = 1 LIMIT 1",
+    [username]
+  );
+  const t = rows[0]?.hero_api_token?.trim();
+  return t && t.length > 0 ? t : null;
+}
+
+/** Setzt oder löscht (leerer String) den persönlichen HERO-Token eines Benutzers. */
+export async function setUserHeroToken(id: number, token: string | null): Promise<void> {
+  const value = token && token.trim().length > 0 ? token.trim() : null;
+  await getPool().query("UPDATE users SET hero_api_token = ? WHERE id = ?", [value, id]);
 }
 
 /** Looks up a user by username (without password hash), or null. */

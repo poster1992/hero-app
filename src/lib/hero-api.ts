@@ -1,4 +1,30 @@
+import { cache } from "react";
+
 const HERO_GRAPHQL_ENDPOINT = "https://login.hero-software.de/api/external/v7/graphql";
+
+/**
+ * Der HERO-API-Token für den aktuellen Request: der PERSÖNLICHE Token des angemeldeten
+ * Benutzers, sonst der Firmen-Token aus der Umgebung. So laufen HERO-Aktionen (v.a.
+ * Logbuch-Einträge) unter dem echten Benutzer – HERO leitet den Autor aus dem Token ab.
+ *
+ * - `cache()` sorgt dafür, dass Session + DB-Lookup nur EINMAL pro Request passieren.
+ * - `getSession`/`getUserHeroToken` werden dynamisch importiert, damit dieser (server-
+ *   seitige) Code nicht über `import type`-Nutzer ins Client-Bundle gezogen wird.
+ * - Außerhalb eines Requests (Workflow-Cron) wirft `cookies()` → Fallback Firmen-Token.
+ */
+export const currentHeroToken = cache(async (): Promise<string | null> => {
+  const company = process.env.HERO_API_TOKEN?.trim() || null;
+  try {
+    const { getSession } = await import("./session");
+    const session = await getSession();
+    if (!session) return company;
+    const { getUserHeroToken } = await import("./users");
+    const personal = await getUserHeroToken(session.username);
+    return personal || company;
+  } catch {
+    return company;
+  }
+});
 
 /**
  * INTERNER GraphQL-Endpoint von HERO (den die eigene Weboberfläche nutzt).
@@ -57,7 +83,7 @@ export async function heroGraphQL<T>(
   variables?: Record<string, unknown>,
   retries = 3
 ): Promise<T> {
-  const token = process.env.HERO_API_TOKEN;
+  const token = await currentHeroToken();
   if (!token) {
     throw new Error("HERO_API_TOKEN is not configured");
   }
@@ -122,7 +148,7 @@ async function heroInternalGraphQL<T>(
   variables?: Record<string, unknown>,
   retries = 3
 ): Promise<T> {
-  const token = process.env.HERO_API_TOKEN;
+  const token = await currentHeroToken();
   if (!token) throw new Error("HERO_API_TOKEN is not configured");
 
   const url = `${HERO_INTERNAL_ENDPOINT}?op=${encodeURIComponent(operationName)}`;
@@ -2529,7 +2555,7 @@ async function heroTempUpload(file: {
   filename: string;
   mime: string;
 }): Promise<string> {
-  const token = process.env.HERO_API_TOKEN;
+  const token = await currentHeroToken();
   if (!token) throw new Error("HERO_API_TOKEN is not configured");
 
   const form = new FormData();

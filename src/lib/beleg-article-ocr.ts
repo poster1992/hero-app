@@ -1,7 +1,7 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import type Anthropic from "@anthropic-ai/sdk";
-import type { Receipt } from "./hero-api";
+import { currentHeroToken, type Receipt } from "./hero-api";
 import type { BelegArticle } from "./beleg-articles";
 
 const HERO_HOST = "https://login.hero-software.de";
@@ -18,7 +18,7 @@ export const articleDocHash = (src: string) =>
 
 /** Lädt ein HERO-Belegdokument (PDF/Bild) als base64 (auth). */
 export async function fetchHeroDocument(src: string): Promise<{ data: string; mediaType: string } | null> {
-  const token = process.env.HERO_API_TOKEN;
+  const token = await currentHeroToken();
   if (!token) return null;
   const res = await fetch(HERO_HOST + src, {
     headers: { Authorization: `Bearer ${token}` },

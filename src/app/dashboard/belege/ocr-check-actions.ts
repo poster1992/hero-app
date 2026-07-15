@@ -2,7 +2,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { getSession } from "@/lib/session";
-import { getReceiptsInRange, type Receipt } from "@/lib/hero-api";
+import { getReceiptsInRange, currentHeroToken, type Receipt } from "@/lib/hero-api";
 import { getDocumentUrl } from "@/lib/invoices";
 import { getSupplierIbanMap } from "@/lib/supplier-ibans";
 
@@ -65,7 +65,7 @@ interface ExtractedInvoice {
 
 /** Lädt das Beleg-Dokument von HERO und gibt Base64 + MIME zurück. */
 async function fetchDocument(src: string): Promise<{ data: string; mediaType: string } | null> {
-  const token = process.env.HERO_API_TOKEN;
+  const token = await currentHeroToken();
   if (!token) return null;
   const res = await fetch(HERO_HOST + src, {
     headers: { Authorization: `Bearer ${token}` },

@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import Anthropic from "@anthropic-ai/sdk";
 import { getSession } from "@/lib/session";
 import { getUserByUsername } from "@/lib/users";
-import { getReceiptsInRange, type Receipt } from "@/lib/hero-api";
+import { getReceiptsInRange, currentHeroToken, type Receipt } from "@/lib/hero-api";
 import { getManualReceiptFile, listManualReceiptsByProject } from "@/lib/manual-receipts";
 import {
   getBelegArticlesMap,
@@ -61,7 +61,7 @@ export interface ProjectBelegMaterials {
 }
 
 async function fetchDocument(src: string): Promise<{ data: string; mediaType: string } | null> {
-  const token = process.env.HERO_API_TOKEN;
+  const token = await currentHeroToken();
   if (!token) return null;
   const res = await fetch(HERO_HOST + src, {
     headers: { Authorization: `Bearer ${token}` },

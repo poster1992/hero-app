@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { currentHeroToken } from "@/lib/hero-api";
 
 const HERO_HOST = "https://login.hero-software.de";
 // Only allow proxying HERO file paths, nothing else (prevents SSRF via the bearer token).
@@ -10,7 +11,7 @@ export async function GET(request: NextRequest) {
     return new Response("Invalid document path", { status: 400 });
   }
 
-  const token = process.env.HERO_API_TOKEN;
+  const token = await currentHeroToken();
   if (!token) {
     return new Response("HERO_API_TOKEN is not configured", { status: 500 });
   }
