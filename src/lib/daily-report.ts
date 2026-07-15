@@ -135,6 +135,8 @@ export interface EmployeeDay {
   /** Am Tag abwesend (Urlaub/krank/…) – dann kein Rot. */
   absent: boolean;
   absenceType: string | null;
+  /** Stempelt grundsätzlich nicht (z.B. Geschäftsleitung/Büro) – nie rot, grau. */
+  noStamp: boolean;
 }
 
 const EMPTY_DOCS: DayDocumentVolume = {
@@ -148,6 +150,9 @@ const ABSENCE_LABEL: Record<string, string> = {
   sick: "krank",
   parental_leave: "Elternzeit",
 };
+
+/** Mitarbeiter, die sich grundsätzlich nicht stempeln (Geschäftsleitung/Büro) – nie rot. */
+const NON_STAMPING = new Set(["laura oster", "manuel oster", "pascal oster", "thorsten wick"]);
 
 // Stichwörter, die einen Logbuch-Eintrag als "Problem" markieren.
 const PROBLEM_RE =
@@ -303,6 +308,7 @@ async function collectWorkHours(dayIso: string): Promise<EmployeeDay[]> {
       submitted: (wd?.workedHours ?? 0) > 0,
       absent: absType != null,
       absenceType: absType,
+      noStamp: NON_STAMPING.has(key),
     });
   };
 
@@ -316,8 +322,8 @@ async function collectWorkHours(dayIso: string): Promise<EmployeeDay[]> {
 
   // Fehlende Erfassung (rot) zuerst, dann alphabetisch.
   list.sort((a, b) => {
-    const aRed = !a.submitted && !a.absent;
-    const bRed = !b.submitted && !b.absent;
+    const aRed = !a.submitted && !a.absent && !a.noStamp;
+    const bRed = !b.submitted && !b.absent && !b.noStamp;
     if (aRed !== bRed) return aRed ? -1 : 1;
     return a.name.localeCompare(b.name, "de");
   });
@@ -813,13 +819,15 @@ function buildDailyReportHtml(
   } else {
     const rows = report.workHours
       .map((e) => {
-        const red = !e.submitted && !e.absent;
+        const red = !e.submitted && !e.absent && !e.noStamp;
         const nameColor = red ? "#b91c1c" : "#111417";
         const hint = e.absent
           ? ABSENCE_LABEL[e.absenceType ?? ""] ?? e.absenceType ?? "abwesend"
-          : e.submitted
-            ? ""
-            : "keine Zeit eingereicht";
+          : e.noStamp && !e.submitted
+            ? "stempelt nicht"
+            : e.submitted
+              ? ""
+              : "keine Zeit eingereicht";
         const hintColor = red ? "#b91c1c" : "#8a929c";
         return `<tr style="${red ? "background:#fff5f4;" : ""}">
           <td style="${td}font-weight:${red ? "700" : "400"};color:${nameColor};">${esc(e.name)}</td>
@@ -911,8 +919,14 @@ function buildDailyReportText(report: AnomalyReport): string {
   lines.push(`Arbeitszeiten – ${fmtDay(report.dayIso)}:`);
   if (report.workHours.length === 0) lines.push("  keine Daten");
   for (const e of report.workHours) {
-    const red = !e.submitted && !e.absent;
-    const hint = e.absent ? ` (${e.absenceType ?? "abwesend"})` : red ? "  <-- KEINE ZEIT EINGEREICHT" : "";
+    const red = !e.submitted && !e.absent && !e.noStamp;
+    const hint = e.absent
+      ? ` (${e.absenceType ?? "abwesend"})`
+      : e.noStamp && !e.submitted
+        ? " (stempelt nicht)"
+        : red
+          ? "  <-- KEINE ZEIT EINGEREICHT"
+          : "";
     lines.push(`  ${red ? "! " : "  "}${e.name}: ${e.workedHours.toFixed(1)} h / Soll ${e.targetHours.toFixed(1)} h${hint}`);
   }
   lines.push("");
