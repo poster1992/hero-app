@@ -3,6 +3,18 @@
 import { heroGraphQL } from "@/lib/hero-api";
 import { getSession } from "@/lib/session";
 import { listUsers, getUserByUsername } from "@/lib/users";
+import {
+  stripHtml,
+  splitAuthorPrefix,
+  knownUserNames,
+  AUTHOR_SEP,
+  SYSTEM_TITLE_RE,
+  getGlobalLogbookSystem,
+  type GlobalLogEntry,
+} from "@/lib/logbook-core";
+// Hinweis: GlobalLogEntry NICHT aus dieser "use server"-Datei re-exportieren –
+// Typ-Re-Exports brechen den Server-Action-Build. Konsumenten importieren den Typ
+// direkt aus "@/lib/logbook-core".
 
 /**
  * Ermittelt für den aktuellen Benutzer, ob und wie sein Name einem Logbuch-Eintrag
@@ -26,41 +38,6 @@ async function authorPrefixFor(): Promise<string | null> {
   }
 }
 
-/** Markiert den vorangestellten Autor eindeutig, z.B. "Max Mustermann · ". */
-const AUTHOR_SEP = " · ";
-
-/**
- * Erkennt den vorangestellten Verfasser in einem Logbuch-Text.
- * Nur Namen aus `knownNames` gelten als Autor – so wird kein normaler Text
- * (z.B. "Achtung: …") fälschlich als Autor interpretiert.
- */
-function splitAuthorPrefix(
-  text: string,
-  knownNames: Set<string>
-): { author: string | null; body: string } {
-  const idx = text.indexOf(AUTHOR_SEP);
-  if (idx > 0 && idx <= 60) {
-    const name = text.slice(0, idx).trim();
-    if (knownNames.has(name)) return { author: name, body: text.slice(idx + AUTHOR_SEP.length) };
-  }
-  return { author: null, body: text };
-}
-
-/** Menge der bekannten App-Benutzernamen (Anzeigename + Loginname) für die Autor-Erkennung. */
-async function knownUserNames(): Promise<Set<string>> {
-  try {
-    const users = await listUsers();
-    const set = new Set<string>();
-    for (const u of users) {
-      if (u.displayName?.trim()) set.add(u.displayName.trim());
-      if (u.username?.trim()) set.add(u.username.trim());
-    }
-    return set;
-  } catch {
-    return new Set();
-  }
-}
-
 /** Aktive Mitarbeiter (für die Aufgaben-Zuweisung im Logbuch). */
 export async function listAssignableUsers(): Promise<{ id: number; name: string }[]> {
   if (!(await getSession())) return [];
@@ -81,20 +58,6 @@ export interface LogbookEntry {
   text: string;
   author: string | null;
 }
-
-function stripHtml(s: string | null): string {
-  if (!s) return "";
-  return s
-    .replace(/<[^>]+>/g, "")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&quot;/g, '"')
-    .trim();
-}
-
-/** Titel automatischer System-Ereignisse (für die „Nur Notizen"-Ansicht ausgeblendet). */
-const SYSTEM_TITLE_RE =
-  /hochgeladen|eingetragen|zugewiesen|erstellt|geändert|geaendert|^status:|eingegangen|gelöscht|geloescht|verschoben|storniert|abgeschlossen/i;
 
 /**
  * Loads a project's logbook entries (newest first).
@@ -146,63 +109,13 @@ export async function getProjectLogbook(projectId: number, includeSystem = true)
   return entries;
 }
 
-export interface GlobalLogEntry {
-  id: number;
-  date: string | null;
-  title: string;
-  text: string;
-  author: string | null;
-  projectId: number | null;
-  projectRelativeId: number | null;
-  projectName: string | null;
-}
-
 /**
  * Übergreifendes Aktivitäts-Logbuch über ALLE Projekte/Dokumente (neueste zuerst).
- * Nutzt die globale HERO-`histories`-Query.
+ * Nur für angemeldete Nutzer; die eigentliche Query liegt in logbook-core.
  */
 export async function getGlobalLogbook(limit = 200): Promise<GlobalLogEntry[]> {
   if (!(await getSession())) return [];
-  const data = await heroGraphQL<{
-    histories: {
-      id: number;
-      created: string | null;
-      custom_title: string | null;
-      custom_text: string | null;
-      author_name: string | null;
-      target_project_match: { id: number; name: string | null; relative_id: number | null } | null;
-      user: { partner: { name: string | null } | null; email: string | null } | null;
-    }[];
-  }>(
-    `query GlobalLog($limit: Int) {
-      histories(orderBy: "id", last: $limit) {
-        id
-        created
-        custom_title
-        custom_text
-        author_name
-        target_project_match { id name relative_id }
-        user { partner { name } email }
-      }
-    }`,
-    { limit }
-  );
-  // HERO liefert bei last:N absteigend (neueste zuerst).
-  const known = await knownUserNames();
-  return (data.histories ?? []).map((h) => {
-    const raw = stripHtml(h.custom_text);
-    const { author: prefixAuthor, body } = splitAuthorPrefix(raw, known);
-    return {
-      id: h.id,
-      date: h.created,
-      title: stripHtml(h.custom_title),
-      text: body,
-      author: prefixAuthor || h.author_name?.trim() || h.user?.partner?.name || h.user?.email || null,
-      projectId: h.target_project_match?.id ?? null,
-      projectRelativeId: h.target_project_match?.relative_id ?? null,
-      projectName: h.target_project_match?.name ?? null,
-    };
-  });
+  return getGlobalLogbookSystem(limit);
 }
 
 export interface AddLogbookResult {

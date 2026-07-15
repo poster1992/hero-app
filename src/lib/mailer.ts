@@ -44,6 +44,40 @@ export async function sendMail(to: string, subject: string, text: string, html?:
   return r.ok;
 }
 
+/** Ein Inline-Anhang (z.B. eingebettetes Foto-Thumbnail per cid). */
+export interface MailAttachment {
+  filename: string;
+  content: Buffer;
+  /** Content-ID für `<img src="cid:...">` (Inline-Bild). */
+  cid?: string;
+  contentType?: string;
+}
+
+/**
+ * Wie sendMail, aber mit Anhängen (z.B. Inline-Fotos per cid). Wirft nie – gibt bei
+ * Erfolg true zurück, sonst false. Für den Tagesbericht.
+ */
+export async function sendMailWithAttachments(
+  to: string,
+  subject: string,
+  text: string,
+  html: string,
+  attachments: MailAttachment[]
+): Promise<boolean> {
+  const b = await buildTransport();
+  if (!b) {
+    console.error("[mail] Versand fehlgeschlagen: SMTP nicht konfiguriert.");
+    return false;
+  }
+  try {
+    await b.t.sendMail({ from: b.from, to, subject, text, html, attachments });
+    return true;
+  } catch (e) {
+    console.error("[mail] Versand fehlgeschlagen:", e instanceof Error ? e.message : e);
+    return false;
+  }
+}
+
 /** Prüft die SMTP-Verbindung/Anmeldung (für den Test-Button). */
 export async function verifySmtp(): Promise<MailResult> {
   const b = await buildTransport();

@@ -28,4 +28,22 @@ export async function register(): Promise<void> {
   setTimeout(run, 30_000);
   setInterval(run, TEN_MINUTES);
   console.log("[workflow-cron] aktiv – Workflow-Prüfung alle 10 Minuten.");
+
+  // Zweiter, unabhängiger Loop: täglicher Analyse-Bericht (prüft alle 10 Min die
+  // Fälligkeit, versendet höchstens einmal pro Kalendertag um die Zielstunde).
+  const g2 = globalThis as unknown as { __dailyReportStarted?: boolean };
+  if (!g2.__dailyReportStarted) {
+    g2.__dailyReportStarted = true;
+    const tick = async () => {
+      try {
+        const { maybeRunDailyReport } = await import("./lib/daily-report");
+        await maybeRunDailyReport();
+      } catch (e) {
+        console.warn("[daily-report] Timer-Fehler:", e instanceof Error ? e.message : e);
+      }
+    };
+    setTimeout(tick, 60_000);
+    setInterval(tick, TEN_MINUTES);
+    console.log("[daily-report] aktiv – tägliche Prüfung alle 10 Minuten.");
+  }
 }

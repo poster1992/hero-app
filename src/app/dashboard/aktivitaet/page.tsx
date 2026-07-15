@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
-import { getGlobalLogbook, type GlobalLogEntry } from "@/app/dashboard/logbook-actions";
+import { getGlobalLogbook } from "@/app/dashboard/logbook-actions";
+import type { GlobalLogEntry } from "@/lib/logbook-core";
 import ActivityLog from "@/components/ActivityLog";
 
 export default async function AktivitaetPage() {

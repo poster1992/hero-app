@@ -25,6 +25,14 @@ export async function setSetting(key: string, value: string | null): Promise<voi
 export const GOOGLE_PLACES_API_KEY_KEY = "google_places_api_key";
 export const GOOGLE_PLACE_ID_KEY = "google_place_id";
 
+// --- Täglicher Analyse-Bericht ---
+export const DAILY_REPORT_ENABLED_KEY = "daily_report_enabled";
+export const DAILY_REPORT_HOUR_KEY = "daily_report_hour";
+export const DAILY_REPORT_SEND_WHEN_EMPTY_KEY = "daily_report_send_when_empty";
+export const DAILY_REPORT_RECIPIENTS_KEY = "daily_report_recipients";
+export const DAILY_REPORT_LAST_SENT_KEY = "daily_report_last_sent";
+export const DAILY_REPORT_LAST_ATTEMPT_KEY = "daily_report_last_attempt";
+
 // --- SMTP (E-Mail-Versand), pflegbar über die Konfiguration ---
 export const SMTP_HOST_KEY = "smtp_host";
 export const SMTP_PORT_KEY = "smtp_port";

@@ -2496,6 +2496,59 @@ export async function getProjectPhotos(
     .sort((a, b) => (b.created ?? "").localeCompare(a.created ?? ""));
 }
 
+/** Ein an einem bestimmten Tag hochgeladenes Projekt-Foto (für den Tagesbericht). */
+export interface DailyPhoto {
+  id: number;
+  filename: string;
+  /** Kleines Thumbnail (fit_256) – wird für die Mail serverseitig geladen. */
+  thumbUrl: string;
+  /** ISO-Uploadzeit. */
+  created: string | null;
+}
+
+/**
+ * Bild-Uploads EINES Projekts, die an einem bestimmten Tag (YYYY-MM-DD, lokale HERO-
+ * Zeit) hochgeladen wurden – über alle Bild-Kategorien. Für die Tages-Aktivitätsliste
+ * im Bericht. Filtert clientseitig auf das `created`-Datum (HERO hat keinen Datumsfilter
+ * auf file_uploads).
+ */
+export async function getProjectPhotosUploadedOn(
+  projectMatchId: number,
+  dayIso: string
+): Promise<DailyPhoto[]> {
+  const data = await heroGraphQL<{
+    project_matches: { file_uploads: RawFileUpload[] | null }[] | null;
+  }>(
+    `query ($ids: [Int]) {
+      project_matches(ids: $ids) {
+        file_uploads(is_deleted: false, first: 1000, orderBy: "id") {
+          id
+          filename
+          type
+          created
+          thumbnails(formats: [fit_256]) { format url }
+        }
+      }
+    }`,
+    { ids: [projectMatchId] }
+  );
+  const uploads = data.project_matches?.[0]?.file_uploads ?? [];
+  return uploads
+    .filter(
+      (u) =>
+        (u.type ?? "").startsWith("image/") &&
+        (u.created ?? "").slice(0, 10) === dayIso &&
+        u.thumbnails?.some((t) => t.url)
+    )
+    .map((u) => ({
+      id: u.id,
+      filename: u.filename ?? `Foto ${u.id}`,
+      thumbUrl: u.thumbnails!.find((t) => t.url)!.url as string,
+      created: u.created ?? null,
+    }))
+    .sort((a, b) => (a.created ?? "").localeCompare(b.created ?? ""));
+}
+
 /** REST-Upload-Endpoint von HERO (nicht Teil der GraphQL-API, aber mit demselben Bearer-Token nutzbar). */
 const HERO_UPLOAD_ENDPOINT = "https://login.hero-software.de/FileUploads/ajax_upload";
 

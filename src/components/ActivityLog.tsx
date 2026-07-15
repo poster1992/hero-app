@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { GlobalLogEntry } from "@/app/dashboard/logbook-actions";
+import type { GlobalLogEntry } from "@/lib/logbook-core";
 
 const dtFmt = new Intl.DateTimeFormat("de-DE", {
   day: "2-digit",
