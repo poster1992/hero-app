@@ -41,7 +41,6 @@ export default function BelegInbox() {
   const [results, setResults] = useState<InboxItemResult[] | null>(null);
   const [summary, setSummary] = useState<{ ok: boolean; text: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const dropRef = useRef<HTMLDivElement>(null);
 
   const addFiles = useCallback((files: FileList | File[]) => {
     const list = Array.from(files).filter((f) => f.size > 0);
@@ -52,11 +51,17 @@ export default function BelegInbox() {
     ]);
   }, []);
 
-  // Native Drag&Drop (zuverlässiger als React-Synthetic).
+  // Drag&Drop auf das GANZE Fenster (robust – funktioniert auch, wenn man nicht
+  // exakt die Box trifft, und in der installierten Desktop-/PWA-App).
   useEffect(() => {
-    const el = dropRef.current;
-    if (!el) return;
-    const over = (e: DragEvent) => {
+    const dragDepth = { count: 0 };
+    const onEnter = (e: DragEvent) => {
+      e.preventDefault();
+      dragDepth.count += 1;
+      setDragOver(true);
+    };
+    const onOver = (e: DragEvent) => {
+      // Bedingungslos – nur so wird "drop" zuverlässig ausgelöst (auch in der PWA).
       e.preventDefault();
       if (e.dataTransfer) {
         try {
@@ -65,43 +70,28 @@ export default function BelegInbox() {
           /* egal */
         }
       }
-      setDragOver(true);
     };
-    const enter = (e: DragEvent) => {
+    const onLeave = () => {
+      dragDepth.count = Math.max(0, dragDepth.count - 1);
+      if (dragDepth.count === 0) setDragOver(false);
+    };
+    const onDrop = (e: DragEvent) => {
       e.preventDefault();
-      setDragOver(true);
-    };
-    const leave = (e: DragEvent) => {
-      if (!el.contains(e.relatedTarget as Node | null)) setDragOver(false);
-    };
-    const drop = (e: DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
+      dragDepth.count = 0;
       setDragOver(false);
       addFiles(filesFromDataTransfer(e.dataTransfer));
     };
-    el.addEventListener("dragenter", enter);
-    el.addEventListener("dragover", over);
-    el.addEventListener("dragleave", leave);
-    el.addEventListener("drop", drop);
+    window.addEventListener("dragenter", onEnter);
+    window.addEventListener("dragover", onOver);
+    window.addEventListener("dragleave", onLeave);
+    window.addEventListener("drop", onDrop);
     return () => {
-      el.removeEventListener("dragenter", enter);
-      el.removeEventListener("dragover", over);
-      el.removeEventListener("dragleave", leave);
-      el.removeEventListener("drop", drop);
+      window.removeEventListener("dragenter", onEnter);
+      window.removeEventListener("dragover", onOver);
+      window.removeEventListener("dragleave", onLeave);
+      window.removeEventListener("drop", onDrop);
     };
   }, [addFiles]);
-
-  // Browser-Default (Datei öffnen) global verhindern.
-  useEffect(() => {
-    const prevent = (e: DragEvent) => e.preventDefault();
-    window.addEventListener("dragover", prevent);
-    window.addEventListener("drop", prevent);
-    return () => {
-      window.removeEventListener("dragover", prevent);
-      window.removeEventListener("drop", prevent);
-    };
-  }, []);
 
   const process = () => {
     if (pending.length === 0 || processing) return;
@@ -129,9 +119,18 @@ export default function BelegInbox() {
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Ablagefläche */}
+      {/* Vollbild-Overlay während des Ziehens – überall im Fenster ablegbar. */}
+      {dragOver && (
+        <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-brand-red/10 backdrop-blur-[2px]">
+          <div className="rounded-2xl border-4 border-dashed border-brand-red bg-white/90 px-10 py-8 text-center shadow-xl">
+            <p className="text-lg font-semibold text-brand-red">Belege hier ablegen …</p>
+            <p className="mt-1 text-sm text-gray-500">PDF oder Bild · loslassen zum Hinzufügen</p>
+          </div>
+        </div>
+      )}
+
+      {/* Ablagefläche (Klick zum Auswählen) */}
       <div
-        ref={dropRef}
         onClick={() => fileInputRef.current?.click()}
         role="button"
         tabIndex={0}
@@ -264,8 +263,8 @@ export default function BelegInbox() {
       )}
 
       <p className="text-xs text-gray-400">
-        Erfasste Belege erscheinen unten in der Liste „Manuelle Belege" (dort prüf-/editierbar). Über einen
-        Workflow („Neuer erfasster Beleg") kann automatisch eine Prüf-Aufgabe erstellt werden.
+        Erfasste Belege erscheinen unten in der Liste &bdquo;Manuelle Belege&ldquo; (dort prüf-/editierbar). Über
+        einen Workflow (&bdquo;Neuer erfasster Beleg&ldquo;) kann automatisch eine Prüf-Aufgabe erstellt werden.
       </p>
     </div>
   );
