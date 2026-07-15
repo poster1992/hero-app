@@ -1890,26 +1890,49 @@ export interface DayDocumentVolume {
   invoices: { count: number; net: number }; // Rechnungen − Gutschriften − Stornos
 }
 
+/** Ein einzelnes Kundendokument eines Tages (Angebot/Auftrag/Rechnung/Gutschrift/Storno). */
+export interface DayDocument {
+  kind: "offer" | "confirmation" | "invoice" | "gutschrift" | "storno";
+  date: string; // YYYY-MM-DD
+  customerName: string | null;
+  projectName: string | null;
+  projectRelativeId: number | null;
+  net: number;
+}
+
+const DOC_KIND: Record<number, DayDocument["kind"]> = {
+  [OFFER_DOCUMENT_TYPE_ID]: "offer",
+  [CONFIRMATION_DOCUMENT_TYPE_ID]: "confirmation",
+  [RECHNUNG_DOCUMENT_TYPE_ID]: "invoice",
+  [GUTSCHRIFT_DOCUMENT_TYPE_ID]: "gutschrift",
+  [STORNO_DOCUMENT_TYPE_ID]: "storno",
+};
+
 /**
- * Angebote, Auftragsbestätigungen und Rechnungen, deren Belegdatum auf `dayIso`
- * (YYYY-MM-DD) fällt – Anzahl und Netto-Summe je Kategorie. Holt die neuesten
- * Dokumente (der Tag ist stets unter den jüngsten) und filtert clientseitig.
+ * Einzelne Kundendokumente (Angebote/Aufträge/Rechnungen/Gutschriften/Stornos),
+ * deren Belegdatum auf `dayIso` (YYYY-MM-DD) fällt – mit Kunde, Projekt und Netto.
+ * Holt die neuesten Dokumente (der Tag ist stets unter den jüngsten) und filtert
+ * clientseitig. Gelöschte (status 1000) werden übersprungen.
  */
-export async function getDocumentVolumeForDay(dayIso: string): Promise<DayDocumentVolume> {
+export async function getDocumentsForDay(dayIso: string): Promise<DayDocument[]> {
   const data = await heroGraphQL<{
     customer_documents: {
       document_type_id: number | null;
       value: number | null;
       status_code: number | null;
       date: string | null;
+      customer: { company_name: string | null; full_name: string | null } | null;
+      project_match: { name: string | null; relative_id: number | null } | null;
     }[];
   }>(
-    `query DayVolume($ids: [Int], $last: Int) {
+    `query DayDocs($ids: [Int], $last: Int) {
       customer_documents(document_type_ids: $ids, orderBy: "id", last: $last) {
         document_type_id
         value
         status_code
         date
+        customer { company_name full_name }
+        project_match { name relative_id }
       }
     }`,
     {
@@ -1923,32 +1946,44 @@ export async function getDocumentVolumeForDay(dayIso: string): Promise<DayDocume
       last: 500,
     }
   );
+  const out: DayDocument[] = [];
+  for (const d of data.customer_documents ?? []) {
+    if (d.status_code === 1000 || !d.date) continue;
+    if (d.date.slice(0, 10) !== dayIso) continue;
+    const kind = DOC_KIND[d.document_type_id ?? -1];
+    if (!kind) continue;
+    out.push({
+      kind,
+      date: d.date.slice(0, 10),
+      customerName: d.customer?.company_name || d.customer?.full_name || null,
+      projectName: d.project_match?.name ?? null,
+      projectRelativeId: d.project_match?.relative_id ?? null,
+      net: Math.round((d.value ?? 0) * 100) / 100,
+    });
+  }
+  return out;
+}
+
+/** Fasst eine Dokumentliste zu Anzahl + Netto je Kategorie zusammen (Rechnungen abzügl. Gutschriften/Stornos). */
+export function aggregateDayDocuments(docs: DayDocument[]): DayDocumentVolume {
   const out: DayDocumentVolume = {
     offers: { count: 0, net: 0 },
     confirmations: { count: 0, net: 0 },
     invoices: { count: 0, net: 0 },
   };
-  for (const d of data.customer_documents ?? []) {
-    if (d.status_code === 1000 || !d.date) continue; // gelöschte überspringen
-    if (d.date.slice(0, 10) !== dayIso) continue;
-    const value = d.value ?? 0;
-    switch (d.document_type_id) {
-      case OFFER_DOCUMENT_TYPE_ID:
-        out.offers.count += 1;
-        out.offers.net += value;
-        break;
-      case CONFIRMATION_DOCUMENT_TYPE_ID:
-        out.confirmations.count += 1;
-        out.confirmations.net += value;
-        break;
-      case RECHNUNG_DOCUMENT_TYPE_ID:
-        out.invoices.count += 1;
-        out.invoices.net += value;
-        break;
-      case GUTSCHRIFT_DOCUMENT_TYPE_ID:
-      case STORNO_DOCUMENT_TYPE_ID:
-        out.invoices.net -= Math.abs(value);
-        break;
+  for (const d of docs) {
+    if (d.kind === "offer") {
+      out.offers.count += 1;
+      out.offers.net += d.net;
+    } else if (d.kind === "confirmation") {
+      out.confirmations.count += 1;
+      out.confirmations.net += d.net;
+    } else if (d.kind === "invoice") {
+      out.invoices.count += 1;
+      out.invoices.net += d.net;
+    } else {
+      // Gutschrift/Storno mindern die Rechnungssumme.
+      out.invoices.net -= Math.abs(d.net);
     }
   }
   const r2 = (n: number) => Math.round(n * 100) / 100;

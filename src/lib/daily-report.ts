@@ -8,9 +8,11 @@ import {
   getWorkdays,
   getAbsences,
   getProjectPhotosUploadedOn,
-  getDocumentVolumeForDay,
+  getDocumentsForDay,
+  aggregateDayDocuments,
   type DailyPhoto,
   type DayDocumentVolume,
+  type DayDocument,
 } from "./hero-api";
 import { getGlobalLogbookSystem } from "./logbook-core";
 import { sendMailWithAttachments, type MailAttachment } from "./mailer";
@@ -111,16 +113,39 @@ export interface AnomalyReport {
   activity: DailyActivity;
   /** Angebote / Aufträge / Rechnungen des heutigen Tages (Anzahl + Netto). */
   documents: DayDocumentVolume;
+  /** Einzelne Dokumente des heutigen Tages (für die Liste). */
+  documentList: DayDocument[];
+  /** Arbeitszeiten aller Mitarbeiter am Vortag (rot: nichts eingereicht). */
+  workHours: EmployeeDay[];
   sourceErrors: string[];
   totalCount: number;
   /** Freitext-Zusatzanweisung an die KI (aus der Konfiguration). */
   kiInstructions: string;
 }
 
+/** Arbeitszeit eines Mitarbeiters an einem Tag (für die Roster-Liste im Bericht). */
+export interface EmployeeDay {
+  partnerId: number;
+  name: string;
+  workedHours: number;
+  targetHours: number;
+  /** Hat Arbeitszeit eingereicht (workedHours > 0). */
+  submitted: boolean;
+  /** Am Tag abwesend (Urlaub/krank/…) – dann kein Rot. */
+  absent: boolean;
+  absenceType: string | null;
+}
+
 const EMPTY_DOCS: DayDocumentVolume = {
   offers: { count: 0, net: 0 },
   confirmations: { count: 0, net: 0 },
   invoices: { count: 0, net: 0 },
+};
+
+const ABSENCE_LABEL: Record<string, string> = {
+  vacation: "Urlaub",
+  sick: "krank",
+  parental_leave: "Elternzeit",
 };
 
 // Stichwörter, die einen Logbuch-Eintrag als "Problem" markieren.
@@ -243,6 +268,36 @@ async function collectMissingTimeEntries(dayIso: string): Promise<Anomaly[]> {
   return out.sort((a, b) => a.title.localeCompare(b.title, "de"));
 }
 
+/** Alle Mitarbeiter mit ihren Arbeitszeiten am Tag (rot = nichts eingereicht, nicht abwesend). */
+async function collectWorkHours(dayIso: string): Promise<EmployeeDay[]> {
+  const [workdays, absences] = await Promise.all([
+    getWorkdays(dayIso, dayIso),
+    getAbsences(dayIso, dayIso),
+  ]);
+  const absenceByPartner = new Map<number, string>();
+  for (const a of absences) if (!absenceByPartner.has(a.partnerId)) absenceByPartner.set(a.partnerId, a.type);
+  const list: EmployeeDay[] = workdays.map((w) => {
+    const absType = absenceByPartner.get(w.partnerId) ?? null;
+    return {
+      partnerId: w.partnerId,
+      name: w.partnerName,
+      workedHours: w.workedHours,
+      targetHours: w.targetHours,
+      submitted: w.workedHours > 0,
+      absent: absType != null,
+      absenceType: absType,
+    };
+  });
+  // Fehlende Erfassung (rot) zuerst, dann alphabetisch.
+  list.sort((a, b) => {
+    const aRed = !a.submitted && !a.absent;
+    const bRed = !b.submitted && !b.absent;
+    if (aRed !== bRed) return aRed ? -1 : 1;
+    return a.name.localeCompare(b.name, "de");
+  });
+  return list;
+}
+
 function sevRank(s: Severity): number {
   return s === "hoch" ? 3 : s === "mittel" ? 2 : 1;
 }
@@ -312,9 +367,15 @@ export async function collectAnomalies(): Promise<AnomalyReport> {
     return { dayIso: today, projects: [], photosOmitted: 0 };
   });
 
-  const documents = await getDocumentVolumeForDay(today).catch((): DayDocumentVolume => {
+  const documentList = await getDocumentsForDay(today).catch((): DayDocument[] => {
     sourceErrors.push("Angebote/Aufträge/Rechnungen");
-    return EMPTY_DOCS;
+    return [];
+  });
+  const documents = documentList.length > 0 ? aggregateDayDocuments(documentList) : EMPTY_DOCS;
+
+  const workHours = await collectWorkHours(dayIso).catch((): EmployeeDay[] => {
+    sourceErrors.push("Arbeitszeiten-Liste");
+    return [];
   });
 
   const totalCount =
@@ -329,6 +390,8 @@ export async function collectAnomalies(): Promise<AnomalyReport> {
     sections,
     activity,
     documents,
+    documentList,
+    workHours,
     sourceErrors,
     totalCount,
     kiInstructions: cfg.instructions,
@@ -675,6 +738,80 @@ function buildDailyReportHtml(
     </table>
     <p style="margin:8px 0 0;font-size:12px;color:#8a929c;">Netto, Belegdatum heute (ohne gelöschte; Gutschriften/Stornos abgezogen).</p>`;
 
+  // Dokumentliste (Datum, Typ, Kunde, Projekt, Netto).
+  const DOC_LABEL: Record<DayDocument["kind"], string> = {
+    offer: "Angebot",
+    confirmation: "Auftrag",
+    invoice: "Rechnung",
+    gutschrift: "Gutschrift",
+    storno: "Storno",
+  };
+  const shortDate = (iso: string) => {
+    const [, m, dd] = iso.split("-");
+    return `${dd}.${m}.`;
+  };
+  const th = `padding:0 8px 6px;font-size:11px;color:#8a929c;text-transform:uppercase;letter-spacing:.4px;`;
+  const td = `padding:6px 8px;border-top:1px solid #eceef1;font-size:13px;`;
+  let docListHtml: string;
+  if (report.documentList.length === 0) {
+    docListHtml = `<p style="margin:14px 0 0;font-size:13px;color:#8a929c;">Heute keine Angebote, Aufträge oder Rechnungen.</p>`;
+  } else {
+    const rows = report.documentList
+      .map((doc) => {
+        const dispNet = doc.kind === "gutschrift" || doc.kind === "storno" ? -Math.abs(doc.net) : doc.net;
+        const proj = doc.projectName
+          ? `${doc.projectRelativeId ? `#${doc.projectRelativeId} ` : ""}${esc(doc.projectName)}`
+          : "–";
+        return `<tr>
+          <td style="${td}color:#8a929c;white-space:nowrap;">${shortDate(doc.date)}</td>
+          <td style="${td}color:#3f4650;white-space:nowrap;">${DOC_LABEL[doc.kind]}</td>
+          <td style="${td}color:#111417;">${esc(doc.customerName ?? "–")}</td>
+          <td style="${td}color:#3f4650;">${proj}</td>
+          <td style="${td}color:#111417;text-align:right;white-space:nowrap;">${eur(dispNet)}</td>
+        </tr>`;
+      })
+      .join("");
+    docListHtml = `
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:14px 0 0;border-collapse:collapse;">
+        <tr>
+          <td style="${th}">Datum</td><td style="${th}">Typ</td><td style="${th}">Kunde</td><td style="${th}">Projekt</td><td style="${th}text-align:right;">Netto</td>
+        </tr>
+        ${rows}
+      </table>`;
+  }
+
+  // Arbeitszeiten aller Mitarbeiter am Vortag (rot: nichts eingereicht, nicht abwesend).
+  let workHoursHtml: string;
+  if (report.workHours.length === 0) {
+    workHoursHtml = `<p style="margin:0;color:#8a929c;">Keine Arbeitszeitdaten.</p>`;
+  } else {
+    const rows = report.workHours
+      .map((e) => {
+        const red = !e.submitted && !e.absent;
+        const nameColor = red ? "#b91c1c" : "#111417";
+        const hint = e.absent
+          ? ABSENCE_LABEL[e.absenceType ?? ""] ?? e.absenceType ?? "abwesend"
+          : e.submitted
+            ? ""
+            : "keine Zeit eingereicht";
+        const hintColor = red ? "#b91c1c" : "#8a929c";
+        return `<tr style="${red ? "background:#fff5f4;" : ""}">
+          <td style="${td}font-weight:${red ? "700" : "400"};color:${nameColor};">${esc(e.name)}</td>
+          <td style="${td}color:${nameColor};text-align:right;white-space:nowrap;">${e.workedHours.toFixed(1)} h</td>
+          <td style="${td}color:#8a929c;text-align:right;white-space:nowrap;">${e.targetHours.toFixed(1)} h</td>
+          <td style="${td}color:${hintColor};font-size:12px;">${esc(hint)}</td>
+        </tr>`;
+      })
+      .join("");
+    workHoursHtml = `
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+        <tr>
+          <td style="${th}">Mitarbeiter</td><td style="${th}text-align:right;">Ist</td><td style="${th}text-align:right;">Soll</td><td style="${th}">Hinweis</td>
+        </tr>
+        ${rows}
+      </table>`;
+  }
+
   return `<!doctype html>
 <html lang="de"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
 <meta name="color-scheme" content="light only"/><title>FLOORTEC Tagesbericht</title></head>
@@ -696,6 +833,12 @@ function buildDailyReportHtml(
           <div style="height:1px;background:#eceef1;margin:0 0 18px;"></div>
           <h2 style="margin:0 0 14px;font-size:18px;color:#111417;">Angebote, Aufträge &amp; Rechnungen (heute)</h2>
           ${docsHtml}
+          ${docListHtml}
+        </td></tr>
+        <tr><td style="padding:18px 32px 8px;">
+          <div style="height:1px;background:#eceef1;margin:0 0 18px;"></div>
+          <h2 style="margin:0 0 14px;font-size:18px;color:#111417;">Arbeitszeiten – ${esc(fmtDay(report.dayIso))}</h2>
+          ${workHoursHtml}
         </td></tr>
         <tr><td style="padding:18px 32px 28px;">
           <div style="height:1px;background:#eceef1;margin:0 0 18px;"></div>
@@ -732,6 +875,20 @@ function buildDailyReportText(report: AnomalyReport): string {
   lines.push(`  Angebote:   ${d.offers.count} · ${eur(d.offers.net)}`);
   lines.push(`  Aufträge:   ${d.confirmations.count} · ${eur(d.confirmations.net)}`);
   lines.push(`  Rechnungen: ${d.invoices.count} · ${eur(d.invoices.net)}`);
+  const DOC_LABEL: Record<string, string> = { offer: "Angebot", confirmation: "Auftrag", invoice: "Rechnung", gutschrift: "Gutschrift", storno: "Storno" };
+  for (const doc of report.documentList) {
+    const proj = doc.projectName ? `${doc.projectRelativeId ? `#${doc.projectRelativeId} ` : ""}${doc.projectName}` : "–";
+    const net = doc.kind === "gutschrift" || doc.kind === "storno" ? -Math.abs(doc.net) : doc.net;
+    lines.push(`  - ${DOC_LABEL[doc.kind]} · ${doc.customerName ?? "–"} · ${proj} · ${eur(net)}`);
+  }
+  lines.push("");
+  lines.push(`Arbeitszeiten – ${fmtDay(report.dayIso)}:`);
+  if (report.workHours.length === 0) lines.push("  keine Daten");
+  for (const e of report.workHours) {
+    const red = !e.submitted && !e.absent;
+    const hint = e.absent ? ` (${e.absenceType ?? "abwesend"})` : red ? "  <-- KEINE ZEIT EINGEREICHT" : "";
+    lines.push(`  ${red ? "! " : "  "}${e.name}: ${e.workedHours.toFixed(1)} h / Soll ${e.targetHours.toFixed(1)} h${hint}`);
+  }
   lines.push("");
   lines.push("Heutige Aktivität:");
   if (report.activity.projects.length === 0) lines.push("  keine Logbuch-Aktivität");
