@@ -2,7 +2,60 @@
 
 import { heroGraphQL } from "@/lib/hero-api";
 import { getSession } from "@/lib/session";
-import { listUsers } from "@/lib/users";
+import { listUsers, getUserByUsername } from "@/lib/users";
+
+/**
+ * Anzeigename des aktuell angemeldeten App-Benutzers, oder null.
+ *
+ * HERO leitet den Logbuch-Autor immer aus dem API-Key-Besitzer ab (es gibt kein
+ * Autor-Feld in der API). Um den echten Verfasser sichtbar zu machen, stellen wir
+ * seinen Namen dem Eintrag voran (siehe addLogbookEntry).
+ */
+async function currentUserName(): Promise<string | null> {
+  try {
+    const session = await getSession();
+    if (!session) return null;
+    const user = await getUserByUsername(session.username);
+    return (user?.displayName?.trim() || session.username) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Markiert den vorangestellten Autor eindeutig, z.B. "Max Mustermann · ". */
+const AUTHOR_SEP = " · ";
+
+/**
+ * Erkennt den vorangestellten Verfasser in einem Logbuch-Text.
+ * Nur Namen aus `knownNames` gelten als Autor – so wird kein normaler Text
+ * (z.B. "Achtung: …") fälschlich als Autor interpretiert.
+ */
+function splitAuthorPrefix(
+  text: string,
+  knownNames: Set<string>
+): { author: string | null; body: string } {
+  const idx = text.indexOf(AUTHOR_SEP);
+  if (idx > 0 && idx <= 60) {
+    const name = text.slice(0, idx).trim();
+    if (knownNames.has(name)) return { author: name, body: text.slice(idx + AUTHOR_SEP.length) };
+  }
+  return { author: null, body: text };
+}
+
+/** Menge der bekannten App-Benutzernamen (Anzeigename + Loginname) für die Autor-Erkennung. */
+async function knownUserNames(): Promise<Set<string>> {
+  try {
+    const users = await listUsers();
+    const set = new Set<string>();
+    for (const u of users) {
+      if (u.displayName?.trim()) set.add(u.displayName.trim());
+      if (u.username?.trim()) set.add(u.username.trim());
+    }
+    return set;
+  } catch {
+    return new Set();
+  }
+}
 
 /** Aktive Mitarbeiter (für die Aufgaben-Zuweisung im Logbuch). */
 export async function listAssignableUsers(): Promise<{ id: number; name: string }[]> {
@@ -69,13 +122,19 @@ export async function getProjectLogbook(projectId: number, includeSystem = true)
     }`,
     { id: projectId }
   );
-  let entries = (data.project_histories ?? []).map((h) => ({
-    id: h.id,
-    date: h.created,
-    title: stripHtml(h.custom_title),
-    text: stripHtml(h.custom_text),
-    author: h.user?.partner?.name || h.user?.email || null,
-  }));
+  const known = await knownUserNames();
+  let entries = (data.project_histories ?? []).map((h) => {
+    const raw = stripHtml(h.custom_text);
+    const { author: prefixAuthor, body } = splitAuthorPrefix(raw, known);
+    return {
+      id: h.id,
+      date: h.created,
+      title: stripHtml(h.custom_title),
+      text: body,
+      // Vorangestellter App-Verfasser hat Vorrang vor dem HERO-Autor (= Key-Besitzer).
+      author: prefixAuthor || h.user?.partner?.name || h.user?.email || null,
+    };
+  });
   entries.reverse(); // neueste zuerst (Query liefert aufsteigend nach id)
   if (!includeSystem) {
     entries = entries.filter((e) => !SYSTEM_TITLE_RE.test(e.title));
@@ -125,16 +184,21 @@ export async function getGlobalLogbook(limit = 200): Promise<GlobalLogEntry[]> {
     { limit }
   );
   // HERO liefert bei last:N absteigend (neueste zuerst).
-  return (data.histories ?? []).map((h) => ({
-    id: h.id,
-    date: h.created,
-    title: stripHtml(h.custom_title),
-    text: stripHtml(h.custom_text),
-    author: h.author_name?.trim() || h.user?.partner?.name || h.user?.email || null,
-    projectId: h.target_project_match?.id ?? null,
-    projectRelativeId: h.target_project_match?.relative_id ?? null,
-    projectName: h.target_project_match?.name ?? null,
-  }));
+  const known = await knownUserNames();
+  return (data.histories ?? []).map((h) => {
+    const raw = stripHtml(h.custom_text);
+    const { author: prefixAuthor, body } = splitAuthorPrefix(raw, known);
+    return {
+      id: h.id,
+      date: h.created,
+      title: stripHtml(h.custom_title),
+      text: body,
+      author: prefixAuthor || h.author_name?.trim() || h.user?.partner?.name || h.user?.email || null,
+      projectId: h.target_project_match?.id ?? null,
+      projectRelativeId: h.target_project_match?.relative_id ?? null,
+      projectName: h.target_project_match?.name ?? null,
+    };
+  });
 }
 
 export interface AddLogbookResult {
@@ -146,10 +210,17 @@ export interface AddLogbookResult {
 /** Adds a logbook entry (note) to a project. Writes to HERO. */
 export async function addLogbookEntry(
   projectId: number,
-  text: string
+  text: string,
+  /** false = Autor NICHT voranstellen (für Aufrufer, die den Verfasser schon im Text nennen). */
+  prefixAuthor = true
 ): Promise<AddLogbookResult> {
   const note = text.trim();
   if (!note) return { ok: false, message: "Bitte einen Text eingeben." };
+
+  // Echten Verfasser voranstellen – HERO würde sonst immer den Key-Besitzer zeigen.
+  const author = prefixAuthor ? await currentUserName() : null;
+  const body = author ? `${author}${AUTHOR_SEP}${note}` : note;
+
   try {
     const data = await heroGraphQL<{
       add_logbook_entry: {
@@ -169,7 +240,7 @@ export async function addLogbookEntry(
           user { partner { name } email }
         }
       }`,
-      { entry: { target: "project_match", target_id: projectId, custom_text: note } }
+      { entry: { target: "project_match", target_id: projectId, custom_text: body } }
     );
     const h = data.add_logbook_entry;
     if (!h) return { ok: false, message: "HERO hat keinen Eintrag zurückgegeben." };
@@ -180,8 +251,9 @@ export async function addLogbookEntry(
         id: h.id,
         date: h.created,
         title: stripHtml(h.custom_title),
-        text: stripHtml(h.custom_text) || note,
-        author: h.user?.partner?.name || h.user?.email || null,
+        // Im zurückgegebenen Eintrag den Autor-Präfix wieder abtrennen und als Verfasser zeigen.
+        text: note,
+        author: author || h.user?.partner?.name || h.user?.email || null,
       },
     };
   } catch (e) {

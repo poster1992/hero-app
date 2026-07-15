@@ -498,9 +498,10 @@ export async function sendReviewEmailAction(formData: FormData): Promise<SendRev
   try {
     const pid = /^p(\d+)$/.exec(projectKey);
     if (pid) {
+      // Der Verfasser wird von addLogbookEntry automatisch vorangestellt.
       await addLogbookEntry(
         Number(pid[1]),
-        `Kundenzufriedenheitsumfrage per E-Mail an ${email} versendet (durch ${user.displayName || user.username}).`
+        `Kundenzufriedenheitsumfrage per E-Mail an ${email} versendet.`
       );
     }
   } catch {
