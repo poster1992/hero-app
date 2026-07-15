@@ -22,6 +22,13 @@ import {
   DAILY_REPORT_RECIPIENTS_KEY,
   DAILY_REPORT_LAST_SENT_KEY,
   DAILY_REPORT_LAST_ATTEMPT_KEY,
+  DAILY_REPORT_OVERRUN_THRESHOLD_KEY,
+  DAILY_REPORT_CHECK_HOURS_KEY,
+  DAILY_REPORT_CHECK_NOCALC_KEY,
+  DAILY_REPORT_CHECK_LOGBOOK_KEY,
+  DAILY_REPORT_CHECK_MISSING_KEY,
+  DAILY_REPORT_LOGBOOK_KEYWORDS_KEY,
+  DAILY_REPORT_INSTRUCTIONS_KEY,
 } from "./settings";
 
 // ---------------------------------------------------------------------------
@@ -102,6 +109,8 @@ export interface AnomalyReport {
   activity: DailyActivity;
   sourceErrors: string[];
   totalCount: number;
+  /** Freitext-Zusatzanweisung an die KI (aus der Konfiguration). */
+  kiInstructions: string;
 }
 
 // Stichwörter, die einen Logbuch-Eintrag als "Problem" markieren.
@@ -123,13 +132,15 @@ function collectProjectHourOverruns(
   activeIds: Set<number>,
   ist: Map<number, number>,
   soll: Map<number, { hours: number }>,
-  names: Map<number, { name: string; relativeId: number | null }>
+  names: Map<number, { name: string; relativeId: number | null }>,
+  thresholdPct: number
 ): Anomaly[] {
   const out: Anomaly[] = [];
+  const factor = thresholdPct / 100;
   for (const pid of activeIds) {
     const sollH = soll.get(pid)?.hours ?? 0;
     const istH = ist.get(pid) ?? 0;
-    if (sollH <= 0 || istH <= sollH) continue;
+    if (sollH <= 0 || istH <= sollH * factor) continue;
     const ratio = istH / sollH;
     const p = names.get(pid);
     const label = p ? `${p.relativeId ? `#${p.relativeId} ` : ""}${p.name}` : `Projekt ${pid}`;
@@ -172,14 +183,19 @@ function collectProjectAnomalies(
 }
 
 /** (b) Logbuch-Einträge des Tages, die auf ein Problem hindeuten. */
-async function collectLogbookProblems(dayIso: string): Promise<Anomaly[]> {
+async function collectLogbookProblems(dayIso: string, keywords: string[]): Promise<Anomaly[]> {
   const log = await getGlobalLogbookSystem(300);
+  // Eigene Stichwortliste (aus der Konfiguration) hat Vorrang; sonst Standard.
+  const re =
+    keywords.length > 0
+      ? new RegExp(keywords.map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"), "i")
+      : PROBLEM_RE;
   const out: Anomaly[] = [];
   for (const e of log) {
     if (!e.date || e.date.slice(0, 10) !== dayIso) continue;
     if (SYSTEM_TITLE_RE.test(e.title)) continue; // automatische Ereignisse ignorieren
     const hay = `${e.title} ${e.text}`;
-    if (!PROBLEM_RE.test(hay)) continue;
+    if (!re.test(hay)) continue;
     const proj = e.projectName
       ? `${e.projectRelativeId ? `#${e.projectRelativeId} ` : ""}${e.projectName}`
       : "ohne Projekt";
@@ -227,6 +243,7 @@ function sevRank(s: Severity): number {
 
 /** Sammelt alle Auffälligkeiten (tagesscharfe für den Vortag) fehlertolerant. */
 export async function collectAnomalies(): Promise<AnomalyReport> {
+  const cfg = await getDailyReportConfig();
   const today = localDateIso();
   const dayIso = previousDayIso(today);
   const sourceErrors: string[] = [];
@@ -264,14 +281,16 @@ export async function collectAnomalies(): Promise<AnomalyReport> {
   else sourceErrors.push("Projektliste");
 
   // Regeln, die nur die Basisdaten brauchen (synchron), plus die zwei async-Sammler.
+  // Jede Prüfung nur, wenn in der Konfiguration aktiviert.
   if (activeIds.size > 0) {
-    sections.ueberstunden = collectProjectHourOverruns(activeIds, ist, soll, names);
-    sections.projekt = collectProjectAnomalies(activeIds, ist, soll, names);
+    if (cfg.checks.hours)
+      sections.ueberstunden = collectProjectHourOverruns(activeIds, ist, soll, names, cfg.overrunThreshold);
+    if (cfg.checks.nocalc) sections.projekt = collectProjectAnomalies(activeIds, ist, soll, names);
   }
 
   const [logRes, missRes] = await Promise.allSettled([
-    collectLogbookProblems(dayIso),
-    collectMissingTimeEntries(dayIso),
+    cfg.checks.logbook ? collectLogbookProblems(dayIso, cfg.logbookKeywords) : Promise.resolve([]),
+    cfg.checks.missing ? collectMissingTimeEntries(dayIso) : Promise.resolve([]),
   ]);
   if (logRes.status === "fulfilled") sections.logbuch = logRes.value;
   else sourceErrors.push("Logbuch");
@@ -296,6 +315,7 @@ export async function collectAnomalies(): Promise<AnomalyReport> {
     activity,
     sourceErrors,
     totalCount,
+    kiInstructions: cfg.instructions,
   };
 }
 
@@ -398,7 +418,10 @@ export async function generateReportText(report: AnomalyReport): Promise<string>
     "Regeln: Ändere KEINE Zahlen, erfinde nichts, füge keine Auffälligkeiten hinzu, die nicht in den Daten stehen. " +
     "Gruppiere sinnvoll (Projekte/Stunden, Zeiterfassung, Logbuch), hoch zuerst. " +
     "Gib NUR ein HTML-Fragment aus (erlaubt: h2, h3, p, ul, li, strong, em) — kein Markdown, kein ```-Codeblock, kein <html>/<head>, keine style-Attribute. " +
-    "Wenn keine Auffälligkeiten vorliegen, schreibe einen kurzen Entwarnungssatz.";
+    "Wenn keine Auffälligkeiten vorliegen, schreibe einen kurzen Entwarnungssatz." +
+    (report.kiInstructions
+      ? `\n\nZusätzliche Anweisungen der Geschäftsleitung (beachten, aber niemals Zahlen erfinden): ${report.kiInstructions}`
+      : "");
   const user =
     `Betrachteter Tag: ${report.dayIso}. Erzeuge den Tagesbericht aus diesen geprüften Daten:\n\n` +
     JSON.stringify(payload, null, 2);
@@ -471,16 +494,33 @@ export interface DailyReportConfig {
   hour: number;
   sendWhenEmpty: boolean;
   extraRecipients: string[];
+  /** Prozentschwelle für Ist>Soll (100 = auffällig sobald Ist über Soll). */
+  overrunThreshold: number;
+  checks: { hours: boolean; nocalc: boolean; logbook: boolean; missing: boolean };
+  /** Stichwörter für die Logbuch-Problemerkennung (leer = Standardliste). */
+  logbookKeywords: string[];
+  /** Freitext-Zusatzanweisung an die KI (leer = keine). */
+  instructions: string;
 }
 
 export async function getDailyReportConfig(): Promise<DailyReportConfig> {
-  const [enabled, hour, empty, recips] = await Promise.all([
+  const [enabled, hour, empty, recips, thr, cH, cN, cL, cM, kw, instr] = await Promise.all([
     getSetting(DAILY_REPORT_ENABLED_KEY),
     getSetting(DAILY_REPORT_HOUR_KEY),
     getSetting(DAILY_REPORT_SEND_WHEN_EMPTY_KEY),
     getSetting(DAILY_REPORT_RECIPIENTS_KEY),
+    getSetting(DAILY_REPORT_OVERRUN_THRESHOLD_KEY),
+    getSetting(DAILY_REPORT_CHECK_HOURS_KEY),
+    getSetting(DAILY_REPORT_CHECK_NOCALC_KEY),
+    getSetting(DAILY_REPORT_CHECK_LOGBOOK_KEY),
+    getSetting(DAILY_REPORT_CHECK_MISSING_KEY),
+    getSetting(DAILY_REPORT_LOGBOOK_KEYWORDS_KEY),
+    getSetting(DAILY_REPORT_INSTRUCTIONS_KEY),
   ]);
-  const h = Number(hour);
+  // Achtung: Number(null) === 0 – daher leere Werte explizit als "nicht gesetzt" behandeln,
+  // sonst liefe der Bericht ohne gespeicherte Stunde um Mitternacht statt um 18 Uhr.
+  const h = hour ? Number(hour) : NaN;
+  const t = thr ? Number(thr) : NaN;
   return {
     enabled: enabled !== "0",
     hour: Number.isFinite(h) && h >= 0 && h <= 23 ? h : 18,
@@ -489,6 +529,18 @@ export async function getDailyReportConfig(): Promise<DailyReportConfig> {
       .split(/[,;\s]+/)
       .map((s) => s.trim())
       .filter((s) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s)),
+    overrunThreshold: Number.isFinite(t) && t >= 100 && t <= 500 ? t : 100,
+    checks: {
+      hours: cH !== "0",
+      nocalc: cN !== "0",
+      logbook: cL !== "0",
+      missing: cM !== "0",
+    },
+    logbookKeywords: (kw ?? "")
+      .split(/[,\n;]+/)
+      .map((s) => s.trim())
+      .filter(Boolean),
+    instructions: (instr ?? "").trim(),
   };
 }
 
@@ -644,18 +696,27 @@ function buildDailyReportText(report: AnomalyReport): string {
 // Versand + Zeitsteuerung
 // ---------------------------------------------------------------------------
 
-/** Erstellt den Bericht und versendet ihn an alle Empfänger. Wirft nie. */
-export async function sendDailyReport(opts: { force?: boolean } = {}): Promise<{ sent: boolean; reason?: string }> {
+/**
+ * Erstellt den Bericht und versendet ihn. Wirft nie.
+ * - `recipients` überschreibt die Empfänger (z.B. für einen Testversand an eine Adresse).
+ * - `force` umgeht den An/Aus-Schalter und den „nichts zu berichten"-Skip.
+ */
+export async function sendDailyReport(
+  opts: { force?: boolean; recipients?: string[] } = {}
+): Promise<{ sent: boolean; reason?: string }> {
   try {
     const cfg = await getDailyReportConfig();
     if (!cfg.enabled && !opts.force) return { sent: false, reason: "deaktiviert" };
 
-    // Empfänger: aktive Admins + optionale Zusatzadressen.
-    const adminIds = await listAdminUserIds();
-    const admins = await getUsersForNotification(adminIds);
+    // Empfänger: explizite Vorgabe (Test) oder aktive Admins + Zusatzadressen.
     const emails = new Set<string>();
-    for (const a of admins) if (a.email) emails.add(a.email);
-    for (const e of cfg.extraRecipients) emails.add(e);
+    if (opts.recipients && opts.recipients.length > 0) {
+      for (const e of opts.recipients) if (e) emails.add(e);
+    } else {
+      const admins = await getUsersForNotification(await listAdminUserIds());
+      for (const a of admins) if (a.email) emails.add(a.email);
+      for (const e of cfg.extraRecipients) emails.add(e);
+    }
     if (emails.size === 0) return { sent: false, reason: "keine Empfänger" };
 
     const report = await collectAnomalies();

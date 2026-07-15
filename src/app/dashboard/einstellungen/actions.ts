@@ -12,11 +12,23 @@ import {
   SMTP_FROM_KEY,
   GOOGLE_PLACES_API_KEY_KEY,
   GOOGLE_PLACE_ID_KEY,
+  DAILY_REPORT_ENABLED_KEY,
+  DAILY_REPORT_HOUR_KEY,
+  DAILY_REPORT_SEND_WHEN_EMPTY_KEY,
+  DAILY_REPORT_RECIPIENTS_KEY,
+  DAILY_REPORT_OVERRUN_THRESHOLD_KEY,
+  DAILY_REPORT_CHECK_HOURS_KEY,
+  DAILY_REPORT_CHECK_NOCALC_KEY,
+  DAILY_REPORT_CHECK_LOGBOOK_KEY,
+  DAILY_REPORT_CHECK_MISSING_KEY,
+  DAILY_REPORT_LOGBOOK_KEYWORDS_KEY,
+  DAILY_REPORT_INSTRUCTIONS_KEY,
 } from "@/lib/settings";
 import { getUserByUsername } from "@/lib/users";
 import { sendMailResult, verifySmtp } from "@/lib/mailer";
 import { getGoogleReviewStats } from "@/lib/google-reviews";
 import { addBaustelle, deleteBaustelle } from "@/lib/baustellen-docs";
+import { sendDailyReport } from "@/lib/daily-report";
 
 const PATH = "/dashboard/einstellungen";
 
@@ -127,6 +139,58 @@ export async function deleteBaustelleAction(formData: FormData): Promise<void> {
   if (!Number.isFinite(id) || id <= 0) return;
   await deleteBaustelle(id);
   revalidatePath(PATH);
+}
+
+/** Speichert die Konfiguration des täglichen Analyse-Berichts (volle Regelsteuerung). */
+export async function saveDailyReportConfigAction(
+  _prev: SettingsState,
+  formData: FormData
+): Promise<SettingsState> {
+  if (!(await isAdmin())) return { error: "Kein Zugriff." };
+  const on = (name: string) => (formData.get(name) === "on" || formData.get(name) === "1" ? "1" : "0");
+  const hour = String(formData.get("hour") ?? "18").trim();
+  const thr = String(formData.get("overrunThreshold") ?? "100").trim();
+  if (!/^\d+$/.test(hour) || Number(hour) > 23) return { error: "Uhrzeit muss 0–23 sein." };
+  if (!/^\d+$/.test(thr) || Number(thr) < 100) return { error: "Schwelle muss eine Zahl ≥ 100 (%) sein." };
+  const recipients = String(formData.get("recipients") ?? "").trim();
+  const keywords = String(formData.get("logbookKeywords") ?? "").trim();
+  const instructions = String(formData.get("instructions") ?? "").trim();
+  try {
+    await Promise.all([
+      setSetting(DAILY_REPORT_ENABLED_KEY, on("enabled")),
+      setSetting(DAILY_REPORT_HOUR_KEY, hour),
+      setSetting(DAILY_REPORT_SEND_WHEN_EMPTY_KEY, on("sendWhenEmpty")),
+      setSetting(DAILY_REPORT_RECIPIENTS_KEY, recipients || null),
+      setSetting(DAILY_REPORT_OVERRUN_THRESHOLD_KEY, thr),
+      setSetting(DAILY_REPORT_CHECK_HOURS_KEY, on("checkHours")),
+      setSetting(DAILY_REPORT_CHECK_NOCALC_KEY, on("checkNocalc")),
+      setSetting(DAILY_REPORT_CHECK_LOGBOOK_KEY, on("checkLogbook")),
+      setSetting(DAILY_REPORT_CHECK_MISSING_KEY, on("checkMissing")),
+      setSetting(DAILY_REPORT_LOGBOOK_KEYWORDS_KEY, keywords || null),
+      setSetting(DAILY_REPORT_INSTRUCTIONS_KEY, instructions || null),
+    ]);
+  } catch {
+    return { error: "Speichern fehlgeschlagen." };
+  }
+  revalidatePath(PATH);
+  return { success: "Tagesbericht-Einstellungen gespeichert." };
+}
+
+export interface TestReportResult {
+  ok: boolean;
+  message: string;
+}
+
+/** Sendet SOFORT einen Testbericht an die eigene Admin-Adresse (umgeht An/Aus). */
+export async function sendTestDailyReportAction(): Promise<TestReportResult> {
+  const session = await getSession();
+  if (!session || session.role !== "administrator") return { ok: false, message: "Kein Zugriff." };
+  const email = (await getUserByUsername(session.username))?.email;
+  if (!email) return { ok: false, message: "Für deinen Benutzer ist keine E-Mail hinterlegt." };
+  const r = await sendDailyReport({ force: true, recipients: [email] });
+  return r.sent
+    ? { ok: true, message: `Testbericht an ${email} gesendet.` }
+    : { ok: false, message: `Nicht gesendet: ${r.reason ?? "unbekannt"}.` };
 }
 
 export interface TestMailResult {

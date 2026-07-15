@@ -32,6 +32,14 @@ export const DAILY_REPORT_SEND_WHEN_EMPTY_KEY = "daily_report_send_when_empty";
 export const DAILY_REPORT_RECIPIENTS_KEY = "daily_report_recipients";
 export const DAILY_REPORT_LAST_SENT_KEY = "daily_report_last_sent";
 export const DAILY_REPORT_LAST_ATTEMPT_KEY = "daily_report_last_attempt";
+// Regelsteuerung (volle Kontrolle über den Tagesbericht):
+export const DAILY_REPORT_OVERRUN_THRESHOLD_KEY = "daily_report_overrun_threshold"; // Prozent, Default 100
+export const DAILY_REPORT_CHECK_HOURS_KEY = "daily_report_check_hours"; // Ist>Soll
+export const DAILY_REPORT_CHECK_NOCALC_KEY = "daily_report_check_nocalc"; // Stunden ohne Kalkulation
+export const DAILY_REPORT_CHECK_LOGBOOK_KEY = "daily_report_check_logbook"; // Logbuch-Probleme
+export const DAILY_REPORT_CHECK_MISSING_KEY = "daily_report_check_missing"; // nicht erfasst
+export const DAILY_REPORT_LOGBOOK_KEYWORDS_KEY = "daily_report_logbook_keywords"; // Komma-Liste (leer = Standard)
+export const DAILY_REPORT_INSTRUCTIONS_KEY = "daily_report_instructions"; // Freitext an die KI
 
 // --- SMTP (E-Mail-Versand), pflegbar über die Konfiguration ---
 export const SMTP_HOST_KEY = "smtp_host";
