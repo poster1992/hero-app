@@ -7,6 +7,7 @@ import {
   getProjectPipeline,
   getWorkdays,
   getAbsences,
+  getTrackingTimes,
   getProjectPhotosUploadedOn,
   getDocumentsForDay,
   aggregateDayDocuments,
@@ -69,6 +70,14 @@ export function previousDayIso(dayIso: string): string {
   const [y, m, d] = dayIso.split("-").map(Number);
   const dt = new Date(Date.UTC(y, m - 1, d));
   dt.setUTCDate(dt.getUTCDate() - 1);
+  return dt.toISOString().slice(0, 10);
+}
+
+/** Folgetag (YYYY-MM-DD) zu einem gegebenen ISO-Datum. */
+export function nextDayIso(dayIso: string): string {
+  const [y, m, d] = dayIso.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + 1);
   return dt.toISOString().slice(0, 10);
 }
 
@@ -137,6 +146,8 @@ export interface EmployeeDay {
   absenceType: string | null;
   /** Stempelt grundsätzlich nicht (z.B. Geschäftsleitung/Büro) – nie rot, grau. */
   noStamp: boolean;
+  /** Aufschlüsselung der erfassten Zeit je Projekt an dem Tag. */
+  projects: { name: string | null; relativeId: number | null; hours: number }[];
 }
 
 const EMPTY_DOCS: DayDocumentVolume = {
@@ -283,15 +294,31 @@ const normName = (s: string): string => s.trim().toLowerCase().replace(/\s+/g, "
  * eingereicht und nicht abwesend.
  */
 async function collectWorkHours(dayIso: string): Promise<EmployeeDay[]> {
-  const [employees, workdays, absences] = await Promise.all([
+  const [employees, workdays, absences, times] = await Promise.all([
     listLohnEmployees(false), // nur aktive
     getWorkdays(dayIso, dayIso),
     getAbsences(dayIso, dayIso),
+    getTrackingTimes(dayIso, dayIso), // Zeiteinträge des Tages (end ist inklusive)
   ]);
   const wdByName = new Map<string, (typeof workdays)[number]>();
   for (const w of workdays) if (!wdByName.has(normName(w.partnerName))) wdByName.set(normName(w.partnerName), w);
   const absByName = new Map<string, string>();
   for (const a of absences) if (!absByName.has(normName(a.partnerName))) absByName.set(normName(a.partnerName), a.type);
+
+  // Zeiteinträge je Mitarbeiter nach Projekt aufsummieren.
+  const timesByName = new Map<string, Map<string, { name: string | null; relativeId: number | null; hours: number }>>();
+  for (const t of times) {
+    const key = normName(t.partnerName);
+    const pkey = String(t.projectId ?? t.projectName ?? "ohne");
+    let byProject = timesByName.get(key);
+    if (!byProject) {
+      byProject = new Map();
+      timesByName.set(key, byProject);
+    }
+    const existing = byProject.get(pkey);
+    if (existing) existing.hours += t.durationHours;
+    else byProject.set(pkey, { name: t.projectName, relativeId: t.projectRelativeId, hours: t.durationHours });
+  }
 
   const list: EmployeeDay[] = [];
   const seen = new Set<string>();
@@ -300,15 +327,26 @@ async function collectWorkHours(dayIso: string): Promise<EmployeeDay[]> {
     if (seen.has(key)) return;
     seen.add(key);
     const absType = absByName.get(key) ?? null;
+    const projMap = timesByName.get(key);
+    const projects = projMap
+      ? [...projMap.values()]
+          .map((p) => ({ ...p, hours: Math.round(p.hours * 100) / 100 }))
+          .sort((a, b) => b.hours - a.hours)
+      : [];
+    // Ist-Zeit: bevorzugt der (freigegebene) Workday-Wert; ist er 0, ersatzweise
+    // die Summe der Zeiteinträge (z.B. Wochenende/noch nicht freigegeben).
+    const tracked = Math.round(projects.reduce((s, p) => s + p.hours, 0) * 100) / 100;
+    const worked = (wd?.workedHours ?? 0) > 0 ? (wd?.workedHours ?? 0) : tracked;
     list.push({
       partnerId,
       name,
-      workedHours: wd?.workedHours ?? 0,
+      workedHours: worked,
       targetHours: wd?.targetHours ?? 0,
-      submitted: (wd?.workedHours ?? 0) > 0,
+      submitted: worked > 0,
       absent: absType != null,
       absenceType: absType,
       noStamp: NON_STAMPING.has(key),
+      projects,
     });
   };
 
@@ -409,7 +447,8 @@ export async function collectAnomalies(todayOverride?: string): Promise<AnomalyR
   });
   const documents = documentList.length > 0 ? aggregateDayDocuments(documentList) : EMPTY_DOCS;
 
-  const workHours = await collectWorkHours(dayIso).catch((): EmployeeDay[] => {
+  // Arbeitszeiten vom HEUTIGEN Tag (um 18 Uhr ist der Arbeitstag abgeschlossen).
+  const workHours = await collectWorkHours(today).catch((): EmployeeDay[] => {
     sourceErrors.push("Arbeitszeiten-Liste");
     return [];
   });
@@ -833,12 +872,18 @@ function buildDailyReportHtml(
               ? ""
               : "keine Zeit eingereicht";
         const hintColor = red ? "#b91c1c" : "#8a929c";
+        const projLine =
+          e.projects.length > 0
+            ? `<tr style="${red ? "background:#fff5f4;" : ""}"><td colspan="4" style="padding:0 8px 8px 20px;font-size:12px;color:#8a929c;">${e.projects
+                .map((p) => `${p.relativeId ? `#${p.relativeId} ` : ""}${esc(p.name ?? "ohne Projekt")} · ${p.hours.toFixed(1)} h`)
+                .join("&nbsp; · &nbsp;")}</td></tr>`
+            : "";
         return `<tr style="${red ? "background:#fff5f4;" : ""}">
           <td style="${td}font-weight:${red ? "700" : "400"};color:${nameColor};">${esc(e.name)}</td>
           <td style="${td}color:${nameColor};text-align:right;white-space:nowrap;">${e.workedHours.toFixed(1)} h</td>
           <td style="${td}color:#8a929c;text-align:right;white-space:nowrap;">${e.targetHours.toFixed(1)} h</td>
           <td style="${td}color:${hintColor};font-size:12px;">${esc(hint)}</td>
-        </tr>`;
+        </tr>${projLine}`;
       })
       .join("");
     workHoursHtml = `
@@ -875,7 +920,7 @@ function buildDailyReportHtml(
         </td></tr>
         <tr><td style="padding:18px 32px 8px;">
           <div style="height:1px;background:#eceef1;margin:0 0 18px;"></div>
-          <h2 style="margin:0 0 14px;font-size:18px;color:#111417;">Arbeitszeiten – ${esc(fmtDay(report.dayIso))}</h2>
+          <h2 style="margin:0 0 14px;font-size:18px;color:#111417;">Arbeitszeiten – ${esc(fmtDay(report.activity.dayIso))}</h2>
           ${workHoursHtml}
         </td></tr>
         <tr><td style="padding:18px 32px 28px;">
@@ -920,7 +965,7 @@ function buildDailyReportText(report: AnomalyReport): string {
     lines.push(`  - ${DOC_LABEL[doc.kind]} · ${doc.customerName ?? "–"} · ${proj} · ${eur(net)}`);
   }
   lines.push("");
-  lines.push(`Arbeitszeiten – ${fmtDay(report.dayIso)}:`);
+  lines.push(`Arbeitszeiten – ${fmtDay(report.activity.dayIso)}:`);
   if (report.workHours.length === 0) lines.push("  keine Daten");
   for (const e of report.workHours) {
     const red = !e.submitted && !e.absent && !e.noStamp;
@@ -932,6 +977,9 @@ function buildDailyReportText(report: AnomalyReport): string {
           ? "  <-- KEINE ZEIT EINGEREICHT"
           : "";
     lines.push(`  ${red ? "! " : "  "}${e.name}: ${e.workedHours.toFixed(1)} h / Soll ${e.targetHours.toFixed(1)} h${hint}`);
+    for (const p of e.projects) {
+      lines.push(`      ${p.relativeId ? `#${p.relativeId} ` : ""}${p.name ?? "ohne Projekt"} · ${p.hours.toFixed(1)} h`);
+    }
   }
   lines.push("");
   lines.push("Heutige Aktivität:");
