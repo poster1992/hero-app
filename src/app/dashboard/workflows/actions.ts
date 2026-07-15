@@ -82,6 +82,25 @@ function readConfig(formData: FormData): WorkflowConfig {
     excludedAssigneeId: Number(formData.get("excludedAssigneeId")) > 0 ? Number(formData.get("excludedAssigneeId")) : null,
     excludeManual: formData.get("excludeManual") === "on" || formData.get("excludeManual") === "1",
     chainReview: formData.get("chainReview") === "on" || formData.get("chainReview") === "1",
+    // --- logbuch_abschluss ---
+    keyword: String(formData.get("keyword") ?? "").trim() || null,
+    customerFilters: Array.from(
+      new Set(formData.getAll("customerFilters").map((s) => String(s).trim()).filter(Boolean))
+    ).slice(0, 200),
+    mailUserIds: Array.from(
+      new Set(formData.getAll("mailUserIds").map((s) => Number(s)).filter((n) => Number.isFinite(n) && n > 0))
+    ),
+    mailExtraEmails: Array.from(
+      new Set(
+        String(formData.get("mailExtraEmails") ?? "")
+          .split(/[\n,;]/)
+          .map((s) => s.trim())
+          .filter((s) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s))
+      )
+    ).slice(0, 50),
+    taskUserIds: Array.from(
+      new Set(formData.getAll("taskUserIds").map((s) => Number(s)).filter((n) => Number.isFinite(n) && n > 0))
+    ),
     // Zeitplan der wiederkehrenden Aufgabe (parseConfig begrenzt die Werte nochmal).
     repeatKind: REPEAT_KINDS.some((r) => r.key === String(formData.get("repeatKind")))
       ? (String(formData.get("repeatKind")) as RepeatKind)
@@ -90,6 +109,18 @@ function readConfig(formData: FormData): WorkflowConfig {
     repeatDayOfMonth: num(formData.get("repeatDayOfMonth")) ?? 1,
     repeatEveryDays: num(formData.get("repeatEveryDays")) ?? 14,
   };
+}
+
+/** Pflichtfelder je Auslöser prüfen. Gibt eine Fehlermeldung oder null zurück. */
+function validateConfig(triggerKey: string, config: WorkflowConfig): string | null {
+  if (triggerKey === "logbuch_abschluss") {
+    if (config.taskUserIds.length === 0) return "Bitte mindestens einen Zuständigen für die Aufgabe wählen.";
+    if (config.mailUserIds.length === 0 && config.mailExtraEmails.length === 0)
+      return "Bitte mindestens einen E-Mail-Empfänger angeben (interner Nutzer oder externe Adresse).";
+    return null;
+  }
+  if (!config.assigneeId) return "Bitte einen Mitarbeiter wählen.";
+  return null;
 }
 
 export interface WorkflowFormState {
@@ -110,7 +141,8 @@ export async function createWorkflowAction(
     return { error: "Unbekannter Auslöser." };
   }
   const config = readConfig(formData);
-  if (!config.assigneeId) return { error: "Bitte einen Mitarbeiter wählen." };
+  const cfgError = validateConfig(triggerKey, config);
+  if (cfgError) return { error: cfgError };
   try {
     await createWorkflow({ name, triggerKey, config, createdBy: adminId });
   } catch {
@@ -125,8 +157,9 @@ export async function updateWorkflowAction(formData: FormData): Promise<void> {
   const id = Number(formData.get("id"));
   const name = String(formData.get("name") ?? "").trim();
   if (!Number.isFinite(id) || !name) return;
+  const triggerKey = String(formData.get("triggerKey") ?? "");
   const config = readConfig(formData);
-  if (!config.assigneeId) return;
+  if (validateConfig(triggerKey, config)) return;
   await updateWorkflow(id, { name, config });
   revalidatePath(PATH);
 }

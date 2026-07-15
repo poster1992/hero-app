@@ -10,6 +10,7 @@ export const WORKFLOW_TRIGGERS = [
   { key: "stunden_ohne_abschlag", label: "Stunden gebucht, aber keine Abschlagsrechnung" },
   { key: "endrechnung", label: "Endrechnung erstellt (Schluss-/Vollrechnung, keine Teil-/Abschlagsrechnung)" },
   { key: "lager_min_erreicht", label: "Lager-Minimum erreicht (Bestand ≤ Minimum)" },
+  { key: "logbuch_abschluss", label: "Logbuch: Baustelle fertig → E-Mail + Aufgabe" },
   { key: "wiederkehrend", label: "Wiederkehrende Aufgabe (fester Zeitplan)" },
 ] as const;
 
@@ -47,6 +48,18 @@ export interface WorkflowConfig {
    * (Verkettung Rechnungsbuchung → Rechnungsprüfung).
    */
   chainReview: boolean;
+
+  // --- Nur „logbuch_abschluss" ---
+  /** Stichwort im Logbuch-Eintrag, das die Regel auslöst (Default „Baustelle fertig"). */
+  keyword: string | null;
+  /** Eingrenzung auf bestimmte Kunden (Namen; leer = alle Kunden). */
+  customerFilters: string[];
+  /** E-Mail-Empfänger: interne Benutzer (IDs). */
+  mailUserIds: number[];
+  /** E-Mail-Empfänger: zusätzliche externe Adressen. */
+  mailExtraEmails: string[];
+  /** Aufgaben-Zuständige (mehrere möglich). */
+  taskUserIds: number[];
 
   // --- Nur „wiederkehrend": der Zeitplan ---
   /** Rhythmus der Wiederholung. */
@@ -114,6 +127,19 @@ function parseConfig(value: unknown): WorkflowConfig {
         : null,
     excludeManual: o.excludeManual === true,
     chainReview: o.chainReview === true,
+    keyword: o.keyword != null && String(o.keyword).trim() ? String(o.keyword).trim() : null,
+    customerFilters: Array.isArray(o.customerFilters)
+      ? o.customerFilters.map((s) => String(s).trim()).filter(Boolean)
+      : [],
+    mailUserIds: Array.isArray(o.mailUserIds)
+      ? o.mailUserIds.map((n) => Number(n)).filter((n) => Number.isFinite(n) && n > 0)
+      : [],
+    mailExtraEmails: Array.isArray(o.mailExtraEmails)
+      ? o.mailExtraEmails.map((s) => String(s).trim()).filter((s) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s))
+      : [],
+    taskUserIds: Array.isArray(o.taskUserIds)
+      ? o.taskUserIds.map((n) => Number(n)).filter((n) => Number.isFinite(n) && n > 0)
+      : [],
     repeatKind: REPEAT_KINDS.some((r) => r.key === o.repeatKind)
       ? (o.repeatKind as RepeatKind)
       : "weekly",

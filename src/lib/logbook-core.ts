@@ -117,3 +117,24 @@ export async function getGlobalLogbookSystem(limit = 200): Promise<GlobalLogEntr
     };
   });
 }
+
+/**
+ * Schreibt eine Logbuch-Notiz an ein Projekt – OHNE Session (für Cron/Workflows).
+ * Nutzt die HERO-Mutation `add_logbook_entry` über den Firmen-Token-Fallback
+ * (currentHeroToken). Wirft nie; gibt true bei Erfolg zurück.
+ */
+export async function addProjectLogbookEntry(projectId: number, text: string): Promise<boolean> {
+  const note = text.trim();
+  if (!projectId || !note) return false;
+  try {
+    const data = await heroGraphQL<{ add_logbook_entry: { id: number } | null }>(
+      `mutation AddLog($entry: LogbookEntryInput!) {
+        add_logbook_entry(logbook_entry: $entry) { id }
+      }`,
+      { entry: { target: "project_match", target_id: projectId, custom_text: note } }
+    );
+    return !!data.add_logbook_entry?.id;
+  } catch {
+    return false;
+  }
+}

@@ -21,6 +21,8 @@ import { sendPushToUsers } from "./push";
 import { createTaskNotification } from "./task-notifications";
 import { getUsersForNotification } from "./users";
 import { sendMail } from "./mailer";
+import { getGlobalLogbookSystem, addProjectLogbookEntry, SYSTEM_TITLE_RE } from "./logbook-core";
+import { buildBaustelleFertigEmailHtml, buildBaustelleFertigEmailText } from "./workflow-mail";
 import {
   listActiveWorkflows,
   getWorkflowMeta,
@@ -50,6 +52,11 @@ interface WfEvent {
   ageDays?: number; // für Altersfilter
   eventDate?: string | null; // YYYY-MM-DD (Beleg- bzw. Angebotsdatum), für „gilt ab"
   note?: string; // Zusatzinfo, die der Aufgaben-Beschreibung angehängt wird
+  // Projektbezug (für logbuch_abschluss: Aufgabe + Logbuch-Notiz + Mail-Link).
+  projectId?: number | null;
+  projectRelativeId?: number | null;
+  projectName?: string | null;
+  author?: string | null; // Verfasser des Logbuch-Eintrags (für die Mail)
   fill: (tpl: string) => string; // Titel-Vorlage füllen
   /** Beleg-Daten für die Aktion „Rechnungsprüfung" (nur new_beleg). */
   review?: {
@@ -426,6 +433,41 @@ async function collectEvents(triggerKey: string): Promise<WfEvent[]> {
     return events;
   }
 
+  if (triggerKey === "logbuch_abschluss") {
+    // Logbuch-Einträge (manuelle Notizen) je Projekt → Kunde. Stichwort/Kunde
+    // werden pro Regel in matchesFilters geprüft.
+    const [entries, projects] = await Promise.all([getGlobalLogbookSystem(300), getProjects()]);
+    const byId = new Map<number, ProjectSummary>(projects.map((p) => [p.id, p]));
+    const events: WfEvent[] = [];
+    for (const e of entries) {
+      if (SYSTEM_TITLE_RE.test(e.title)) continue; // automatische System-Einträge überspringen
+      if (e.projectId == null) continue;
+      const proj = byId.get(e.projectId);
+      const customerName = proj?.customerName ?? "";
+      const relId = e.projectRelativeId ?? proj?.relativeId ?? null;
+      const projName = e.projectName ?? proj?.name ?? "";
+      const dateShort = e.date ? e.date.slice(0, 10) : "";
+      events.push({
+        ref: `log-${e.id}`,
+        supplier: customerName,
+        amount: 0,
+        eventDate: dateShort || null,
+        note: `${e.title ? e.title + "\n" : ""}${e.text}`.trim(),
+        projectId: e.projectId,
+        projectRelativeId: relId,
+        projectName: projName,
+        author: e.author,
+        fill: (tpl: string) =>
+          tpl
+            .replace(/\{kunde\}/g, customerName || "—")
+            .replace(/\{projekt\}/g, projName || "—")
+            .replace(/\{nr\}/g, relId != null ? `#${relId}` : "")
+            .replace(/\{datum\}/g, dateShort),
+      });
+    }
+    return events;
+  }
+
   return [];
 }
 
@@ -438,6 +480,7 @@ function effectiveValidFrom(triggerKey: string, wf: Workflow): string | null {
     (triggerKey === "new_beleg" ||
       triggerKey === "new_manual_beleg" ||
       triggerKey === "endrechnung" ||
+      triggerKey === "logbuch_abschluss" ||
       triggerKey === "wiederkehrend") &&
     wf.createdAt
   )
@@ -452,6 +495,20 @@ function matchesFilters(triggerKey: string, ev: WfEvent, cfg: WorkflowConfig): b
   if (triggerKey === "angebot_alt_ohne_ab") {
     const threshold = cfg.minAgeDays != null ? cfg.minAgeDays : 14;
     if ((ev.ageDays ?? 0) < threshold) return false;
+  }
+  if (triggerKey === "logbuch_abschluss") {
+    // Stichwort (Default „baustelle fertig") muss im Eintrag stehen.
+    const kw = (cfg.keyword ?? "Baustelle fertig").toLowerCase();
+    if (!(ev.note ?? "").toLowerCase().includes(kw)) return false;
+    // Kunden-Eingrenzung: leer = alle; sonst muss der Kunde passen.
+    if (cfg.customerFilters.length > 0) {
+      const sup = ev.supplier.toLowerCase();
+      const hit = cfg.customerFilters.some((c) => {
+        const cf = c.toLowerCase();
+        return sup === cf || sup.includes(cf) || cf.includes(sup);
+      });
+      if (!hit) return false;
+    }
   }
   return true;
 }
@@ -545,6 +602,7 @@ export async function startReviewChainForManualTask(task: {
  */
 async function executeRule(wf: Workflow, ev: WfEvent): Promise<boolean> {
   const c = wf.config;
+  if (wf.triggerKey === "logbuch_abschluss") return executeLogbuchAbschluss(wf, ev);
   const assignee = effectiveAssignee(c, ev.supplier);
   if (c.actionType === "review" && ev.review) {
     // Bereits entschiedene Belege (freigegeben/abgelehnt) nicht erneut zur Prüfung stellen.
@@ -585,6 +643,89 @@ async function executeRule(wf: Workflow, ev: WfEvent): Promise<boolean> {
     await addWorkflowLog(wf.id, ev.ref, `Aufgabe erstellt: ${title} → #${assignee}`);
     return true;
   }
+}
+
+/** Aktion für „Baustelle fertig": HTML-E-Mail an Empfänger + Logbuch-Notiz + Aufgabe (Abschlussrechnung). */
+async function executeLogbuchAbschluss(wf: Workflow, ev: WfEvent): Promise<boolean> {
+  const c = wf.config;
+  const appUrl = process.env.APP_URL?.replace(/\/$/, "") || "https://floortec.pascaloster.de";
+
+  // 1) Empfänger: interne Nutzer + externe Adressen.
+  const emails = new Set<string>();
+  if (c.mailUserIds.length > 0) {
+    const users = await getUsersForNotification(c.mailUserIds);
+    for (const u of users) if (u.email) emails.add(u.email);
+  }
+  for (const e of c.mailExtraEmails) emails.add(e);
+
+  const projectLabel =
+    `${ev.projectRelativeId != null ? `#${ev.projectRelativeId} ` : ""}${ev.projectName ?? ""}`.trim() || "Projekt";
+  const dateLabel = ev.eventDate ? ev.eventDate.split("-").reverse().join(".") : new Date().toLocaleDateString("de-DE");
+  const mailData = {
+    customerName: ev.supplier || null,
+    projectLabel,
+    logText: ev.note ?? "",
+    author: ev.author ?? null,
+    dateLabel,
+    projectUrl: `${appUrl}/dashboard/projekte`,
+    logoUrl: `${appUrl}/logo.png`,
+  };
+  const subject = `Baustelle fertig: ${ev.supplier ? ev.supplier + " – " : ""}${projectLabel}`;
+  const html = buildBaustelleFertigEmailHtml(mailData);
+  const text = buildBaustelleFertigEmailText(mailData);
+
+  const sentTo: string[] = [];
+  for (const to of emails) {
+    if (await sendMail(to, subject, text, html)) sentTo.push(to);
+  }
+
+  // 2) Logbuch-Notiz (session-frei) – nur wenn projektbezogen und ≥1 Mail raus.
+  //    Formulierung bewusst OHNE „Baustelle fertig", damit die Regel nicht rekursiv auslöst.
+  if (ev.projectId && sentTo.length > 0) {
+    const stamp = new Date().toLocaleString("de-DE", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    await addProjectLogbookEntry(
+      ev.projectId,
+      `Abschluss-Benachrichtigung per E-Mail versendet am ${stamp} Uhr an: ${sentTo.join(", ")}`
+    );
+  }
+
+  // 3) Aufgabe „Abschlussrechnung" an die Zuständigen.
+  const assignees = c.taskUserIds.length > 0 ? c.taskUserIds : c.assigneeId ? [c.assigneeId] : [];
+  if (assignees.length > 0) {
+    const title = (ev.fill(c.title).trim() || "Abschlussrechnung erstellen").slice(0, 255);
+    const dueDate = new Date(Date.now() + (c.dueOffsetDays || 0) * 24 * 3600 * 1000).toISOString().slice(0, 10);
+    const description =
+      [ev.fill(c.description ?? ""), ev.note].filter((s) => s && s.trim()).join("\n\n") || null;
+    try {
+      await createTask({
+        title,
+        description,
+        createdBy: wf.createdBy ?? assignees[0],
+        assignedTo: assignees,
+        dueDate,
+        projectId: ev.projectId ?? null,
+        projectRelativeId: ev.projectRelativeId ?? null,
+        projectName: ev.projectName ?? null,
+        actionButtons: c.buttons,
+      });
+      for (const a of assignees) await notifyAssignee(a, title);
+    } catch {
+      /* Aufgabe fehlgeschlagen – Mail/Notiz sind bereits raus */
+    }
+  }
+
+  await addWorkflowLog(
+    wf.id,
+    ev.ref,
+    `Baustelle fertig (${ev.supplier || "?"}) → E-Mail an ${sentTo.length}, Aufgabe an ${assignees.length}`
+  );
+  return sentTo.length > 0 || assignees.length > 0;
 }
 
 /** Benachrichtigt den Zugewiesenen (In-App + Push + E-Mail) über eine neue Aufgabe. */

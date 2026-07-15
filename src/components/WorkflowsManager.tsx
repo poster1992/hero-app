@@ -30,6 +30,7 @@ const TRIGGER_OPTIONS = [
   { key: "stunden_ohne_abschlag", label: "Stunden gebucht, aber keine Abschlagsrechnung" },
   { key: "endrechnung", label: "Endrechnung erstellt (Schluss-/Vollrechnung, keine Teil-/Abschlagsrechnung)" },
   { key: "lager_min_erreicht", label: "Lager-Minimum erreicht (Bestand ≤ Minimum)" },
+  { key: "logbuch_abschluss", label: "Logbuch: Baustelle fertig → E-Mail + Aufgabe" },
   { key: "wiederkehrend", label: "Wiederkehrende Aufgabe (fester Zeitplan)" },
 ] as const;
 
@@ -41,6 +42,7 @@ function placeholdersFor(key: string): string {
   if (key === "stunden_ohne_abschlag") return "{projekt} {nr} {kunde} {stunden} {mitarbeiter} {zeitraum}";
   if (key === "endrechnung") return "{kunde} {nr} {projekt} {betrag} {datum}";
   if (key === "lager_min_erreicht") return "{artikel} {nr} {bestand} {min} {einheit}";
+  if (key === "logbuch_abschluss") return "{kunde} {projekt} {nr} {datum}";
   if (key === "wiederkehrend") return "{datum} {termin}";
   return "{nr} {lieferant} {betrag} {datum}";
 }
@@ -49,6 +51,7 @@ function defaultTitleFor(key: string): string {
   if (key === "stunden_ohne_abschlag") return "Abschlagsrechnung erstellen: {projekt} {nr} ({stunden} h)";
   if (key === "endrechnung") return "Kunde anrufen – Zufriedenheit erfragen: {kunde} ({projekt})";
   if (key === "lager_min_erreicht") return "Lager nachbestellen: {artikel} (Bestand {bestand}, Min {min})";
+  if (key === "logbuch_abschluss") return "Abschlussrechnung erstellen: {projekt} – {kunde}";
   if (key === "wiederkehrend") return "Wiederkehrende Aufgabe ({datum})";
   return "Beleg prüfen: {nr} – {lieferant}";
 }
@@ -71,23 +74,35 @@ function fmtStamp(s: string | null): string {
   return d.toLocaleString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
-/** Auswahlliste der Lieferanten (Mehrfachauswahl per Checkbox, durchsuchbar). */
-function SupplierMultiSelect({ suppliers, selected }: { suppliers: string[]; selected: string[] }) {
+/** Generische Mehrfachauswahl von Strings (Checkbox, durchsuchbar). */
+function StringMultiSelect({
+  name,
+  options,
+  selected,
+  placeholder,
+  emptyText,
+}: {
+  name: string;
+  options: string[];
+  selected: string[];
+  placeholder: string;
+  emptyText: string;
+}) {
   const [chosen, setChosen] = useState<string[]>(selected);
   const [q, setQ] = useState("");
-  // Bereits gewählte Lieferanten immer zeigen, auch wenn sie nicht (mehr) in der Liste sind.
-  const all = useMemo(() => Array.from(new Set([...selected, ...suppliers])), [suppliers, selected]);
+  // Bereits gewählte immer zeigen, auch wenn sie nicht (mehr) in der Liste sind.
+  const all = useMemo(() => Array.from(new Set([...selected, ...options])), [options, selected]);
   const filtered = all.filter((s) => s.toLowerCase().includes(q.toLowerCase()));
   const toggle = (s: string) => setChosen((c) => (c.includes(s) ? c.filter((x) => x !== s) : [...c, s]));
   return (
     <div>
       {chosen.map((s) => (
-        <input key={s} type="hidden" name="excludedSuppliers" value={s} />
+        <input key={s} type="hidden" name={name} value={s} />
       ))}
-      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Lieferant suchen …" className={inputClass} />
+      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={placeholder} className={inputClass} />
       <div className="mt-1 max-h-44 overflow-y-auto rounded-md border border-gray-300">
         {filtered.length === 0 ? (
-          <p className="px-3 py-2 text-xs text-gray-400">Keine Lieferanten gefunden.</p>
+          <p className="px-3 py-2 text-xs text-gray-400">{emptyText}</p>
         ) : (
           filtered.map((s) => (
             <label
@@ -105,10 +120,43 @@ function SupplierMultiSelect({ suppliers, selected }: { suppliers: string[]; sel
   );
 }
 
+/** Mehrfachauswahl von Benutzern (Checkbox, durchsuchbar); submitted User-IDs. */
+function UserMultiSelect({ name, users, selected }: { name: string; users: UserOption[]; selected: number[] }) {
+  const [chosen, setChosen] = useState<number[]>(selected);
+  const [q, setQ] = useState("");
+  const filtered = users.filter((u) => u.name.toLowerCase().includes(q.toLowerCase()));
+  const toggle = (id: number) => setChosen((c) => (c.includes(id) ? c.filter((x) => x !== id) : [...c, id]));
+  return (
+    <div>
+      {chosen.map((id) => (
+        <input key={id} type="hidden" name={name} value={id} />
+      ))}
+      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Person suchen …" className={inputClass} />
+      <div className="mt-1 max-h-44 overflow-y-auto rounded-md border border-gray-300">
+        {filtered.length === 0 ? (
+          <p className="px-3 py-2 text-xs text-gray-400">Keine Person gefunden.</p>
+        ) : (
+          filtered.map((u) => (
+            <label
+              key={u.id}
+              className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+            >
+              <input type="checkbox" checked={chosen.includes(u.id)} onChange={() => toggle(u.id)} />
+              <span className="truncate">{u.name}</span>
+            </label>
+          ))
+        )}
+      </div>
+      <p className="mt-1 text-xs text-gray-400">{chosen.length > 0 ? `${chosen.length} ausgewählt` : "Keine ausgewählt"}</p>
+    </div>
+  );
+}
+
 /** Felder einer Regel (Auslöser → Aktion „Aufgabe erstellen"). */
 function RuleFields({
   users,
   suppliers,
+  customers,
   name,
   cfg,
   triggerKey = "new_beleg",
@@ -116,6 +164,7 @@ function RuleFields({
 }: {
   users: UserOption[];
   suppliers: string[];
+  customers: string[];
   name?: string;
   cfg?: Partial<WorkflowConfig>;
   triggerKey?: string;
@@ -128,6 +177,7 @@ function RuleFields({
   const isAngebot = trigger === "angebot_alt_ohne_ab";
   const isStunden = trigger === "stunden_ohne_abschlag";
   const isEndrechnung = trigger === "endrechnung";
+  const isLogbuch = trigger === "logbuch_abschluss";
   const isReview = trigger === "new_beleg" && actionType === "review";
   // Wiederkehrende Aufgaben haben keinen Lieferanten/Betrag – die Filter entfallen.
   const isRecurring = trigger === "wiederkehrend";
@@ -262,17 +312,64 @@ function RuleFields({
           </p>
         </div>
       )}
-      <div>
-        <label className="mb-1 block text-sm text-gray-600">{isReview ? "Prüfer *" : "Aufgabe an *"}</label>
-        <select name="assigneeId" defaultValue={cfg?.assigneeId ?? ""} required className={inputClass}>
-          <option value="">Mitarbeiter wählen …</option>
-          {users.map((u) => (
-            <option key={u.id} value={u.id}>
-              {u.name}
-            </option>
-          ))}
-        </select>
-      </div>
+      {!isLogbuch && (
+        <div>
+          <label className="mb-1 block text-sm text-gray-600">{isReview ? "Prüfer *" : "Aufgabe an *"}</label>
+          <select name="assigneeId" defaultValue={cfg?.assigneeId ?? ""} required className={inputClass}>
+            <option value="">Mitarbeiter wählen …</option>
+            {users.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {isLogbuch && (
+        <div className="sm:col-span-2 grid grid-cols-1 gap-3 rounded-md border border-gray-200 p-3">
+          <div>
+            <label className="mb-1 block text-sm text-gray-600">Stichwort im Logbuch *</label>
+            <input name="keyword" defaultValue={cfg?.keyword ?? "Baustelle fertig"} placeholder="Baustelle fertig" className={inputClass} />
+            <p className="mt-1 text-xs text-gray-400">Löst aus, wenn ein Logbuch-Eintrag diesen Text enthält (Groß-/Kleinschreibung egal).</p>
+          </div>
+          <div>
+            <label className="mb-1 block text-sm text-gray-600">Nur für diese Kunden <span className="text-gray-400">(leer = alle)</span></label>
+            <StringMultiSelect
+              name="customerFilters"
+              options={customers}
+              selected={cfg?.customerFilters ?? []}
+              placeholder="Kunde suchen …"
+              emptyText="Keine Kunden gefunden."
+            />
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-sm text-gray-600">E-Mail an (interne Nutzer)</label>
+              <UserMultiSelect name="mailUserIds" users={users} selected={cfg?.mailUserIds ?? []} />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm text-gray-600">Aufgabe an (Zuständige) *</label>
+              <UserMultiSelect name="taskUserIds" users={users} selected={cfg?.taskUserIds ?? []} />
+            </div>
+          </div>
+          <div>
+            <label className="mb-1 block text-sm text-gray-600">Zusätzliche externe E-Mail-Adressen <span className="text-gray-400">(Komma-/zeilengetrennt)</span></label>
+            <textarea
+              name="mailExtraEmails"
+              defaultValue={(cfg?.mailExtraEmails ?? []).join(", ")}
+              rows={2}
+              placeholder="steuerberater@example.com, bauleiter@example.com"
+              className={inputClass}
+            />
+          </div>
+          <p className="text-xs text-gray-400">
+            Bei einem Treffer: HTML-E-Mail an die Empfänger, eine Notiz ins Projekt-Logbuch (wann/an wen), und eine
+            Abschlussrechnungs-Aufgabe an die Zuständigen. Für unterschiedliche Empfänger je Kunde einfach mehrere
+            Regeln anlegen.
+          </p>
+        </div>
+      )}
 
       {/* Verkettung: Rechnungsbuchung (Posteingang) → Rechnungsprüfung */}
       {trigger === "new_manual_beleg" && (
@@ -354,7 +451,7 @@ function RuleFields({
               : `Nur Ereignisse ab diesem Datum (${isAngebot ? "Angebotsdatum" : "Belegdatum"}) lösen aus.`}
         </p>
       </div>
-      {!isRecurring && (
+      {!isRecurring && !isLogbuch && (
         <div className="grid grid-cols-2 gap-2">
           <div>
             <label className="mb-1 block text-sm text-gray-600">Filter: {kundeLabel}</label>
@@ -380,7 +477,7 @@ function RuleFields({
       )}
 
       {/* Split nach Lieferant: ausgewaehlte Lieferanten gehen an einen anderen Bearbeiter */}
-      {!isRecurring && (
+      {!isRecurring && !isLogbuch && (
         <div className="sm:col-span-2 rounded-md border border-gray-200 p-3">
           <p className="mb-2 text-sm font-medium text-gray-700">
             Lieferanten-Split <span className="font-normal text-gray-400">(optional)</span>
@@ -388,7 +485,13 @@ function RuleFields({
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label className="mb-1 block text-sm text-gray-600">Ausgeschlossene Lieferanten</label>
-              <SupplierMultiSelect suppliers={suppliers} selected={cfg?.excludedSuppliers ?? []} />
+              <StringMultiSelect
+                name="excludedSuppliers"
+                options={suppliers}
+                selected={cfg?.excludedSuppliers ?? []}
+                placeholder="Lieferant suchen …"
+                emptyText="Keine Lieferanten gefunden."
+              />
             </div>
             <div>
               <label className="mb-1 block text-sm text-gray-600">… gehen stattdessen an</label>
@@ -433,7 +536,17 @@ function triggerSummary(wf: Workflow): string {
   }
 }
 
-function WorkflowRow({ wf, users, suppliers }: { wf: Workflow; users: UserOption[]; suppliers: string[] }) {
+function WorkflowRow({
+  wf,
+  users,
+  suppliers,
+  customers,
+}: {
+  wf: Workflow;
+  users: UserOption[];
+  suppliers: string[];
+  customers: string[];
+}) {
   const [editing, setEditing] = useState(false);
   const assignee = users.find((u) => u.id === wf.config.assigneeId)?.name ?? `#${wf.config.assigneeId}`;
   const excludedName = wf.config.excludedAssigneeId
@@ -445,7 +558,7 @@ function WorkflowRow({ wf, users, suppliers }: { wf: Workflow; users: UserOption
       <li className="bg-gray-50 px-5 py-4">
         <form action={updateWorkflowAction} className="flex flex-col gap-3">
           <input type="hidden" name="id" value={wf.id} />
-          <RuleFields users={users} suppliers={suppliers} name={wf.name} cfg={wf.config} triggerKey={wf.triggerKey} />
+          <RuleFields users={users} suppliers={suppliers} customers={customers} name={wf.name} cfg={wf.config} triggerKey={wf.triggerKey} />
           <div className="flex items-center gap-2">
             <button type="submit" className="rounded-md bg-brand-red px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90">
               Speichern
@@ -643,12 +756,14 @@ export default function WorkflowsManager({
   log,
   runs,
   suppliers,
+  customers,
 }: {
   workflows: Workflow[];
   users: UserOption[];
   log: WorkflowLogItem[];
   runs: WorkflowRun[];
   suppliers: string[];
+  customers: string[];
 }) {
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<"liste" | "diagramm">("liste");
@@ -709,7 +824,7 @@ export default function WorkflowsManager({
 
         {open && (
           <form action={formAction} className="flex flex-col gap-3 border-b border-gray-200 px-5 py-4">
-            <RuleFields users={users} suppliers={suppliers} editableTrigger />
+            <RuleFields users={users} suppliers={suppliers} customers={customers} editableTrigger />
 
             <div className="flex items-center gap-3">
               <button type="submit" disabled={pending} className="rounded-md bg-brand-red px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
@@ -726,7 +841,7 @@ export default function WorkflowsManager({
         ) : view === "liste" ? (
           <ul className="divide-y divide-gray-200">
             {workflows.map((wf) => (
-              <WorkflowRow key={wf.id} wf={wf} users={users} suppliers={suppliers} />
+              <WorkflowRow key={wf.id} wf={wf} users={users} suppliers={suppliers} customers={customers} />
             ))}
           </ul>
         ) : (
