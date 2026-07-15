@@ -1883,6 +1883,81 @@ export async function getOfferConfirmationVolume(year: number): Promise<Document
   };
 }
 
+/** Anzahl + Netto-Summe je Belegart für EINEN Tag (für den Tagesbericht). */
+export interface DayDocumentVolume {
+  offers: { count: number; net: number };
+  confirmations: { count: number; net: number };
+  invoices: { count: number; net: number }; // Rechnungen − Gutschriften − Stornos
+}
+
+/**
+ * Angebote, Auftragsbestätigungen und Rechnungen, deren Belegdatum auf `dayIso`
+ * (YYYY-MM-DD) fällt – Anzahl und Netto-Summe je Kategorie. Holt die neuesten
+ * Dokumente (der Tag ist stets unter den jüngsten) und filtert clientseitig.
+ */
+export async function getDocumentVolumeForDay(dayIso: string): Promise<DayDocumentVolume> {
+  const data = await heroGraphQL<{
+    customer_documents: {
+      document_type_id: number | null;
+      value: number | null;
+      status_code: number | null;
+      date: string | null;
+    }[];
+  }>(
+    `query DayVolume($ids: [Int], $last: Int) {
+      customer_documents(document_type_ids: $ids, orderBy: "id", last: $last) {
+        document_type_id
+        value
+        status_code
+        date
+      }
+    }`,
+    {
+      ids: [
+        OFFER_DOCUMENT_TYPE_ID,
+        CONFIRMATION_DOCUMENT_TYPE_ID,
+        RECHNUNG_DOCUMENT_TYPE_ID,
+        GUTSCHRIFT_DOCUMENT_TYPE_ID,
+        STORNO_DOCUMENT_TYPE_ID,
+      ],
+      last: 500,
+    }
+  );
+  const out: DayDocumentVolume = {
+    offers: { count: 0, net: 0 },
+    confirmations: { count: 0, net: 0 },
+    invoices: { count: 0, net: 0 },
+  };
+  for (const d of data.customer_documents ?? []) {
+    if (d.status_code === 1000 || !d.date) continue; // gelöschte überspringen
+    if (d.date.slice(0, 10) !== dayIso) continue;
+    const value = d.value ?? 0;
+    switch (d.document_type_id) {
+      case OFFER_DOCUMENT_TYPE_ID:
+        out.offers.count += 1;
+        out.offers.net += value;
+        break;
+      case CONFIRMATION_DOCUMENT_TYPE_ID:
+        out.confirmations.count += 1;
+        out.confirmations.net += value;
+        break;
+      case RECHNUNG_DOCUMENT_TYPE_ID:
+        out.invoices.count += 1;
+        out.invoices.net += value;
+        break;
+      case GUTSCHRIFT_DOCUMENT_TYPE_ID:
+      case STORNO_DOCUMENT_TYPE_ID:
+        out.invoices.net -= Math.abs(value);
+        break;
+    }
+  }
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  out.offers.net = r2(out.offers.net);
+  out.confirmations.net = r2(out.confirmations.net);
+  out.invoices.net = r2(out.invoices.net);
+  return out;
+}
+
 /** Monthly net sums (index 0 = January) of offers and order confirmations for a year. */
 export async function getOfferConfirmationByMonth(
   year: number

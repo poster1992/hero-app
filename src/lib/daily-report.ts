@@ -8,7 +8,9 @@ import {
   getWorkdays,
   getAbsences,
   getProjectPhotosUploadedOn,
+  getDocumentVolumeForDay,
   type DailyPhoto,
+  type DayDocumentVolume,
 } from "./hero-api";
 import { getGlobalLogbookSystem } from "./logbook-core";
 import { sendMailWithAttachments, type MailAttachment } from "./mailer";
@@ -107,11 +109,19 @@ export interface AnomalyReport {
     nichtErfasst: Anomaly[];
   };
   activity: DailyActivity;
+  /** Angebote / Aufträge / Rechnungen des heutigen Tages (Anzahl + Netto). */
+  documents: DayDocumentVolume;
   sourceErrors: string[];
   totalCount: number;
   /** Freitext-Zusatzanweisung an die KI (aus der Konfiguration). */
   kiInstructions: string;
 }
+
+const EMPTY_DOCS: DayDocumentVolume = {
+  offers: { count: 0, net: 0 },
+  confirmations: { count: 0, net: 0 },
+  invoices: { count: 0, net: 0 },
+};
 
 // Stichwörter, die einen Logbuch-Eintrag als "Problem" markieren.
 const PROBLEM_RE =
@@ -302,6 +312,11 @@ export async function collectAnomalies(): Promise<AnomalyReport> {
     return { dayIso: today, projects: [], photosOmitted: 0 };
   });
 
+  const documents = await getDocumentVolumeForDay(today).catch((): DayDocumentVolume => {
+    sourceErrors.push("Angebote/Aufträge/Rechnungen");
+    return EMPTY_DOCS;
+  });
+
   const totalCount =
     sections.projekt.length +
     sections.logbuch.length +
@@ -313,6 +328,7 @@ export async function collectAnomalies(): Promise<AnomalyReport> {
     generatedAtIso: new Date().toISOString(),
     sections,
     activity,
+    documents,
     sourceErrors,
     totalCount,
     kiInstructions: cfg.instructions,
@@ -638,6 +654,27 @@ function buildDailyReportHtml(
          </div>`
       : "";
 
+  // Angebote / Aufträge / Rechnungen des Tages (Anzahl + Netto).
+  const eur = (n: number) => n.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €";
+  const docCell = (label: string, v: { count: number; net: number }) =>
+    `<td width="33%" style="padding:14px 10px;text-align:center;vertical-align:top;">
+       <div style="font-size:12px;color:#8a929c;text-transform:uppercase;letter-spacing:.4px;">${label}</div>
+       <div style="font-size:22px;font-weight:700;color:#111417;margin:4px 0 2px;">${v.count}</div>
+       <div style="font-size:13px;color:#3f4650;">${eur(v.net)}</div>
+     </td>`;
+  const d = report.documents;
+  const docsHtml = `
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #eceef1;border-radius:8px;background:#fafbfc;">
+      <tr>
+        ${docCell("Angebote", d.offers)}
+        <td width="1" style="background:#eceef1;"></td>
+        ${docCell("Aufträge", d.confirmations)}
+        <td width="1" style="background:#eceef1;"></td>
+        ${docCell("Rechnungen", d.invoices)}
+      </tr>
+    </table>
+    <p style="margin:8px 0 0;font-size:12px;color:#8a929c;">Netto, Belegdatum heute (ohne gelöschte; Gutschriften/Stornos abgezogen).</p>`;
+
   return `<!doctype html>
 <html lang="de"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
 <meta name="color-scheme" content="light only"/><title>FLOORTEC Tagesbericht</title></head>
@@ -655,7 +692,12 @@ function buildDailyReportHtml(
           ${errorBox}
           <div style="font-size:15px;line-height:1.6;color:#3f4650;">${bodyHtml}</div>
         </td></tr>
-        <tr><td style="padding:6px 32px 28px;">
+        <tr><td style="padding:6px 32px 8px;">
+          <div style="height:1px;background:#eceef1;margin:0 0 18px;"></div>
+          <h2 style="margin:0 0 14px;font-size:18px;color:#111417;">Angebote, Aufträge &amp; Rechnungen (heute)</h2>
+          ${docsHtml}
+        </td></tr>
+        <tr><td style="padding:18px 32px 28px;">
           <div style="height:1px;background:#eceef1;margin:0 0 18px;"></div>
           <h2 style="margin:0 0 14px;font-size:18px;color:#111417;">Heutige Aktivität</h2>
           ${activityHtml}
@@ -684,6 +726,13 @@ function buildDailyReportText(report: AnomalyReport): string {
     for (const a of items) lines.push(`- ${a.title}: ${a.detail}`);
     lines.push("");
   }
+  const eur = (n: number) => n.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €";
+  const d = report.documents;
+  lines.push("Angebote, Aufträge & Rechnungen (heute, netto):");
+  lines.push(`  Angebote:   ${d.offers.count} · ${eur(d.offers.net)}`);
+  lines.push(`  Aufträge:   ${d.confirmations.count} · ${eur(d.confirmations.net)}`);
+  lines.push(`  Rechnungen: ${d.invoices.count} · ${eur(d.invoices.net)}`);
+  lines.push("");
   lines.push("Heutige Aktivität:");
   if (report.activity.projects.length === 0) lines.push("  keine Logbuch-Aktivität");
   for (const p of report.activity.projects) {
