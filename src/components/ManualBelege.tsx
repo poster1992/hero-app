@@ -143,21 +143,20 @@ export default async function ManualBelege({
           <table className="w-full border-collapse text-sm">
             <thead className="bg-gray-50">
               <tr className="text-left text-xs uppercase tracking-wide text-gray-500">
-                <th className="px-4 py-2 font-semibold">Datum</th>
-                <th className="px-4 py-2 font-semibold">Lieferant</th>
-                <th className="px-4 py-2 font-semibold">Beleg-Nr.</th>
-                <th className="px-4 py-2 font-semibold">Beschreibung</th>
-                <th className="px-4 py-2 font-semibold">Konto</th>
-                <th className="px-4 py-2 font-semibold">Projekt</th>
-                <th className="px-4 py-2 text-right font-semibold">Netto</th>
-                <th className="px-4 py-2 text-right font-semibold">MwSt</th>
-                <th className="px-4 py-2 text-right font-semibold">Brutto</th>
-                <th className="px-4 py-2 text-right font-semibold">Skonto €</th>
-                <th className="px-4 py-2 text-right font-semibold">Skontozahlbetrag</th>
-                <th className="px-4 py-2 font-semibold">Skonto bis</th>
-                <th className="px-4 py-2 font-semibold">Status</th>
-                <th className="px-4 py-2 font-semibold">Beleg</th>
-                <th className="px-4 py-2 font-semibold">Aktion</th>
+                <th className="px-3 py-1.5 font-semibold">Datum</th>
+                <th className="px-3 py-1.5 font-semibold">Lieferant</th>
+                <th className="px-3 py-1.5 font-semibold">Beleg-Nr.</th>
+                <th className="px-3 py-1.5 font-semibold">Konto</th>
+                <th className="px-3 py-1.5 font-semibold">Projekt</th>
+                <th className="px-3 py-1.5 text-right font-semibold">Netto</th>
+                <th className="px-3 py-1.5 text-right font-semibold">MwSt</th>
+                <th className="px-3 py-1.5 text-right font-semibold">Brutto</th>
+                <th className="px-3 py-1.5 text-right font-semibold">Skonto €</th>
+                <th className="px-3 py-1.5 text-right font-semibold">Skontozahlbetrag</th>
+                <th className="px-3 py-1.5 font-semibold">Skonto bis</th>
+                <th className="px-3 py-1.5 font-semibold">Status</th>
+                <th className="px-3 py-1.5 font-semibold">Beleg</th>
+                <th className="px-3 py-1.5 font-semibold">Aktion</th>
               </tr>
             </thead>
             <tbody>
@@ -166,8 +165,8 @@ export default async function ManualBelege({
                 const duplicate = dk != null && (duplicateKeys?.has(dk) ?? false);
                 return (
                 <tr key={r.id} className="border-t border-gray-100">
-                  <td className="px-4 py-2 tabular-nums text-gray-700">{formatDate(r.date)}</td>
-                  <td className="px-4 py-2 text-gray-900">
+                  <td className="px-3 py-1.5 tabular-nums text-gray-700">{formatDate(r.date)}</td>
+                  <td className="px-3 py-1.5 text-gray-900">
                     {r.supplier ?? "—"}
                     {duplicate && (
                       <span
@@ -178,12 +177,11 @@ export default async function ManualBelege({
                       </span>
                     )}
                   </td>
-                  <td className="px-4 py-2 tabular-nums text-gray-700">{r.invoiceNumber ?? "—"}</td>
-                  <td className="px-4 py-2 text-gray-600">{r.description ?? "—"}</td>
-                  <td className="px-4 py-2 text-gray-700">
+                  <td className="px-3 py-1.5 tabular-nums text-gray-700">{r.invoiceNumber ?? "—"}</td>
+                  <td className="px-3 py-1.5 text-gray-700">
                     {r.accountNumber ? `${r.accountNumber} ${r.accountName ?? ""}` : "—"}
                   </td>
-                  <td className="px-4 py-2 text-gray-700">
+                  <td className="px-3 py-1.5 text-gray-700">
                     {r.projectId ? (
                       <a
                         href={`/dashboard/projekte/${r.projectId}?${new URLSearchParams({
@@ -199,23 +197,23 @@ export default async function ManualBelege({
                       <span className="text-gray-400">—</span>
                     )}
                   </td>
-                  <td className="px-4 py-2 text-right tabular-nums text-gray-700">
+                  <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">
                     {currencyFormatter.format(r.net)}
                   </td>
-                  <td className="px-4 py-2 text-right tabular-nums text-gray-700">
+                  <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">
                     {currencyFormatter.format(r.vat)}
                   </td>
-                  <td className="px-4 py-2 text-right font-medium tabular-nums text-gray-900">
+                  <td className="px-3 py-1.5 text-right font-medium tabular-nums text-gray-900">
                     {currencyFormatter.format(r.gross)}
                   </td>
-                  <td className="px-4 py-2 text-right tabular-nums text-gray-700">
+                  <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">
                     {r.skontoAmount != null ? currencyFormatter.format(r.skontoAmount) : "—"}
                   </td>
-                  <td className="px-4 py-2 text-right tabular-nums text-gray-700">
+                  <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">
                     {r.skontoPayAmount != null ? currencyFormatter.format(r.skontoPayAmount) : "—"}
                   </td>
-                  <td className="px-4 py-2 tabular-nums text-gray-700">{formatDate(r.skontoDueDate)}</td>
-                  <td className="px-4 py-2">
+                  <td className="px-3 py-1.5 tabular-nums text-gray-700">{formatDate(r.skontoDueDate)}</td>
+                  <td className="px-3 py-1.5">
                     <div className="flex items-center gap-2">
                       {r.isPaid ? (
                         <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
@@ -238,7 +236,7 @@ export default async function ManualBelege({
                       </form>
                     </div>
                   </td>
-                  <td className="px-4 py-2">
+                  <td className="px-3 py-1.5">
                     {r.hasFile ? (
                       <a
                         href={`/api/beleg?id=${r.id}`}
@@ -252,7 +250,7 @@ export default async function ManualBelege({
                       <span className="text-gray-400">—</span>
                     )}
                   </td>
-                  <td className="px-4 py-2">
+                  <td className="px-3 py-1.5">
                     <div className="flex items-center gap-1.5">
                       <BelegEditButton
                         accounts={accounts}
