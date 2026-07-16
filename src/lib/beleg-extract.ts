@@ -70,8 +70,21 @@ export interface BelegSumResult {
   skontoPayAmount?: number;
   /** Skontozahlungsziel (Datum yyyy-mm-dd, bis zu dem der Skonto gilt). */
   skontoDueDate?: string;
+  /** Vollständiger, lesbarer Belegtext für die Volltextsuche (aus demselben KI-Lauf). */
+  fullText?: string;
   error?: string;
 }
+
+/**
+ * Zusatz zum Extraktions-Prompt: liefert im selben KI-Lauf zusätzlich den
+ * vollständigen Belegtext, damit beim Posteingang-Import nicht später ein
+ * zweiter OCR-Durchlauf nur für die Volltextsuche nötig ist.
+ */
+const VOLLTEXT_SUFFIX =
+  ' ZUSÄTZLICH: Nimm in dasselbe JSON-Objekt auf oberster Ebene das Feld "volltext" auf – ' +
+  "der vollständige, fortlaufend lesbare Klartext des gesamten Belegs (alle Textzeilen der " +
+  "Rechnung, für eine spätere Volltextsuche), als EIN String; wenn nichts Lesbares vorhanden " +
+  "ist: null. Alle oben geforderten Felder unverändert beibehalten.";
 
 /** Anzeigename je Belegtyp. */
 export const KIND_LABEL: Record<BelegSumKind, string> = {
@@ -547,8 +560,8 @@ export async function extractBeleg(input: {
 
     const res = await client.messages.create({
       model: "claude-haiku-4-5",
-      max_tokens: 6000,
-      messages: [{ role: "user", content: [block, { type: "text", text: cfg.prompt }] }],
+      max_tokens: 16000,
+      messages: [{ role: "user", content: [block, { type: "text", text: cfg.prompt + VOLLTEXT_SUFFIX }] }],
     });
     const tb = res.content.find((b) => b.type === "text");
     const raw =
@@ -564,6 +577,7 @@ export async function extractBeleg(input: {
       skonto_eur?: unknown;
       skonto_zahlbetrag?: unknown;
       skonto_zahlungsziel?: unknown;
+      volltext?: unknown;
     };
     const seiten = parsed.seiten ?? [];
     // Nicht-Null-Beträge (bei Activité kann ein NK-Guthaben negativ sein).
@@ -612,6 +626,11 @@ export async function extractBeleg(input: {
     let skontoDueDate: string | undefined;
     const sdRaw = String(parsed.skonto_zahlungsziel ?? "").trim();
     if (/^\d{4}-\d{2}-\d{2}$/.test(sdRaw)) skontoDueDate = sdRaw;
+
+    // Volltext für die Suche (aus demselben KI-Lauf), defensiv begrenzt.
+    let fullText: string | undefined;
+    const vt = String(parsed.volltext ?? "").trim();
+    if (vt && vt.toLowerCase() !== "null") fullText = vt.slice(0, 40000);
 
     // Lieferant: bevorzugt der kanonische HERO-Name (fester Suchbegriff je Typ, sonst OCR-Name).
     let supplier: string | undefined;
@@ -662,6 +681,7 @@ export async function extractBeleg(input: {
       skontoAmount,
       skontoPayAmount,
       skontoDueDate,
+      fullText,
     };
   } catch (e) {
     return { ok: false, error: aiErrorMessage(e, "OCR fehlgeschlagen.") };

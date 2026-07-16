@@ -109,6 +109,8 @@ export async function ingestInboxBelegeAction(formData: FormData): Promise<Inbox
           skontoAmount: ex.skontoAmount ?? null,
           skontoPayAmount: ex.skontoPayAmount ?? null,
           skontoDueDate: ex.skontoDueDate ?? null,
+          // Volltext aus demselben KI-Lauf → sofort durchsuchbar, kein zweiter OCR-Durchlauf.
+          ocrText: ex.fullText ?? null,
         });
         created++;
         results.push({

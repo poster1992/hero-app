@@ -145,6 +145,8 @@ export async function createManualReceipt(input: {
   skontoAmount?: number | null;
   skontoPayAmount?: number | null;
   skontoDueDate?: string | null;
+  /** Volltext für die Suche (z. B. direkt aus dem Posteingang-OCR). */
+  ocrText?: string | null;
 }): Promise<number> {
   let storedName: string | null = null;
   if (input.file) {
@@ -155,8 +157,8 @@ export async function createManualReceipt(input: {
   }
   const [res] = await getPool().query(
     `INSERT INTO manual_receipts
-       (beleg_date, supplier, description, gross, vat_rate, account_number, account_name, file_name, stored_name, mime, uploaded_by, source, project_id, project_relative_id, project_name, invoice_number, skonto_amount, skonto_pay_amount, skonto_due_date)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (beleg_date, supplier, description, gross, vat_rate, account_number, account_name, file_name, stored_name, mime, uploaded_by, source, project_id, project_relative_id, project_name, invoice_number, skonto_amount, skonto_pay_amount, skonto_due_date, ocr_text)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.date,
       input.supplier,
@@ -177,6 +179,7 @@ export async function createManualReceipt(input: {
       input.skontoAmount ?? null,
       input.skontoPayAmount ?? null,
       input.skontoDueDate ?? null,
+      input.ocrText && input.ocrText.trim() ? input.ocrText.trim() : null,
     ]
   );
   return (res as { insertId: number }).insertId;
