@@ -5,7 +5,7 @@ import {
   getBookAccounts,
   isRevenueReduction,
 } from "./hero-api";
-import { listManualReceipts } from "./manual-receipts";
+import { listManualReceipts, skontoSaving } from "./manual-receipts";
 import { effectiveReceiptStatus, LOCAL_STATUS_FROM, getDocumentUrl } from "./invoices";
 import { getPaymentOverrideMap } from "./receipt-payment-status";
 import { accountForSupplier } from "./beleg-extract";
@@ -38,6 +38,8 @@ export interface MonthlyTotals {
   offers: number;
   /** Net sum of order confirmations (Auftragsbestätigungen). */
   confirmations: number;
+  /** Gezogener Skonto (Brutto-Ersparnis) aus mit-Skonto bezahlten Belegen. */
+  skonto: number;
 }
 
 /** Einzelner Beleg, der zu einem GuV-Konto beiträgt (für die Detail-Ansicht). */
@@ -166,6 +168,7 @@ export async function getDashboardData(year: number): Promise<DashboardData> {
     incomeTax: 0,
     offers: offerConfirmation.offers[i] ?? 0,
     confirmations: offerConfirmation.confirmations[i] ?? 0,
+    skonto: 0,
   }));
 
   let totalOutput = 0;
@@ -303,9 +306,17 @@ export async function getDashboardData(year: number): Promise<DashboardData> {
       const d = new Date(r.date);
       if (d.getUTCFullYear() !== year) continue;
       const monthIndex = d.getUTCMonth();
-      monthly[monthIndex].output += r.net;
-      monthly[monthIndex].outputTax += r.vat;
-      totalOutput += r.net;
+      // Bei Skonto-Zahlung zählt nur der reduzierte Zahlbetrag → Netto/USt anteilig kürzen.
+      const factor =
+        r.isPaid && r.paidWithSkonto && r.skontoPayAmount != null && r.gross > 0
+          ? r.skontoPayAmount / r.gross
+          : 1;
+      const effNet = round2(r.net * factor);
+      const effVat = round2(r.vat * factor);
+      monthly[monthIndex].output += effNet;
+      monthly[monthIndex].outputTax += effVat;
+      monthly[monthIndex].skonto += skontoSaving(r);
+      totalOutput += effNet;
       countOutput++;
       if (!r.isPaid) {
         openReceiptsTotal += r.gross;
@@ -324,7 +335,7 @@ export async function getDashboardData(year: number): Promise<DashboardData> {
       const name = (number && accountNameByNumber.get(number)) || (r.accountName?.trim() ?? "");
       const key = accountKey(number, name);
       const arr = expenseByAccount.get(key) ?? new Array(12).fill(0);
-      arr[monthIndex] += r.net;
+      arr[monthIndex] += effNet;
       expenseByAccount.set(key, arr);
       const list = expenseEntriesByAccount.get(key) ?? [];
       list.push({
@@ -332,7 +343,7 @@ export async function getDashboardData(year: number): Promise<DashboardData> {
         date: r.date,
         party: r.supplier || r.description || "Manueller Beleg",
         number: r.invoiceNumber ?? "",
-        net: round2(r.net),
+        net: effNet,
         source: "manuell",
         docUrl: r.hasFile ? `/api/beleg?id=${r.id}` : null,
       });
@@ -410,6 +421,7 @@ export async function getDashboardData(year: number): Promise<DashboardData> {
     m.income = round2(m.income);
     m.outputTax = round2(m.outputTax);
     m.incomeTax = round2(m.incomeTax);
+    m.skonto = round2(m.skonto);
   }
 
   // Umsatz = Ausgangsrechnungen (income), Kosten = Belege (output).

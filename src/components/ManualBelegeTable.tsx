@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { setBelegPaidAction } from "@/app/dashboard/belege/manual-actions";
 import BelegEditButton from "@/components/BelegEditButton";
 import DeleteBelegButton from "@/components/DeleteBelegButton";
@@ -17,6 +18,107 @@ function formatDate(d: string | null): string {
   if (!d) return "—";
   const dt = new Date(d);
   return Number.isNaN(dt.getTime()) ? d : dateFormatter.format(dt);
+}
+
+/** Status-Zelle: Bezahlt/Offen + Skonto-Kennzeichnung; „als bezahlt" fragt bei Skonto nach. */
+function PaidCell({ r }: { r: BelegRow }) {
+  const router = useRouter();
+  const [busy, start] = useTransition();
+  const [menu, setMenu] = useState(false);
+  // Skonto anbietbar, wenn ein (echt niedrigerer) Skontozahlbetrag hinterlegt ist.
+  const hasSkonto = r.skontoPayAmount != null && r.skontoPayAmount < r.gross;
+  const saving = hasSkonto ? r.gross - (r.skontoPayAmount as number) : 0;
+
+  const setPaid = (paid: boolean, withSkonto: boolean) => {
+    setMenu(false);
+    const fd = new FormData();
+    fd.set("id", String(r.id));
+    fd.set("paid", paid ? "1" : "0");
+    fd.set("withSkonto", withSkonto ? "1" : "0");
+    start(async () => {
+      await setBelegPaidAction(fd);
+      router.refresh();
+    });
+  };
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {r.isPaid ? (
+        <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">Bezahlt</span>
+      ) : (
+        <span className="rounded-full bg-gray-200 px-2 py-0.5 text-xs font-medium text-gray-600">Offen</span>
+      )}
+      {r.isPaid &&
+        (r.paidWithSkonto ? (
+          <span
+            className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-700"
+            title="Mit Skonto bezahlt – nur der reduzierte Betrag zählt als Ausgabe"
+          >
+            Skonto −{currencyFormatter.format(saving > 0 ? saving : (r.skontoAmount ?? 0))}
+          </span>
+        ) : hasSkonto ? (
+          <span
+            className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500"
+            title="Voll bezahlt (kein Skonto gezogen)"
+          >
+            ohne Skonto
+          </span>
+        ) : null)}
+
+      {r.isPaid ? (
+        <button
+          type="button"
+          onClick={() => setPaid(false, false)}
+          disabled={busy}
+          className="rounded-md border border-gray-300 px-2 py-0.5 text-xs font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900 disabled:opacity-50"
+        >
+          auf offen
+        </button>
+      ) : hasSkonto ? (
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setMenu((o) => !o)}
+            disabled={busy}
+            className="rounded-md border border-gray-300 px-2 py-0.5 text-xs font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900 disabled:opacity-50"
+          >
+            als bezahlt ▾
+          </button>
+          {menu && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setMenu(false)} />
+              <div className="absolute right-0 z-20 mt-1 w-52 rounded-md border border-gray-200 bg-white py-1 shadow-lg">
+                <button
+                  type="button"
+                  onClick={() => setPaid(true, true)}
+                  className="block w-full px-3 py-1.5 text-left text-xs text-gray-700 hover:bg-gray-50"
+                >
+                  Mit Skonto · {currencyFormatter.format(r.skontoPayAmount as number)}
+                  <span className="ml-1 text-emerald-600">(−{currencyFormatter.format(saving)})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPaid(true, false)}
+                  className="block w-full px-3 py-1.5 text-left text-xs text-gray-700 hover:bg-gray-50"
+                >
+                  Voll · {currencyFormatter.format(r.gross)}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setPaid(true, false)}
+          disabled={busy}
+          className="rounded-md border border-gray-300 px-2 py-0.5 text-xs font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900 disabled:opacity-50"
+        >
+          als bezahlt
+        </button>
+      )}
+    </div>
+  );
 }
 
 /** Suchtext für Betragsspalten: formatiert + roh (mit Komma), damit "1234" und "1.234,56" treffen. */
@@ -281,27 +383,7 @@ export default function ManualBelegeTable({
                   </td>
                   <td className="px-3 py-1.5 tabular-nums text-gray-700">{formatDate(r.skontoDueDate)}</td>
                   <td className="px-3 py-1.5">
-                    <div className="flex items-center gap-2">
-                      {r.isPaid ? (
-                        <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
-                          Bezahlt
-                        </span>
-                      ) : (
-                        <span className="rounded-full bg-gray-200 px-2 py-0.5 text-xs font-medium text-gray-600">
-                          Offen
-                        </span>
-                      )}
-                      <form action={setBelegPaidAction}>
-                        <input type="hidden" name="id" value={r.id} />
-                        <input type="hidden" name="paid" value={r.isPaid ? "0" : "1"} />
-                        <button
-                          type="submit"
-                          className="rounded-md border border-gray-300 px-2 py-0.5 text-xs font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900"
-                        >
-                          {r.isPaid ? "auf offen" : "als bezahlt"}
-                        </button>
-                      </form>
-                    </div>
+                    <PaidCell r={r} />
                   </td>
                   <td className="px-3 py-1.5">
                     {r.hasFile ? (

@@ -143,6 +143,9 @@ export interface ManualReceiptLike {
   gross: number;
   vatRate: number | null;
   isPaid: boolean;
+  /** true = mit Skonto bezahlt → als Ausgabe zählt nur der reduzierte Zahlbetrag. */
+  paidWithSkonto: boolean;
+  skontoPayAmount: number | null;
 }
 
 /**
@@ -167,7 +170,8 @@ export function mergeManualIntoSummary(
     count++;
     netTotal += m.net;
     grossTotal += m.gross;
-    if (m.isPaid) paidTotal += m.gross;
+    // Bei Skonto-Zahlung zählt als tatsächliche Ausgabe nur der reduzierte Zahlbetrag.
+    if (m.isPaid) paidTotal += m.paidWithSkonto && m.skontoPayAmount != null ? m.skontoPayAmount : m.gross;
     else openTotal += m.gross;
     const rate = m.vatRate ?? 0;
     const entry = byRate.get(rate) ?? { net: 0, gross: 0 };

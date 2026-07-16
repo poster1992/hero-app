@@ -22,6 +22,8 @@ export interface ManualReceipt {
   mime: string | null;
   hasFile: boolean;
   isPaid: boolean;
+  /** true = beim Bezahlen wurde Skonto gezogen (nur dann zählt der reduzierte Zahlbetrag). */
+  paidWithSkonto: boolean;
   paidDate: string | null;
   /** Optional zugeordnetes Projekt (HERO project_match id). */
   projectId: number | null;
@@ -50,6 +52,7 @@ interface ReceiptRow extends RowDataPacket {
   stored_name: string | null;
   mime: string | null;
   is_paid: number | null;
+  paid_with_skonto: number | null;
   paid_date: string | null;
   project_id: number | null;
   project_relative_id: number | null;
@@ -81,6 +84,7 @@ function mapRow(r: ReceiptRow): ManualReceipt {
     mime: r.mime,
     hasFile: !!r.stored_name,
     isPaid: r.is_paid === 1,
+    paidWithSkonto: r.paid_with_skonto === 1,
     paidDate: r.paid_date ? String(r.paid_date).slice(0, 10) : null,
     projectId: r.project_id ?? null,
     projectRelativeId: r.project_relative_id ?? null,
@@ -96,7 +100,7 @@ function mapRow(r: ReceiptRow): ManualReceipt {
 export async function listManualReceipts(year: number): Promise<ManualReceipt[]> {
   const [rows] = await getPool().query<ReceiptRow[]>(
     `SELECT id, beleg_date, supplier, description, gross, vat_rate, account_number, account_name,
-            file_name, stored_name, mime, is_paid, paid_date, project_id, project_relative_id, project_name,
+            file_name, stored_name, mime, is_paid, paid_with_skonto, paid_date, project_id, project_relative_id, project_name,
             invoice_number, skonto_amount, skonto_pay_amount, skonto_due_date
      FROM manual_receipts
      WHERE beleg_date IS NULL OR YEAR(beleg_date) = ?
@@ -110,7 +114,7 @@ export async function listManualReceipts(year: number): Promise<ManualReceipt[]>
 export async function getManualReceipt(id: number): Promise<ManualReceipt | null> {
   const [rows] = await getPool().query<ReceiptRow[]>(
     `SELECT id, beleg_date, supplier, description, gross, vat_rate, account_number, account_name,
-            file_name, stored_name, mime, is_paid, paid_date, project_id, project_relative_id, project_name,
+            file_name, stored_name, mime, is_paid, paid_with_skonto, paid_date, project_id, project_relative_id, project_name,
             invoice_number, skonto_amount, skonto_pay_amount, skonto_due_date
      FROM manual_receipts WHERE id = ? LIMIT 1`,
     [id]
@@ -118,12 +122,36 @@ export async function getManualReceipt(id: number): Promise<ManualReceipt | null
   return rows[0] ? mapRow(rows[0]) : null;
 }
 
-/** Sets/clears the paid status of a manual receipt. */
-export async function setManualReceiptPaid(id: number, paid: boolean): Promise<void> {
+/** Sets/clears the paid status of a manual receipt. withSkonto = mit Skonto gezahlt. */
+export async function setManualReceiptPaid(id: number, paid: boolean, withSkonto = false): Promise<void> {
   await getPool().query(
-    "UPDATE manual_receipts SET is_paid = ?, paid_date = ? WHERE id = ?",
-    [paid ? 1 : 0, paid ? new Date().toISOString().slice(0, 10) : null, id]
+    "UPDATE manual_receipts SET is_paid = ?, paid_with_skonto = ?, paid_date = ? WHERE id = ?",
+    [paid ? 1 : 0, paid && withSkonto ? 1 : 0, paid ? new Date().toISOString().slice(0, 10) : null, id]
   );
+}
+
+/** Minimal-Form für die „effektive Ausgabe"-Berechnung. */
+export interface SkontoPaidLike {
+  gross: number;
+  isPaid: boolean;
+  paidWithSkonto: boolean;
+  skontoPayAmount: number | null;
+}
+
+/**
+ * Tatsächliche Ausgabe eines Belegs: Wurde mit Skonto bezahlt, zählt nur der
+ * reduzierte Skontozahlbetrag; sonst der volle Bruttobetrag.
+ */
+export function effectiveExpense(r: SkontoPaidLike): number {
+  return r.isPaid && r.paidWithSkonto && r.skontoPayAmount != null ? r.skontoPayAmount : r.gross;
+}
+
+/** Gezogener Skonto (Ersparnis) = Brutto − reduzierter Zahlbetrag (0, wenn kein Skonto gezogen). */
+export function skontoSaving(r: SkontoPaidLike): number {
+  if (r.isPaid && r.paidWithSkonto && r.skontoPayAmount != null) {
+    return Math.max(0, Math.round((r.gross - r.skontoPayAmount) * 100) / 100);
+  }
+  return 0;
 }
 
 export async function createManualReceipt(input: {
@@ -408,7 +436,7 @@ export async function searchManualOcrIds(query: string): Promise<Set<number>> {
 export async function listManualReceiptsByProject(projectId: number): Promise<ManualReceipt[]> {
   const [rows] = await getPool().query<ReceiptRow[]>(
     `SELECT id, beleg_date, supplier, description, gross, vat_rate, account_number, account_name,
-            file_name, stored_name, mime, is_paid, paid_date, project_id, project_relative_id, project_name,
+            file_name, stored_name, mime, is_paid, paid_with_skonto, paid_date, project_id, project_relative_id, project_name,
             invoice_number, skonto_amount, skonto_pay_amount, skonto_due_date
      FROM manual_receipts WHERE project_id = ? ORDER BY beleg_date DESC, id DESC`,
     [projectId]

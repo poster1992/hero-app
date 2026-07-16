@@ -299,8 +299,9 @@ export async function setBelegPaidAction(formData: FormData): Promise<void> {
   if (!session) return;
   const id = Number(formData.get("id"));
   const paid = String(formData.get("paid")) === "1";
+  const withSkonto = String(formData.get("withSkonto")) === "1";
   if (!Number.isFinite(id) || id <= 0) return;
-  await setManualReceiptPaid(id, paid);
+  await setManualReceiptPaid(id, paid, withSkonto);
   revalidatePath(PATH);
 }
 

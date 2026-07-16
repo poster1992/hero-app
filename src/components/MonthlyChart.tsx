@@ -48,6 +48,7 @@ function ChartTooltip({
   const output = valueOf("output");
   const offers = valueOf("offers");
   const confirmations = valueOf("confirmations");
+  const skonto = valueOf("skonto");
   const surplus = income - output;
 
   return (
@@ -74,6 +75,9 @@ function ChartTooltip({
       </p>
       <p style={{ margin: 0, color: "#e8392a" }}>
         Ausgaben: {currencyFormatterFull.format(output)}
+      </p>
+      <p style={{ margin: 0, color: "#06b6d4" }}>
+        Gezogener Skonto: {currencyFormatterFull.format(skonto)}
       </p>
       <div style={{ borderTop: "1px solid #3f3f46", margin: "6px 0" }} />
       <p style={{ margin: 0, fontWeight: 600, color: surplus >= 0 ? "#10b981" : "#e8392a" }}>
@@ -225,6 +229,13 @@ export default function MonthlyChart({
           fill="#e8392a"
           radius={[4, 4, 0, 0]}
           hide={isHidden("output")}
+        />
+        <Bar
+          dataKey="skonto"
+          name="Gezogener Skonto"
+          fill="#06b6d4"
+          radius={[4, 4, 0, 0]}
+          hide={isHidden("skonto")}
         />
         <Line
           type="linear"
