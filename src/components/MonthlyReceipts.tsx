@@ -245,7 +245,12 @@ export default async function MonthlyReceipts({
               </a>
             )}
           </form>
-          {ocrStatus && !restricted && <OcrIndexPanel status={ocrStatus} />}
+          {/* OCR-Indexierung betrifft nur HERO-Belege. Ab Juli 2026 kommen keine
+              neuen mehr hinzu → Panel nur zeigen, wenn wirklich noch etwas zu
+              indexieren ist (done < total); sonst ist es überflüssig. */}
+          {ocrStatus && !restricted && ocrStatus.done < ocrStatus.total && (
+            <OcrIndexPanel status={ocrStatus} />
+          )}
         </div>
       )}
 
