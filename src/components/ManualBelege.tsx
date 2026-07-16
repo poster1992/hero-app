@@ -74,21 +74,31 @@ export default async function ManualBelege({
     return hay.includes(ql) || ocrMatchIds.has(r.id);
   };
 
-  // Monatsfilter berücksichtigen (wie bei den HERO-Belegen oben); bei aktiver
-  // Suche gilt der Suchfilter über das ganze Jahr.
+  // Ansicht wie bei den HERO-Belegen oben (Monatlich/Alle/Offen/Fällig): dieselben
+  // View-Reiter steuern die manuellen Belege. Offen/Fällig = nicht bezahlte Belege;
+  // „Ungeprüft" betrifft nur HERO-Belege → hier leer. Bei aktiver Suche gilt der
+  // Suchfilter über das ganze Jahr.
   const filtered = searchActive
     ? receipts.filter(matchesQ)
-    : view === "month"
-      ? receipts.filter((r) => r.date && Number(r.date.slice(5, 7)) === month)
-      : receipts;
+    : view === "all"
+      ? receipts
+      : view === "open" || view === "due"
+        ? receipts.filter((r) => !r.isPaid)
+        : view === "unreviewed"
+          ? []
+          : receipts.filter((r) => r.date && Number(r.date.slice(5, 7)) === month);
   const periodLabel = searchActive
     ? `Suche „${q}" (${filtered.length})`
-    : view === "month"
-      ? `${MONTH_LABELS[month - 1]} ${year}`
-      : String(year);
+    : view === "open"
+      ? `offen ${year}`
+      : view === "due"
+        ? `fällig ${year}`
+        : view === "all"
+          ? String(year)
+          : `${MONTH_LABELS[month - 1]} ${year}`;
   const monthLabel = `${MONTH_LABELS[month - 1]} ${year}`;
 
-  // Dubletten-Flag je Beleg vorberechnen (die Filterung passiert clientseitig).
+  // Dubletten-Flag je Beleg vorberechnen.
   const rows = filtered.map((r) => {
     const dk = receiptDupKey(r.supplier, r.gross, r.date);
     return { ...r, duplicate: dk != null && (duplicateKeys?.has(dk) ?? false) };

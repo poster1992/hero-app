@@ -1,6 +1,3 @@
-"use client";
-
-import { useMemo, useState } from "react";
 import { setBelegPaidAction } from "@/app/dashboard/belege/manual-actions";
 import BelegEditButton from "@/components/BelegEditButton";
 import DeleteBelegButton from "@/components/DeleteBelegButton";
@@ -19,10 +16,9 @@ function formatDate(d: string | null): string {
   return Number.isNaN(dt.getTime()) ? d : dateFormatter.format(dt);
 }
 
-const selectClass =
-  "rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-700 outline-none focus:border-brand-red/60";
-
-/** Filterbare Tabelle der manuellen Belege (clientseitig, ohne Reload). */
+/** Tabelle der manuellen Belege. Die Filterung (Monatlich/Alle/Offen/Fällig, Suche)
+ *  läuft – wie bei den HERO-Belegen – über die View-Reiter oben (rows kommen fertig
+ *  gefiltert vom Server). */
 export default function ManualBelegeTable({
   rows,
   accounts,
@@ -34,130 +30,19 @@ export default function ManualBelegeTable({
   projects: ProjectOption[];
   periodLabel: string;
 }) {
-  const [status, setStatus] = useState<"" | "open" | "paid">("");
-  const [account, setAccount] = useState("");
-  const [project, setProject] = useState("");
-  const [supplier, setSupplier] = useState("");
-  const [beleg, setBeleg] = useState<"" | "with" | "without">("");
-
-  // Auswahllisten aus den tatsächlich vorhandenen Belegen dieses Zeitraums.
-  const accountOptions = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const r of rows) {
-      if (r.accountNumber) m.set(r.accountNumber, `${r.accountNumber} ${r.accountName ?? ""}`.trim());
-    }
-    return Array.from(m, ([number, label]) => ({ number, label })).sort((a, b) =>
-      a.number.localeCompare(b.number, "de")
-    );
-  }, [rows]);
-
-  const projectOptions = useMemo(() => {
-    const m = new Map<string, string>();
-    let hasNone = false;
-    for (const r of rows) {
-      if (r.projectId) {
-        m.set(
-          String(r.projectId),
-          `${r.projectRelativeId != null ? `#${r.projectRelativeId} ` : ""}${r.projectName ?? "Projekt"}`
-        );
-      } else hasNone = true;
-    }
-    const list = Array.from(m, ([id, label]) => ({ id, label })).sort((a, b) => a.label.localeCompare(b.label, "de"));
-    return { list, hasNone };
-  }, [rows]);
-
-  const supplierOptions = useMemo(() => {
-    const s = new Set<string>();
-    for (const r of rows) if (r.supplier?.trim()) s.add(r.supplier.trim());
-    return Array.from(s).sort((a, b) => a.localeCompare(b, "de"));
-  }, [rows]);
-
-  const filtered = useMemo(() => {
-    return rows.filter((r) => {
-      if (status === "open" && r.isPaid) return false;
-      if (status === "paid" && !r.isPaid) return false;
-      if (account && r.accountNumber !== account) return false;
-      if (project === "none" && r.projectId) return false;
-      if (project && project !== "none" && String(r.projectId ?? "") !== project) return false;
-      if (supplier && (r.supplier?.trim() ?? "") !== supplier) return false;
-      if (beleg === "with" && !r.hasFile) return false;
-      if (beleg === "without" && r.hasFile) return false;
-      return true;
-    });
-  }, [rows, status, account, project, supplier, beleg]);
-
-  const total = filtered.reduce((s, r) => s + r.gross, 0);
-  const anyFilter = status !== "" || account !== "" || project !== "" || supplier !== "" || beleg !== "";
-  const reset = () => {
-    setStatus("");
-    setAccount("");
-    setProject("");
-    setSupplier("");
-    setBeleg("");
-  };
+  const total = rows.reduce((s, r) => s + r.gross, 0);
 
   return (
     <div className="overflow-x-auto rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-gray-200 px-5 py-4">
         <h2 className="text-lg font-medium text-gray-900">Erfasste Belege {periodLabel}</h2>
         <p className="text-sm text-gray-600">
-          {filtered.length} {filtered.length === 1 ? "Beleg" : "Belege"} · {currencyFormatter.format(total)}
+          {rows.length} {rows.length === 1 ? "Beleg" : "Belege"} · {currencyFormatter.format(total)}
         </p>
       </div>
 
-      {/* Filterleiste */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 bg-gray-50/60 px-5 py-3">
-        <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Filter</span>
-        <select value={status} onChange={(e) => setStatus(e.target.value as "" | "open" | "paid")} className={selectClass}>
-          <option value="">Status: alle</option>
-          <option value="open">Nur offene</option>
-          <option value="paid">Nur bezahlte</option>
-        </select>
-        <select value={account} onChange={(e) => setAccount(e.target.value)} className={selectClass}>
-          <option value="">Konto: alle</option>
-          {accountOptions.map((a) => (
-            <option key={a.number} value={a.number}>
-              {a.label}
-            </option>
-          ))}
-        </select>
-        <select value={project} onChange={(e) => setProject(e.target.value)} className={selectClass}>
-          <option value="">Projekt: alle</option>
-          {projectOptions.hasNone && <option value="none">Ohne Projekt</option>}
-          {projectOptions.list.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.label}
-            </option>
-          ))}
-        </select>
-        <select value={supplier} onChange={(e) => setSupplier(e.target.value)} className={selectClass}>
-          <option value="">Lieferant: alle</option>
-          {supplierOptions.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
-        <select value={beleg} onChange={(e) => setBeleg(e.target.value as "" | "with" | "without")} className={selectClass}>
-          <option value="">Beleg: alle</option>
-          <option value="with">Nur mit Beleg</option>
-          <option value="without">Nur ohne Beleg</option>
-        </select>
-        {anyFilter && (
-          <button
-            type="button"
-            onClick={reset}
-            className="rounded-md border border-gray-300 px-2.5 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900"
-          >
-            Zurücksetzen
-          </button>
-        )}
-      </div>
-
-      {filtered.length === 0 ? (
-        <p className="px-5 py-8 text-center text-sm text-gray-500">
-          {anyFilter ? "Keine Belege für die gewählten Filter." : "Keine manuellen Belege in diesem Zeitraum."}
-        </p>
+      {rows.length === 0 ? (
+        <p className="px-5 py-8 text-center text-sm text-gray-500">Keine manuellen Belege in diesem Zeitraum.</p>
       ) : (
         <table className="w-full border-collapse text-sm">
           <thead className="bg-gray-50">
@@ -179,7 +64,7 @@ export default function ManualBelegeTable({
             </tr>
           </thead>
           <tbody>
-            {filtered.map((r) => (
+            {rows.map((r) => (
               <tr key={r.id} className="border-t border-gray-100">
                 <td className="px-3 py-1.5 tabular-nums text-gray-700">{formatDate(r.date)}</td>
                 <td className="px-3 py-1.5 text-gray-900">
