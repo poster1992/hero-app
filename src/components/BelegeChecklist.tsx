@@ -29,9 +29,7 @@ export default function BelegeChecklist({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [newLabel, setNewLabel] = useState("");
-  // Beim Öffnen zunächst minimiert darstellen.
-  const [open, setOpen] = useState(false);
-  // Popup-Fenster (Modal) mit derselben Checkliste.
+  // Popup-Fenster (Modal) mit der Checkliste – kein Inline-Aufklappen mehr.
   const [modalOpen, setModalOpen] = useState(false);
 
   const doneCount = items.filter((i) => i.done).length;
@@ -131,41 +129,14 @@ export default function BelegeChecklist({
 
   return (
     <>
-      <div className="rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
-        <div
-          className={`flex items-center justify-between gap-3 px-5 py-4 ${open ? "border-b border-gray-200" : ""}`}
-        >
-          <button
-            type="button"
-            onClick={() => setOpen((o) => !o)}
-            aria-expanded={open}
-            className="flex flex-1 items-center gap-2 text-left"
-          >
-            <span className={`text-gray-400 transition-transform ${open ? "rotate-90" : ""}`} aria-hidden>
-              ▶
-            </span>
-            <h2 className="text-lg font-medium text-gray-900">Monatliche Checkliste {periodLabel}</h2>
-          </button>
-          <p className="hidden text-sm text-gray-600 sm:block">
-            {doneCount} / {items.length} erledigt
-          </p>
-          <button
-            type="button"
-            onClick={() => setModalOpen(true)}
-            className="flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900"
-            title="Checkliste im Fenster öffnen"
-          >
-            <span aria-hidden>⤢</span> Im Fenster öffnen
-          </button>
-        </div>
-
-        {open && (
-          <>
-            {list}
-            {addForm}
-          </>
-        )}
-      </div>
+      <button
+        type="button"
+        onClick={() => setModalOpen(true)}
+        className="flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900"
+        title="Monatliche Checkliste öffnen"
+      >
+        <span aria-hidden>☑</span> Checkliste ({doneCount}/{items.length})
+      </button>
 
       {modalOpen && (
         <div

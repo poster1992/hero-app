@@ -103,7 +103,8 @@ export default async function ManualBelege({
             Dokumente unabhängig von HERO hochladen und einem Konto zubuchen.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <BelegeChecklist items={checklist} year={year} month={month} periodLabel={monthLabel} />
           <ManualOcrPanel status={ocrStatus} />
           <Link
             href="/dashboard/belege/posteingang"
@@ -120,8 +121,6 @@ export default async function ManualBelege({
           {error}
         </div>
       )}
-
-      <BelegeChecklist items={checklist} year={year} month={month} periodLabel={monthLabel} />
 
       <ManualBelegeTable rows={rows} accounts={accounts} projects={projects} periodLabel={periodLabel} />
     </div>
