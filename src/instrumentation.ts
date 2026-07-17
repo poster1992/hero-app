@@ -46,4 +46,27 @@ export async function register(): Promise<void> {
     setInterval(tick, TEN_MINUTES);
     console.log("[daily-report] aktiv – tägliche Prüfung alle 10 Minuten.");
   }
+
+  // Dritter Loop: Volltext-Indexierung manueller Belege automatisch nachziehen.
+  // Deckt Belege ab, die NICHT über den Posteingang kamen (Formular-Uploads,
+  // Altbestand) – so muss niemand mehr manuell „Volltext indexieren" klicken.
+  // Verarbeitet je Lauf einen kleinen Block; ohne offene Belege kein KI-Aufruf.
+  const g3 = globalThis as unknown as { __manualOcrStarted?: boolean };
+  if (!g3.__manualOcrStarted) {
+    g3.__manualOcrStarted = true;
+    const tickOcr = async () => {
+      try {
+        const { runManualOcrBackfillCore } = await import("./lib/manual-ocr-core");
+        const r = await runManualOcrBackfillCore();
+        if (r.processed > 0) {
+          console.log(`[manual-ocr] Volltext indexiert: ${r.processed}, offen: ${r.remaining}`);
+        }
+      } catch (e) {
+        console.warn("[manual-ocr] Fehler:", e instanceof Error ? e.message : e);
+      }
+    };
+    setTimeout(tickOcr, 90_000);
+    setInterval(tickOcr, TEN_MINUTES);
+    console.log("[manual-ocr] aktiv – Volltext-Backfill alle 10 Minuten.");
+  }
 }
