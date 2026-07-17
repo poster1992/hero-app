@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import BelegDetailModal from "@/components/BelegDetailModal";
-import type { EditableReceipt, ProjectOption } from "@/components/ManualBelegeForm";
+import type { EditableReceipt, ProjectOption, SupplierOption } from "@/components/ManualBelegeForm";
 
 interface AccountOption {
   number: string;
@@ -17,11 +17,13 @@ export default function BelegEditButton({
   receipt,
   accounts,
   projects,
+  suppliers,
   hasFile = true,
 }: {
   receipt: EditableReceipt;
   accounts: AccountOption[];
   projects: ProjectOption[];
+  suppliers: SupplierOption[];
   hasFile?: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -40,6 +42,7 @@ export default function BelegEditButton({
           receipt={receipt}
           accounts={accounts}
           projects={projects}
+          suppliers={suppliers}
           hasFile={hasFile}
           onClose={() => setOpen(false)}
         />

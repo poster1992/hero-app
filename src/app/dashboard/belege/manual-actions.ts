@@ -10,8 +10,8 @@ import {
   deleteManualReceipt,
   getManualReceipt,
 } from "@/lib/manual-receipts";
-import { getBookAccounts, getProjects } from "@/lib/hero-api";
-import type { EditableReceipt, ProjectOption } from "@/components/ManualBelegeForm";
+import { getBookAccounts, getProjects, getSupplierContacts } from "@/lib/hero-api";
+import type { EditableReceipt, ProjectOption, SupplierOption } from "@/components/ManualBelegeForm";
 import {
   addChecklistItem,
   removeChecklistItem,
@@ -244,6 +244,7 @@ export interface BelegEditData {
   receipt: EditableReceipt | null;
   accounts: { number: string; name: string }[];
   projects: ProjectOption[];
+  suppliers: SupplierOption[];
 }
 
 /**
@@ -253,12 +254,13 @@ export interface BelegEditData {
 export async function loadBelegEditDataAction(id: number): Promise<BelegEditData> {
   const session = await getSession();
   if (!session || !Number.isFinite(id) || id <= 0) {
-    return { receipt: null, accounts: [], projects: [] };
+    return { receipt: null, accounts: [], projects: [], suppliers: [] };
   }
-  const [r, accounts, projects] = await Promise.all([
+  const [r, accounts, projects, suppliers] = await Promise.all([
     getManualReceipt(id),
     getBookAccounts().catch(() => [] as { number: string; name: string }[]),
     getProjects().catch(() => [] as ProjectOption[]),
+    getSupplierContacts().catch(() => [] as SupplierOption[]),
   ]);
   const receipt: EditableReceipt | null = r
     ? {
@@ -280,7 +282,7 @@ export async function loadBelegEditDataAction(id: number): Promise<BelegEditData
         skontoDueDate: r.skontoDueDate,
       }
     : null;
-  return { receipt, accounts, projects };
+  return { receipt, accounts, projects, suppliers };
 }
 
 /** Löscht einen manuellen Beleg (inkl. Datei). */

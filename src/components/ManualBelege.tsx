@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { listManualReceipts, searchManualOcrIds } from "@/lib/manual-receipts";
 import { listChecklist } from "@/lib/belege-checklist";
-import { getBookAccounts, getProjects } from "@/lib/hero-api";
+import { getBookAccounts, getProjects, getSupplierContacts } from "@/lib/hero-api";
 import ManualBelegeForm from "@/components/ManualBelegeForm";
 import ManualBelegeTable from "@/components/ManualBelegeTable";
 import BelegeChecklist from "@/components/BelegeChecklist";
@@ -31,13 +31,15 @@ export default async function ManualBelege({
   let accounts: Awaited<ReturnType<typeof getBookAccounts>> = [];
   let checklist: Awaited<ReturnType<typeof listChecklist>> = [];
   let projects: Awaited<ReturnType<typeof getProjects>> = [];
+  let suppliers: Awaited<ReturnType<typeof getSupplierContacts>> = [];
   let error: string | null = null;
   try {
-    [receipts, accounts, checklist, projects] = await Promise.all([
+    [receipts, accounts, checklist, projects, suppliers] = await Promise.all([
       listManualReceipts(year),
       getBookAccounts(),
       listChecklist(year, month),
       getProjects().catch(() => []),
+      getSupplierContacts().catch(() => []),
     ]);
   } catch (e) {
     error = e instanceof Error ? e.message : "Manuelle Belege konnten nicht geladen werden.";
@@ -117,7 +119,7 @@ export default async function ManualBelege({
           >
             📥 Posteingang (Sammel-Upload)
           </Link>
-          <ManualBelegeForm accounts={accounts} projects={projects} />
+          <ManualBelegeForm accounts={accounts} projects={projects} suppliers={suppliers} />
         </div>
       </header>
 
@@ -127,7 +129,7 @@ export default async function ManualBelege({
         </div>
       )}
 
-      <ManualBelegeTable rows={rows} accounts={accounts} projects={projects} periodLabel={periodLabel} />
+      <ManualBelegeTable rows={rows} accounts={accounts} projects={projects} suppliers={suppliers} periodLabel={periodLabel} />
     </div>
   );
 }

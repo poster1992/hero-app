@@ -547,6 +547,7 @@ function TaskCard({
           receipt={belegEdit.receipt}
           accounts={belegEdit.accounts}
           projects={belegEdit.projects}
+          suppliers={belegEdit.suppliers}
           title={`Beleg #${belegId}${task.title ? ` · ${task.title}` : ""}`}
           hasFile={belegEdit.receipt.fileName != null}
           onClose={closeBeleg}

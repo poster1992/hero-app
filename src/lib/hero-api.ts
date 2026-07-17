@@ -989,6 +989,21 @@ export async function getCustomers(): Promise<CustomerSummary[]> {
   return result;
 }
 
+/** Ein HERO-Kontakt der Kategorie „Lieferant" (für die Beleg-Erfassung). */
+export interface SupplierContact {
+  id: number;
+  name: string;
+}
+
+/** HERO-Kontakte der Kategorie „Lieferant", alphabetisch – für die Belegerfassung. */
+export async function getSupplierContacts(): Promise<SupplierContact[]> {
+  const all = await getCustomers();
+  return all
+    .filter((c) => (c.categoryName ?? "").trim().toLowerCase() === "lieferant")
+    .map((c) => ({ id: c.id, name: c.name }))
+    .sort((a, b) => a.name.localeCompare(b.name, "de"));
+}
+
 // ---------------------------------------------------------------------------
 // Calendar events (Kalender / Terminplanung) — used for employee utilisation.
 // ---------------------------------------------------------------------------

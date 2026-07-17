@@ -224,6 +224,7 @@ function BelegEditAction({ receiptId }: { receiptId: number }) {
           receipt={data.receipt}
           accounts={data.accounts}
           projects={data.projects}
+          suppliers={data.suppliers}
           hasFile={!!data.receipt.fileName}
           onClose={() => {
             setData(null);

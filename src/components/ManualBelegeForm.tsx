@@ -21,6 +21,12 @@ export interface ProjectOption {
   customerName?: string | null;
 }
 
+/** HERO-Lieferant (Kontakt der Kategorie „Lieferant") für die Belegerfassung. */
+export interface SupplierOption {
+  id: number;
+  name: string;
+}
+
 /** Belegtyp für die automatische PDF-Auswertung ("" = aus, "auto" = automatisch erkennen). */
 type SumTyp =
   | ""
@@ -115,6 +121,7 @@ export interface EditableReceipt {
 export function ManualBelegeFormFields({
   accounts,
   projects,
+  suppliers,
   receipt,
   onSuccess,
   onCancel,
@@ -122,6 +129,8 @@ export function ManualBelegeFormFields({
 }: {
   accounts: AccountOption[];
   projects: ProjectOption[];
+  /** Wählbare HERO-Lieferanten (Kategorie „Lieferant") – keine Freieingabe. */
+  suppliers: SupplierOption[];
   /** When set, the form edits this receipt instead of creating a new one. */
   receipt?: EditableReceipt;
   /** Nach erfolgreichem Speichern aufgerufen (z. B. Modal schließen). */
@@ -152,13 +161,23 @@ export function ManualBelegeFormFields({
         }
       : null
   );
+  // Lieferant: nur Auswahl aus HERO. Bestehenden Wert (auch nicht mehr in der
+  // Liste) als vorausgewählt anzeigen, damit er beim Bearbeiten erhalten bleibt.
+  const [supplierQuery, setSupplierQuery] = useState("");
+  const [supplier, setSupplier] = useState<SupplierOption | null>(
+    receipt?.supplier
+      ? suppliers.find((s) => s.name.toLowerCase() === receipt.supplier!.toLowerCase()) ?? {
+          id: 0,
+          name: receipt.supplier,
+        }
+      : null
+  );
 
   // OCR-Summe je Seite (Lohn: „Total Brutto", BGL: „Total TTC à payer").
   const fileInputRef = useRef<HTMLInputElement>(null);
   const grossInputRef = useRef<HTMLInputElement>(null);
   const vatInputRef = useRef<HTMLInputElement>(null);
   const dateInputRef = useRef<HTMLInputElement>(null);
-  const supplierInputRef = useRef<HTMLInputElement>(null);
   const descInputRef = useRef<HTMLInputElement>(null);
   const invoiceInputRef = useRef<HTMLInputElement>(null);
   const skontoInputRef = useRef<HTMLInputElement>(null);
@@ -175,6 +194,25 @@ export function ManualBelegeFormFields({
     setAccount(match);
     setAccountQuery("");
   };
+
+  // OCR-erkannten Lieferantennamen einem HERO-Lieferanten zuordnen (keine Freieingabe).
+  const applySupplier = (name: string) => {
+    const q = name.trim().toLowerCase();
+    if (!q) return;
+    const match =
+      suppliers.find((s) => s.name.toLowerCase() === q) ??
+      suppliers.find((s) => s.name.toLowerCase().includes(q) || q.includes(s.name.toLowerCase()));
+    if (match) {
+      setSupplier(match);
+      setSupplierQuery("");
+    }
+  };
+
+  const supplierMatches = (() => {
+    const q = supplierQuery.trim().toLowerCase();
+    if (q === "" || supplier) return [];
+    return suppliers.filter((s) => s.name.toLowerCase().includes(q)).slice(0, 12);
+  })();
 
   const runSum = () => {
     if (!isSumType) return;
@@ -195,7 +233,7 @@ export function ManualBelegeFormFields({
           vatInputRef.current.value = String(res.vatRate).replace(".", ",");
         }
         if (res.date && dateInputRef.current) dateInputRef.current.value = res.date;
-        if (res.supplier && supplierInputRef.current) supplierInputRef.current.value = res.supplier;
+        if (res.supplier) applySupplier(res.supplier);
         if (res.description && descInputRef.current) descInputRef.current.value = res.description;
         // Belegnummer + Skonto (v. a. Etges & Dächer).
         if (res.invoiceNumber && invoiceInputRef.current) invoiceInputRef.current.value = res.invoiceNumber;
@@ -391,14 +429,56 @@ export function ManualBelegeFormFields({
               </div>
               <div>
                 <label className="mb-1 block text-sm text-gray-600">Lieferant</label>
-                <input
-                  ref={supplierInputRef}
-                  name="supplier"
-                  type="text"
-                  defaultValue={receipt?.supplier ?? ""}
-                  className={inputClass}
-                  placeholder="z. B. Baumarkt XY"
-                />
+                {/* Nur Auswahl aus HERO – der Name wird als „supplier" übermittelt. */}
+                <input type="hidden" name="supplier" value={supplier?.name ?? ""} />
+                {supplier ? (
+                  <div className="flex items-center justify-between rounded-md border border-gray-300 px-3 py-2 text-sm">
+                    <span className="text-gray-900">{supplier.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSupplier(null);
+                        setSupplierQuery("");
+                      }}
+                      className="text-xs text-gray-400 hover:text-gray-700"
+                    >
+                      ✕ entfernen
+                    </button>
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={supplierQuery}
+                      onChange={(e) => setSupplierQuery(e.target.value)}
+                      placeholder="Lieferant aus HERO suchen …"
+                      className={inputClass}
+                    />
+                    {supplierMatches.length > 0 && (
+                      <ul className="absolute z-20 mt-1 max-h-60 w-full overflow-y-auto rounded-md border border-gray-200 bg-white shadow-lg">
+                        {supplierMatches.map((s) => (
+                          <li key={s.id}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSupplier(s);
+                                setSupplierQuery("");
+                              }}
+                              className="block w-full px-3 py-2 text-left text-sm hover:bg-gray-100"
+                            >
+                              {s.name}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {supplierQuery.trim() !== "" && supplierMatches.length === 0 && (
+                      <p className="mt-1 text-xs text-gray-400">
+                        Kein HERO-Lieferant gefunden. (Nur in HERO angelegte Lieferanten sind wählbar.)
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
               <div className="lg:col-span-3">
                 <label className="mb-1 block text-sm text-gray-600">Beschreibung</label>
@@ -630,10 +710,12 @@ export function ManualBelegeFormFields({
 export default function ManualBelegeForm({
   accounts,
   projects,
+  suppliers,
   receipt,
 }: {
   accounts: AccountOption[];
   projects: ProjectOption[];
+  suppliers: SupplierOption[];
   /** When set, the form edits this receipt instead of creating a new one. */
   receipt?: EditableReceipt;
 }) {
@@ -684,6 +766,7 @@ export default function ManualBelegeForm({
             <ManualBelegeFormFields
               accounts={accounts}
               projects={projects}
+              suppliers={suppliers}
               receipt={receipt}
               onSuccess={() => setOpen(false)}
               onCancel={() => setOpen(false)}

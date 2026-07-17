@@ -5,6 +5,7 @@ import {
   ManualBelegeFormFields,
   type EditableReceipt,
   type ProjectOption,
+  type SupplierOption,
 } from "@/components/ManualBelegeForm";
 
 interface AccountOption {
@@ -22,6 +23,7 @@ export default function BelegDetailModal({
   receipt,
   accounts,
   projects,
+  suppliers,
   title,
   hasFile = true,
   extraFooter,
@@ -31,6 +33,7 @@ export default function BelegDetailModal({
   receipt: EditableReceipt;
   accounts: AccountOption[];
   projects: ProjectOption[];
+  suppliers: SupplierOption[];
   /** Fenstertitel (Standard: "Beleg #<id>"). */
   title?: string;
   /** Ob ein PDF/Bild hinterlegt ist (sonst Platzhalter statt Vorschau). */
@@ -79,6 +82,7 @@ export default function BelegDetailModal({
             <ManualBelegeFormFields
               accounts={accounts}
               projects={projects}
+              suppliers={suppliers}
               receipt={receipt}
               formClassName="grid grid-cols-1 gap-3"
             />

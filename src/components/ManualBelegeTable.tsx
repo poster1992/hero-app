@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { setBelegPaidAction } from "@/app/dashboard/belege/manual-actions";
 import BelegEditButton from "@/components/BelegEditButton";
 import DeleteBelegButton from "@/components/DeleteBelegButton";
-import type { ProjectOption } from "@/components/ManualBelegeForm";
+import type { ProjectOption, SupplierOption } from "@/components/ManualBelegeForm";
 import type { ManualReceipt } from "@/lib/manual-receipts";
 
 type AccountOption = { number: string; name: string };
@@ -176,11 +176,13 @@ export default function ManualBelegeTable({
   rows,
   accounts,
   projects,
+  suppliers,
   periodLabel,
 }: {
   rows: BelegRow[];
   accounts: AccountOption[];
   projects: ProjectOption[];
+  suppliers: SupplierOption[];
   periodLabel: string;
 }) {
   const [text, setText] = useState<Record<TextCol, string>>({
@@ -424,7 +426,7 @@ export default function ManualBelegeTable({
                   </td>
                   <td className="px-3 py-1.5">
                     <div className="flex items-center gap-1.5">
-                      <BelegEditButton accounts={accounts} projects={projects} receipt={r} hasFile={r.hasFile} />
+                      <BelegEditButton accounts={accounts} projects={projects} suppliers={suppliers} receipt={r} hasFile={r.hasFile} />
                       <DeleteBelegButton id={r.id} label={r.supplier ?? r.description ?? `Beleg ${r.id}`} />
                     </div>
                   </td>
