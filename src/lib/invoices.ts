@@ -6,6 +6,7 @@ import {
   type ReceiptProjectMatch,
   type CustomerInvoice,
 } from "./hero-api";
+import { getManualCostNetByProject } from "./manual-receipts";
 
 /** URL of the internal proxy that streams a HERO document (PDF/image) with auth. */
 export function getDocumentUrl(src: string): string {
@@ -262,12 +263,14 @@ export function summarizeInvoices(invoices: CustomerInvoice[]): InvoicesSummary 
 /**
  * Net cost per project: Belege (Receipt type "output") minus supplier credit
  * notes / Gutschriften (Receipt type "income"), summed over all positions.
+ * Enthält zusätzlich die einem Projekt zugeordneten MANUELLEN Belege (netto),
+ * damit deren Kosten ebenfalls ins „Ist-Material" der Baustelle einfließen.
  */
 export async function getCostNetByProject(): Promise<Map<number, number>> {
-  const receipts = await getReceiptsInRange(
-    "2000-01-01T00:00:00Z",
-    "2100-12-31T23:59:59Z"
-  );
+  const [receipts, manualByProject] = await Promise.all([
+    getReceiptsInRange("2000-01-01T00:00:00Z", "2100-12-31T23:59:59Z"),
+    getManualCostNetByProject().catch(() => new Map<number, number>()),
+  ]);
   const byProject = new Map<number, number>();
   for (const r of receipts) {
     // Belege add to cost; Gutschriften/credit notes (income) reduce it.
@@ -281,6 +284,10 @@ export async function getCostNetByProject(): Promise<Map<number, number>> {
         (byProject.get(p.projectMatch.id) ?? 0) + contribution
       );
     }
+  }
+  // Manuelle Belege (netto) je Projekt hinzurechnen.
+  for (const [pid, net] of manualByProject) {
+    byProject.set(pid, (byProject.get(pid) ?? 0) + net);
   }
   for (const [k, v] of byProject) byProject.set(k, round2(v));
   return byProject;

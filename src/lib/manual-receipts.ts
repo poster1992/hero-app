@@ -451,6 +451,25 @@ export async function searchManualOcrIds(query: string): Promise<Set<number>> {
   return new Set((rows as { id: number }[]).map((r) => r.id));
 }
 
+/**
+ * Netto-Kosten je Projekt aus manuellen Belegen (HERO project_match id → Netto-Summe).
+ * Für das „Ist-Material" der Baustellen – analog zu den HERO-Belegpositionen.
+ * Vertrauliche Belege (Lohn) zählen NICHT als Material. Netto = brutto / (1 + MwSt%).
+ */
+export async function getManualCostNetByProject(): Promise<Map<number, number>> {
+  const [rows] = await getPool().query<RowDataPacket[]>(
+    `SELECT project_id AS pid, SUM(gross / (1 + COALESCE(vat_rate, 0) / 100)) AS net
+       FROM manual_receipts
+      WHERE project_id IS NOT NULL AND confidential = 0
+      GROUP BY project_id`
+  );
+  const m = new Map<number, number>();
+  for (const r of rows as { pid: number; net: string | number | null }[]) {
+    m.set(Number(r.pid), Math.round(Number(r.net ?? 0) * 100) / 100);
+  }
+  return m;
+}
+
 /** Manuelle Belege, die einem Projekt (HERO project_match id) zugeordnet sind. */
 export async function listManualReceiptsByProject(projectId: number): Promise<ManualReceipt[]> {
   const [rows] = await getPool().query<ReceiptRow[]>(
