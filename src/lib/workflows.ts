@@ -48,6 +48,12 @@ export interface WorkflowConfig {
    * (Verkettung Rechnungsbuchung → Rechnungsprüfung).
    */
   chainReview: boolean;
+  /**
+   * Nur Rechnungsprüfung (new_beleg + review): Split nach Buchungskonto.
+   * Belege des jeweiligen Kontos gehen an den zugeordneten Prüfer; alle anderen
+   * Konten an den Standard-Prüfer (`assigneeId`).
+   */
+  accountReviewers: { account: string; assigneeId: number }[];
 
   // --- Nur „logbuch_abschluss" ---
   /** Stichwort im Logbuch-Eintrag, das die Regel auslöst (Default „Baustelle fertig"). */
@@ -127,6 +133,11 @@ function parseConfig(value: unknown): WorkflowConfig {
         : null,
     excludeManual: o.excludeManual === true,
     chainReview: o.chainReview === true,
+    accountReviewers: Array.isArray(o.accountReviewers)
+      ? o.accountReviewers
+          .map((m) => ({ account: String(m?.account ?? "").trim(), assigneeId: Number(m?.assigneeId) }))
+          .filter((m) => m.account !== "" && Number.isFinite(m.assigneeId) && m.assigneeId > 0)
+      : [],
     keyword: o.keyword != null && String(o.keyword).trim() ? String(o.keyword).trim() : null,
     customerFilters: Array.isArray(o.customerFilters)
       ? o.customerFilters.map((s) => String(s).trim()).filter(Boolean)

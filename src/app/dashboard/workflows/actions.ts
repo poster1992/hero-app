@@ -56,6 +56,26 @@ async function requireAdmin(): Promise<number | null> {
   }
 }
 
+/** Liest die Buchungskonto→Prüfer-Zuordnungen (JSON-Hidden-Input) defensiv ein. */
+function parseAccountReviewers(v: FormDataEntryValue | null): { account: string; assigneeId: number }[] {
+  try {
+    const raw = JSON.parse(String(v ?? "[]"));
+    if (!Array.isArray(raw)) return [];
+    const seen = new Set<string>();
+    return raw
+      .map((m) => ({ account: String(m?.account ?? "").trim(), assigneeId: Number(m?.assigneeId) }))
+      .filter((m) => {
+        if (!m.account || !Number.isFinite(m.assigneeId) || m.assigneeId <= 0) return false;
+        if (seen.has(m.account)) return false; // je Konto nur eine Zuordnung
+        seen.add(m.account);
+        return true;
+      })
+      .slice(0, 200);
+  } catch {
+    return [];
+  }
+}
+
 function readConfig(formData: FormData): WorkflowConfig {
   const num = (v: FormDataEntryValue | null) => {
     const s = String(v ?? "").trim().replace(",", ".");
@@ -82,6 +102,8 @@ function readConfig(formData: FormData): WorkflowConfig {
     excludedAssigneeId: Number(formData.get("excludedAssigneeId")) > 0 ? Number(formData.get("excludedAssigneeId")) : null,
     excludeManual: formData.get("excludeManual") === "on" || formData.get("excludeManual") === "1",
     chainReview: formData.get("chainReview") === "on" || formData.get("chainReview") === "1",
+    // Rechnungsprüfung: Buchungskonto → Prüfer (JSON aus dem UI-Editor).
+    accountReviewers: parseAccountReviewers(formData.get("accountReviewers")),
     // --- logbuch_abschluss ---
     keyword: String(formData.get("keyword") ?? "").trim() || null,
     customerFilters: Array.from(

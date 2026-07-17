@@ -522,6 +522,20 @@ function effectiveAssignee(c: WorkflowConfig, supplier: string): number {
 }
 
 /**
+ * Prüfer für die Rechnungsprüfung: Split nach Buchungskonto. Ist das Konto des
+ * Belegs einem Prüfer zugeordnet, geht die Prüfung an diesen; sonst an den
+ * Standard-Prüfer (`assigneeId`).
+ */
+function reviewerForAccount(c: WorkflowConfig, account: string | null | undefined): number {
+  const acc = (account ?? "").trim();
+  if (acc) {
+    const m = c.accountReviewers.find((r) => r.account === acc);
+    if (m) return m.assigneeId;
+  }
+  return c.assigneeId;
+}
+
+/**
  * Verkettung Rechnungsbuchung → Rechnungsprüfung: Wird eine vom „Rechnungsbuchung"-
  * Workflow (Auslöser new_manual_beleg, chainReview aktiv) erzeugte Aufgabe auf
  * „erledigt" gesetzt, wird für denselben manuellen Beleg automatisch eine
@@ -552,7 +566,8 @@ export async function startReviewChainForManualTask(task: {
   // Vertrauliche Belege (Lohn o. Ä.) NIE in die Rechnungsprüfung geben.
   if (beleg?.confidential) return;
   const supplier = beleg?.supplier ?? "";
-  const assignee = effectiveAssignee(reviewWf.config, supplier);
+  // Split nach Buchungskonto → zuständiger Prüfer (sonst Standard-Prüfer).
+  const assignee = reviewerForAccount(reviewWf.config, beleg?.accountNumber);
   if (!assignee) return;
 
   // Idempotenz: je Beleg nur einmal starten (an der Rechnungsprüfungs-Regel gemerkt).

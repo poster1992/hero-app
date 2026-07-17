@@ -10,7 +10,7 @@ import {
   type WorkflowRun,
 } from "@/lib/workflows";
 import { getDistinctSuppliers } from "@/lib/invoices";
-import { getCustomers } from "@/lib/hero-api";
+import { getCustomers, getBookAccounts } from "@/lib/hero-api";
 import WorkflowsManager from "@/components/WorkflowsManager";
 
 export default async function WorkflowsPage() {
@@ -31,6 +31,7 @@ export default async function WorkflowsPage() {
   let users: { id: number; name: string }[] = [];
   let suppliers: string[] = [];
   let customers: string[] = [];
+  let accounts: { number: string; name: string }[] = [];
   try {
     const [wf, lg, rn, us] = await Promise.all([
       listWorkflows(),
@@ -58,6 +59,11 @@ export default async function WorkflowsPage() {
   } catch {
     // Kundenliste optional
   }
+  try {
+    accounts = (await getBookAccounts()).map((a) => ({ number: a.number, name: a.name }));
+  } catch {
+    // Kontenliste optional
+  }
 
   return (
     <div className="flex w-full max-w-full flex-1 flex-col gap-6 px-6 py-8">
@@ -68,7 +74,7 @@ export default async function WorkflowsPage() {
           (serverseitig) sowie bei App-Nutzung. Jeder Lauf wird in der Dienst-Historie protokolliert.
         </p>
       </header>
-      <WorkflowsManager workflows={workflows} users={users} log={log} runs={runs} suppliers={suppliers} customers={customers} />
+      <WorkflowsManager workflows={workflows} users={users} log={log} runs={runs} suppliers={suppliers} customers={customers} accounts={accounts} />
     </div>
   );
 }

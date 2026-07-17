@@ -20,6 +20,11 @@ interface UserOption {
   name: string;
 }
 
+interface AccountOption {
+  number: string;
+  name: string;
+}
+
 const inputClass =
   "w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-brand-red/60";
 
@@ -152,11 +157,98 @@ function UserMultiSelect({ name, users, selected }: { name: string; users: UserO
   );
 }
 
+/**
+ * Rechnungsprüfung: Split nach Buchungskonto → Prüfer. Mehrere Zeilen
+ * (Konto → Person); alle nicht zugeordneten Konten gehen an den Standard-Prüfer.
+ * Serialisiert als JSON im versteckten Feld `accountReviewers`.
+ */
+function AccountReviewerMap({
+  accounts,
+  users,
+  initial,
+}: {
+  accounts: AccountOption[];
+  users: UserOption[];
+  initial: { account: string; assigneeId: number }[];
+}) {
+  const [rows, setRows] = useState<{ account: string; assigneeId: number }[]>(
+    initial.length > 0 ? initial : [{ account: "", assigneeId: 0 }]
+  );
+  const valid = rows.filter((r) => r.account && r.assigneeId > 0);
+  const update = (i: number, patch: Partial<{ account: string; assigneeId: number }>) =>
+    setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  const add = () => setRows((rs) => [...rs, { account: "", assigneeId: 0 }]);
+  const remove = (i: number) => setRows((rs) => (rs.length > 1 ? rs.filter((_, j) => j !== i) : rs));
+  const accountLabel = (num: string) => {
+    const a = accounts.find((x) => x.number === num);
+    return a ? `${a.number} · ${a.name}` : num;
+  };
+
+  return (
+    <div>
+      <input type="hidden" name="accountReviewers" value={JSON.stringify(valid)} />
+      <div className="flex flex-col gap-2">
+        {rows.map((r, i) => (
+          <div key={i} className="flex flex-wrap items-center gap-2">
+            <select
+              value={r.account}
+              onChange={(e) => update(i, { account: e.target.value })}
+              className={`${inputClass} min-w-[14rem] flex-1`}
+            >
+              <option value="">Buchungskonto wählen …</option>
+              {r.account && !accounts.some((a) => a.number === r.account) && (
+                <option value={r.account}>{accountLabel(r.account)}</option>
+              )}
+              {accounts.map((a) => (
+                <option key={a.number} value={a.number}>
+                  {a.number} · {a.name}
+                </option>
+              ))}
+            </select>
+            <span className="text-gray-400" aria-hidden>
+              →
+            </span>
+            <select
+              value={r.assigneeId}
+              onChange={(e) => update(i, { assigneeId: Number(e.target.value) })}
+              className={`${inputClass} min-w-[10rem] flex-1`}
+            >
+              <option value={0}>Prüfer wählen …</option>
+              {users.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => remove(i)}
+              className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-500 hover:border-brand-red/50 hover:text-brand-red"
+              aria-label="Zeile entfernen"
+              title="Zeile entfernen"
+            >
+              ✕
+            </button>
+          </div>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={add}
+        className="mt-2 rounded-md border border-gray-300 px-3 py-1 text-xs font-medium text-gray-700 hover:border-brand-red/50 hover:text-gray-900"
+      >
+        + Konto-Zuordnung
+      </button>
+    </div>
+  );
+}
+
 /** Felder einer Regel (Auslöser → Aktion „Aufgabe erstellen"). */
 function RuleFields({
   users,
   suppliers,
   customers,
+  accounts,
   name,
   cfg,
   triggerKey = "new_beleg",
@@ -165,6 +257,7 @@ function RuleFields({
   users: UserOption[];
   suppliers: string[];
   customers: string[];
+  accounts: AccountOption[];
   name?: string;
   cfg?: Partial<WorkflowConfig>;
   triggerKey?: string;
@@ -476,8 +569,22 @@ function RuleFields({
         </div>
       )}
 
-      {/* Split nach Lieferant: ausgewaehlte Lieferanten gehen an einen anderen Bearbeiter */}
-      {!isRecurring && !isLogbuch && (
+      {/* Rechnungsprüfung: Split nach Buchungskonto → Prüfer */}
+      {isReview && (
+        <div className="sm:col-span-2 rounded-md border border-gray-200 p-3">
+          <p className="mb-2 text-sm font-medium text-gray-700">
+            Prüfer nach Buchungskonto <span className="font-normal text-gray-400">(optional)</span>
+          </p>
+          <AccountReviewerMap accounts={accounts} users={users} initial={cfg?.accountReviewers ?? []} />
+          <p className="mt-2 text-xs text-gray-400">
+            Belege des jeweiligen Buchungskontos gehen zur Prüfung an die zugeordnete Person; alle anderen
+            Konten an den Prüfer oben.
+          </p>
+        </div>
+      )}
+
+      {/* Split nach Lieferant (nicht-Review): ausgewaehlte Lieferanten an einen anderen Bearbeiter */}
+      {!isRecurring && !isLogbuch && !isReview && (
         <div className="sm:col-span-2 rounded-md border border-gray-200 p-3">
           <p className="mb-2 text-sm font-medium text-gray-700">
             Lieferanten-Split <span className="font-normal text-gray-400">(optional)</span>
@@ -506,9 +613,7 @@ function RuleFields({
             </div>
           </div>
           <p className="mt-1 text-xs text-gray-400">
-            {isReview
-              ? "Belege dieser Lieferanten gehen zur Prüfung an die hier gewählte Person, alle anderen an den Prüfer oben."
-              : "Vorgänge dieser Lieferanten gehen an die hier gewählte Person, alle anderen an den Bearbeiter oben."}
+            Vorgänge dieser Lieferanten gehen an die hier gewählte Person, alle anderen an den Bearbeiter oben.
           </p>
         </div>
       )}
@@ -541,11 +646,13 @@ function WorkflowRow({
   users,
   suppliers,
   customers,
+  accounts,
 }: {
   wf: Workflow;
   users: UserOption[];
   suppliers: string[];
   customers: string[];
+  accounts: AccountOption[];
 }) {
   const [editing, setEditing] = useState(false);
   const assignee = users.find((u) => u.id === wf.config.assigneeId)?.name ?? `#${wf.config.assigneeId}`;
@@ -558,7 +665,7 @@ function WorkflowRow({
       <li className="bg-gray-50 px-5 py-4">
         <form action={updateWorkflowAction} className="flex flex-col gap-3">
           <input type="hidden" name="id" value={wf.id} />
-          <RuleFields users={users} suppliers={suppliers} customers={customers} name={wf.name} cfg={wf.config} triggerKey={wf.triggerKey} />
+          <RuleFields users={users} suppliers={suppliers} customers={customers} accounts={accounts} name={wf.name} cfg={wf.config} triggerKey={wf.triggerKey} />
           <div className="flex items-center gap-2">
             <button type="submit" className="rounded-md bg-brand-red px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90">
               Speichern
@@ -757,6 +864,7 @@ export default function WorkflowsManager({
   runs,
   suppliers,
   customers,
+  accounts,
 }: {
   workflows: Workflow[];
   users: UserOption[];
@@ -764,6 +872,7 @@ export default function WorkflowsManager({
   runs: WorkflowRun[];
   suppliers: string[];
   customers: string[];
+  accounts: AccountOption[];
 }) {
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<"liste" | "diagramm">("liste");
@@ -824,7 +933,7 @@ export default function WorkflowsManager({
 
         {open && (
           <form action={formAction} className="flex flex-col gap-3 border-b border-gray-200 px-5 py-4">
-            <RuleFields users={users} suppliers={suppliers} customers={customers} editableTrigger />
+            <RuleFields users={users} suppliers={suppliers} customers={customers} accounts={accounts} editableTrigger />
 
             <div className="flex items-center gap-3">
               <button type="submit" disabled={pending} className="rounded-md bg-brand-red px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
@@ -841,7 +950,7 @@ export default function WorkflowsManager({
         ) : view === "liste" ? (
           <ul className="divide-y divide-gray-200">
             {workflows.map((wf) => (
-              <WorkflowRow key={wf.id} wf={wf} users={users} suppliers={suppliers} customers={customers} />
+              <WorkflowRow key={wf.id} wf={wf} users={users} suppliers={suppliers} customers={customers} accounts={accounts} />
             ))}
           </ul>
         ) : (
