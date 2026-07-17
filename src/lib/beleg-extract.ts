@@ -72,19 +72,23 @@ export interface BelegSumResult {
   skontoDueDate?: string;
   /** Vollständiger, lesbarer Belegtext für die Volltextsuche (aus demselben KI-Lauf). */
   fullText?: string;
+  /** Nötige Drehung im Uhrzeigersinn (0/90/180/270), um einen falsch gescannten Beleg aufzurichten. */
+  rotation?: 0 | 90 | 180 | 270;
   error?: string;
 }
 
 /**
  * Zusatz zum Extraktions-Prompt: liefert im selben KI-Lauf zusätzlich den
- * vollständigen Belegtext, damit beim Posteingang-Import nicht später ein
- * zweiter OCR-Durchlauf nur für die Volltextsuche nötig ist.
+ * vollständigen Belegtext (für die Volltextsuche, spart den zweiten OCR-Lauf)
+ * sowie die nötige Drehung, falls der Beleg falsch/verdreht gescannt wurde.
  */
 const VOLLTEXT_SUFFIX =
-  ' ZUSÄTZLICH: Nimm in dasselbe JSON-Objekt auf oberster Ebene das Feld "volltext" auf – ' +
-  "der vollständige, fortlaufend lesbare Klartext des gesamten Belegs (alle Textzeilen der " +
-  "Rechnung, für eine spätere Volltextsuche), als EIN String; wenn nichts Lesbares vorhanden " +
-  "ist: null. Alle oben geforderten Felder unverändert beibehalten.";
+  ' ZUSÄTZLICH: Nimm in dasselbe JSON-Objekt auf oberster Ebene diese Felder auf: ' +
+  '"volltext" = der vollständige, fortlaufend lesbare Klartext des gesamten Belegs (alle ' +
+  "Textzeilen, für eine spätere Volltextsuche) als EIN String, oder null wenn nichts lesbar ist; " +
+  '"drehung" = die Drehung IM UHRZEIGERSINN in Grad, die nötig ist, um den – evtl. falsch oder ' +
+  "verdreht eingescannten – Beleg aufrecht und normal lesbar zu machen: 0 (bereits korrekt), 90, " +
+  "180 (steht auf dem Kopf) oder 270. Alle oben geforderten Felder unverändert beibehalten.";
 
 /** Anzeigename je Belegtyp. */
 export const KIND_LABEL: Record<BelegSumKind, string> = {
@@ -578,6 +582,7 @@ export async function extractBeleg(input: {
       skonto_zahlbetrag?: unknown;
       skonto_zahlungsziel?: unknown;
       volltext?: unknown;
+      drehung?: unknown;
     };
     const seiten = parsed.seiten ?? [];
     // Nicht-Null-Beträge (bei Activité kann ein NK-Guthaben negativ sein).
@@ -632,6 +637,10 @@ export async function extractBeleg(input: {
     const vt = String(parsed.volltext ?? "").trim();
     if (vt && vt.toLowerCase() !== "null") fullText = vt.slice(0, 40000);
 
+    // Nötige Drehung (im Uhrzeigersinn), falls der Beleg falsch gescannt wurde.
+    const rotRaw = Number(parsed.drehung);
+    const rotation: 0 | 90 | 180 | 270 = rotRaw === 90 || rotRaw === 180 || rotRaw === 270 ? rotRaw : 0;
+
     // Lieferant: bevorzugt der kanonische HERO-Name (fester Suchbegriff je Typ, sonst OCR-Name).
     let supplier: string | undefined;
     const ocrSupplier = String(parsed.lieferant ?? "").trim();
@@ -682,6 +691,7 @@ export async function extractBeleg(input: {
       skontoPayAmount,
       skontoDueDate,
       fullText,
+      rotation,
     };
   } catch (e) {
     return { ok: false, error: aiErrorMessage(e, "OCR fehlgeschlagen.") };

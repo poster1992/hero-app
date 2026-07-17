@@ -2,6 +2,9 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  // jimp/pdf-lib (Beleg-Auto-Drehung) als externe Server-Pakete behandeln, damit
+  // sie im Standalone-Output vollständig vorhanden sind (kein verpasstes Tracing).
+  serverExternalPackages: ["jimp", "pdf-lib"],
   experimental: {
     // Datei-Uploads laufen über Server Actions – Standardlimit (1 MB) anheben,
     // damit Belege/Fotos/Krankmeldungen (bis 25 MB) hochgeladen werden können.

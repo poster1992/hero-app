@@ -7,6 +7,7 @@ import { getAllowedModules } from "@/lib/role-store";
 import { getBookAccounts } from "@/lib/hero-api";
 import { createManualReceipt } from "@/lib/manual-receipts";
 import { extractBeleg } from "@/lib/beleg-extract";
+import { rotateBuffer } from "@/lib/auto-rotate";
 
 const PATH = "/dashboard/belege";
 const MAX_SIZE = 25 * 1024 * 1024;
@@ -93,6 +94,10 @@ export async function ingestInboxBelegeAction(formData: FormData): Promise<Inbox
       const accountName = accountNumber
         ? accountNameByNumber.get(accountNumber) ?? ex.accountName ?? null
         : null;
+      // Falsch/verdreht gescannte Belege automatisch aufrichten (0 = keine Drehung).
+      const fileToSave = ex.rotation
+        ? { buffer: await rotateBuffer(buffer, mime, ex.rotation), originalName: name, mime }
+        : file;
       try {
         await createManualReceipt({
           date: ex.date ?? null,
@@ -102,7 +107,7 @@ export async function ingestInboxBelegeAction(formData: FormData): Promise<Inbox
           vatRate: ex.vatRate ?? null,
           accountNumber,
           accountName,
-          file,
+          file: fileToSave,
           uploadedBy: user.id,
           source: "inbox",
           invoiceNumber: ex.invoiceNumber ?? null,
