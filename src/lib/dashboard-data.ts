@@ -57,6 +57,8 @@ export interface GuvExpenseEntry {
   source: "hero" | "manuell";
   /** Link zum Beleg-PDF, falls vorhanden. */
   docUrl: string | null;
+  /** ID des manuellen Belegs (für „Bearbeiten"); null bei HERO-Belegen. */
+  receiptId: number | null;
 }
 
 export interface GuvAccountRow {
@@ -292,6 +294,7 @@ export async function getDashboardData(year: number): Promise<DashboardData> {
         net: round2(net),
         source: "hero",
         docUrl: heroDocUrl,
+        receiptId: null,
       });
       expenseEntriesByAccount.set(key, list);
     }
@@ -346,6 +349,7 @@ export async function getDashboardData(year: number): Promise<DashboardData> {
         net: effNet,
         source: "manuell",
         docUrl: r.hasFile ? `/api/beleg?id=${r.id}` : null,
+        receiptId: r.id,
       });
       expenseEntriesByAccount.set(key, list);
     }

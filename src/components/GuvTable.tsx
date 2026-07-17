@@ -1,6 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
+import BelegDetailModal from "@/components/BelegDetailModal";
+import { loadBelegEditDataAction, type BelegEditData } from "@/app/dashboard/belege/manual-actions";
 import type { GuvData, GuvAccountRow } from "@/lib/dashboard-data";
 
 const MONTH_LABELS = [
@@ -189,6 +192,49 @@ export default function GuvTable({ guv, year }: { guv: GuvData; year: number }) 
   );
 }
 
+/** „Bearbeiten"-Aktion für einen manuellen Beleg: lädt Werte + öffnet das PDF/Formular-Fenster. */
+function BelegEditAction({ receiptId }: { receiptId: number }) {
+  const router = useRouter();
+  const [data, setData] = useState<BelegEditData | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const open = async () => {
+    setLoading(true);
+    try {
+      const d = await loadBelegEditDataAction(receiptId);
+      if (d.receipt) setData(d);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={open}
+        disabled={loading}
+        className="rounded-md border border-gray-300 px-2 py-0.5 text-xs font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900 disabled:opacity-50"
+      >
+        {loading ? "…" : "Bearbeiten"}
+      </button>
+      {data?.receipt && (
+        <BelegDetailModal
+          belegId={data.receipt.id}
+          receipt={data.receipt}
+          accounts={data.accounts}
+          projects={data.projects}
+          hasFile={!!data.receipt.fileName}
+          onClose={() => {
+            setData(null);
+            router.refresh(); // GuV-Zahlen nach evtl. Änderung aktualisieren
+          }}
+        />
+      )}
+    </>
+  );
+}
+
 function GuvDetailModal({
   detail,
   year,
@@ -270,18 +316,21 @@ function GuvDetailModal({
                       {fmt.format(e.net)}
                     </td>
                     <td className="py-2">
-                      {e.docUrl ? (
-                        <a
-                          href={e.docUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-brand-red hover:underline"
-                        >
-                          ansehen
-                        </a>
-                      ) : (
-                        <span className="text-gray-400">—</span>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {e.docUrl ? (
+                          <a
+                            href={e.docUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-brand-red hover:underline"
+                          >
+                            ansehen
+                          </a>
+                        ) : (
+                          <span className="text-gray-400">—</span>
+                        )}
+                        {e.receiptId != null && <BelegEditAction receiptId={e.receiptId} />}
+                      </div>
                     </td>
                   </tr>
                 ))}
