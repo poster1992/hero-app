@@ -263,8 +263,23 @@ export function ManualBelegeFormFields({
   })();
 
   const projectMatches = (() => {
-    const words = projectQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
-    if (words.length === 0 || project) return [];
+    const raw = projectQuery.trim().toLowerCase();
+    if (raw === "" || project) return [];
+    // Reine Nummernsuche (auch mit Präfix „#", „PRJ", „Nr"): nur nach Projekt-Nr.
+    const asNumber = raw.replace(/^(prj|projekt|nr|#)[-.\s]*/i, "").replace(/[#\s]/g, "");
+    if (/^\d+$/.test(asNumber)) {
+      const rank = (r: string) => (r === asNumber ? 0 : r.startsWith(asNumber) ? 1 : 2);
+      return projects
+        .filter((p) => p.relativeId != null && String(p.relativeId).includes(asNumber))
+        .sort((a, b) => {
+          const ra = String(a.relativeId);
+          const rb = String(b.relativeId);
+          return rank(ra) - rank(rb) || (a.relativeId ?? 0) - (b.relativeId ?? 0);
+        })
+        .slice(0, 12);
+    }
+    // Sonst Wortsuche über Nummer + Name + Kunde.
+    const words = raw.split(/\s+/).filter(Boolean);
     return projects
       .filter((p) => {
         const hay = `${p.relativeId ?? ""} ${p.name} ${p.customerName ?? ""}`.toLowerCase();
