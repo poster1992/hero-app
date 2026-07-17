@@ -32,11 +32,18 @@ export interface ManualOcrBackfillResult {
   error?: string;
 }
 
+/**
+ * Sentinel für „OCR gelaufen, aber kein (verwertbarer) Text". Bewusst nicht leer,
+ * damit der Beleg nicht bei jedem Lauf erneut versucht wird (Endlosschleife).
+ * Ein einzelnes Leerzeichen matcht keine echte Suchanfrage.
+ */
+const NO_TEXT = " ";
+
 /** Liest den Volltext eines Belegs per OCR (für die Volltextsuche). */
 async function ocrText(client: Anthropic, id: number): Promise<number> {
   const file = await getManualReceiptFile(id);
   if (!file) {
-    await setManualReceiptOcrText(id, "");
+    await setManualReceiptOcrText(id, NO_TEXT);
     return 0;
   }
   const mime = file.mime || "application/pdf";
@@ -71,7 +78,7 @@ async function ocrText(client: Anthropic, id: number): Promise<number> {
   );
   const tb = res.content.find((b) => b.type === "text");
   const text = tb && tb.type === "text" ? tb.text.trim() : "";
-  await setManualReceiptOcrText(id, text || "");
+  await setManualReceiptOcrText(id, text || NO_TEXT);
   return cost;
 }
 
@@ -99,9 +106,9 @@ export async function runManualOcrBackfillCore(): Promise<ManualOcrBackfillResul
           return await ocrText(client, id);
         } catch (e) {
           if (isCreditError(e)) throw e; // globaler Guthaben-Fehler → Batch abbrechen, Beleg NICHT als erledigt markieren
-          // Bei anderem Fehler leeren Text setzen, damit nicht endlos neu versucht wird.
+          // Bei anderem Fehler Sentinel setzen, damit nicht endlos neu versucht wird.
           try {
-            await setManualReceiptOcrText(id, "");
+            await setManualReceiptOcrText(id, NO_TEXT);
           } catch {
             /* ignore */
           }

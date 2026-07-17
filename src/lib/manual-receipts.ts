@@ -408,10 +408,14 @@ export async function deleteManualReceipt(id: number): Promise<void> {
   }
 }
 
-/** IDs manueller Belege mit Datei, aber noch ohne OCR-Volltext (für die Indexierung). */
+/**
+ * IDs manueller Belege mit Datei, aber noch ohne OCR-Volltext (für die Indexierung).
+ * Vertrauliche Belege (Lohn o. Ä., confidential=1) werden bewusst ausgeschlossen –
+ * ihr Inhalt soll nicht durchsuchbar sein.
+ */
 export async function listManualReceiptIdsNeedingOcr(): Promise<number[]> {
   const [rows] = await getPool().query<RowDataPacket[]>(
-    "SELECT id FROM manual_receipts WHERE stored_name IS NOT NULL AND (ocr_text IS NULL OR ocr_text = '')"
+    "SELECT id FROM manual_receipts WHERE stored_name IS NOT NULL AND confidential = 0 AND (ocr_text IS NULL OR ocr_text = '')"
   );
   return (rows as { id: number }[]).map((r) => r.id);
 }
@@ -428,8 +432,8 @@ export async function setManualReceiptOcrText(id: number, text: string | null): 
 export async function getManualOcrStatus(): Promise<{ total: number; done: number }> {
   const [rows] = await getPool().query<RowDataPacket[]>(
     `SELECT
-       SUM(stored_name IS NOT NULL) AS total,
-       SUM(stored_name IS NOT NULL AND ocr_text IS NOT NULL AND ocr_text <> '') AS done
+       SUM(stored_name IS NOT NULL AND confidential = 0) AS total,
+       SUM(stored_name IS NOT NULL AND confidential = 0 AND ocr_text IS NOT NULL AND ocr_text <> '') AS done
      FROM manual_receipts`
   );
   const r = (rows as { total: number | null; done: number | null }[])[0];
@@ -441,7 +445,7 @@ export async function searchManualOcrIds(query: string): Promise<Set<number>> {
   const q = query.trim();
   if (!q) return new Set();
   const [rows] = await getPool().query<RowDataPacket[]>(
-    "SELECT id FROM manual_receipts WHERE ocr_text LIKE ? LIMIT 5000",
+    "SELECT id FROM manual_receipts WHERE confidential = 0 AND ocr_text LIKE ? LIMIT 5000",
     [`%${q}%`]
   );
   return new Set((rows as { id: number }[]).map((r) => r.id));

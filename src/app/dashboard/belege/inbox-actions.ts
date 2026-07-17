@@ -98,6 +98,9 @@ export async function ingestInboxBelegeAction(formData: FormData): Promise<Inbox
       const fileToSave = ex.rotation
         ? { buffer: await rotateBuffer(buffer, mime, ex.rotation), originalName: name, mime }
         : file;
+      // Löhne o. Ä. als vertraulich markieren → keine Buchungsaufgabe/Rechnungsprüfung
+      // UND kein Volltext (Lohn-Inhalte dürfen nicht durchsuchbar sein).
+      const confidential = isConfidentialBeleg(ex.kind, accountName);
       try {
         await createManualReceipt({
           date: ex.date ?? null,
@@ -114,10 +117,9 @@ export async function ingestInboxBelegeAction(formData: FormData): Promise<Inbox
           skontoAmount: ex.skontoAmount ?? null,
           skontoPayAmount: ex.skontoPayAmount ?? null,
           skontoDueDate: ex.skontoDueDate ?? null,
-          // Volltext aus demselben KI-Lauf → sofort durchsuchbar, kein zweiter OCR-Durchlauf.
-          ocrText: ex.fullText ?? null,
-          // Löhne o. Ä. als vertraulich markieren → keine Buchungsaufgabe/Rechnungsprüfung.
-          confidential: isConfidentialBeleg(ex.kind, accountName),
+          // Volltext aus demselben KI-Lauf → sofort durchsuchbar (nicht bei vertraulichen).
+          ocrText: confidential ? null : ex.fullText ?? null,
+          confidential,
         });
         created++;
         results.push({
