@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { setBelegPaidAction } from "@/app/dashboard/belege/manual-actions";
 import BelegEditButton from "@/components/BelegEditButton";
@@ -25,9 +25,28 @@ function PaidCell({ r }: { r: BelegRow }) {
   const router = useRouter();
   const [busy, start] = useTransition();
   const [menu, setMenu] = useState(false);
+  // Position des Auswahlmenüs (fixed, damit es nicht vom Tabellen-Container
+  // abgeschnitten wird; öffnet nach oben, wenn unten kein Platz ist).
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const [pos, setPos] = useState<{ left: number; top?: number; bottom?: number } | null>(null);
   // Skonto anbietbar, wenn ein (echt niedrigerer) Skontozahlbetrag hinterlegt ist.
   const hasSkonto = r.skontoPayAmount != null && r.skontoPayAmount < r.gross;
   const saving = hasSkonto ? r.gross - (r.skontoPayAmount as number) : 0;
+
+  const MENU_W = 224; // w-56
+  const openMenu = () => {
+    const rect = btnRef.current?.getBoundingClientRect();
+    if (rect) {
+      const left = Math.max(8, Math.min(rect.left, window.innerWidth - MENU_W - 8));
+      // Wenig Platz nach unten → nach oben öffnen.
+      if (rect.bottom > window.innerHeight - 130) {
+        setPos({ left, bottom: window.innerHeight - rect.top + 4 });
+      } else {
+        setPos({ left, top: rect.bottom + 4 });
+      }
+    }
+    setMenu(true);
+  };
 
   const setPaid = (paid: boolean, withSkonto: boolean) => {
     setMenu(false);
@@ -77,21 +96,25 @@ function PaidCell({ r }: { r: BelegRow }) {
       ) : hasSkonto ? (
         <div className="relative">
           <button
+            ref={btnRef}
             type="button"
-            onClick={() => setMenu((o) => !o)}
+            onClick={() => (menu ? setMenu(false) : openMenu())}
             disabled={busy}
             className="rounded-md border border-gray-300 px-2 py-0.5 text-xs font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900 disabled:opacity-50"
           >
             als bezahlt ▾
           </button>
-          {menu && (
+          {menu && pos && (
             <>
-              <div className="fixed inset-0 z-10" onClick={() => setMenu(false)} />
-              <div className="absolute right-0 z-20 mt-1 w-52 rounded-md border border-gray-200 bg-white py-1 shadow-lg">
+              <div className="fixed inset-0 z-40" onClick={() => setMenu(false)} />
+              <div
+                className="fixed z-50 w-56 overflow-hidden rounded-md border border-gray-200 bg-white py-1 shadow-xl"
+                style={{ left: pos.left, top: pos.top, bottom: pos.bottom }}
+              >
                 <button
                   type="button"
                   onClick={() => setPaid(true, true)}
-                  className="block w-full px-3 py-1.5 text-left text-xs text-gray-700 hover:bg-gray-50"
+                  className="block w-full px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50"
                 >
                   Mit Skonto · {currencyFormatter.format(r.skontoPayAmount as number)}
                   <span className="ml-1 text-emerald-600">(−{currencyFormatter.format(saving)})</span>
@@ -99,7 +122,7 @@ function PaidCell({ r }: { r: BelegRow }) {
                 <button
                   type="button"
                   onClick={() => setPaid(true, false)}
-                  className="block w-full px-3 py-1.5 text-left text-xs text-gray-700 hover:bg-gray-50"
+                  className="block w-full px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50"
                 >
                   Voll · {currencyFormatter.format(r.gross)}
                 </button>
