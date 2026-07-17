@@ -771,6 +771,8 @@ export default function TaskManager({
     "alle" | "offen" | "in_arbeit" | "erledigt" | "ueberfaellig"
   >("alle");
   const [search, setSearch] = useState("");
+  // Admin: standardmäßig die eigenen Aufgaben; umschaltbar auf „alle".
+  const [adminScope, setAdminScope] = useState<"mine" | "all">("mine");
   // Admin: Aufgaben einer bestimmten Person anzeigen.
   const [personId, setPersonId] = useState<number>(0);
   const [personTasks, setPersonTasks] = useState<Task[] | null>(null);
@@ -1003,6 +1005,25 @@ export default function TaskManager({
           })}
         </div>
         {isAdmin && (
+          <div className="flex overflow-hidden rounded-md border border-gray-300 text-sm">
+            {([
+              ["mine", "Meine Aufgaben"],
+              ["all", "Alle Aufgaben"],
+            ] as const).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setAdminScope(key)}
+                className={`px-3 py-1.5 font-medium transition-colors ${
+                  adminScope === key ? "bg-brand-red text-white" : "text-gray-600 hover:bg-gray-100"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+        {isAdmin && (
           <select
             value={personId}
             onChange={(e) => selectPerson(Number(e.target.value))}
@@ -1136,8 +1157,8 @@ export default function TaskManager({
         </section>
       )}
 
-      {/* Admin: alle offenen Aufgaben */}
-      {isAdmin && !completedDate && personId === 0 && (
+      {/* Admin: alle offenen Aufgaben (nur im Modus „Alle Aufgaben") */}
+      {isAdmin && !completedDate && personId === 0 && adminScope === "all" && (
         <section className="flex flex-col gap-3">
           <h2 className="text-lg font-semibold text-gray-900">
             Alle offenen Aufgaben{" "}
@@ -1160,8 +1181,9 @@ export default function TaskManager({
         </section>
       )}
 
-      {/* Eigene Listen ausblenden, wenn eine Person gefiltert oder ein Tag gewählt ist. */}
-      {!completedDate && personId === 0 && (
+      {/* Eigene Listen: im Standard „Meine Aufgaben"; ausgeblendet bei Person-/Tagesfilter
+          oder wenn der Admin auf „Alle Aufgaben" umgeschaltet hat. */}
+      {!completedDate && personId === 0 && (!isAdmin || adminScope === "mine") && (
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Mir zugewiesen */}
         <section className="flex flex-col gap-3">
