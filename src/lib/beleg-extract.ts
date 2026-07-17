@@ -447,9 +447,12 @@ const SUM_CONFIG: Record<
       "HTVA-/Netto-Wert, NICHT nur die TVA. steuersatz = der ausgewiesene TVA-/MwSt-Satz in Prozent als " +
       "Zahl (z. B. 17 für „TVA 17 %\"); wenn nicht erkennbar: null. Wenn kein Betrag vorhanden: null. " +
       "Gib zusätzlich auf oberster Ebene an: belegdatum = das Rechnungsdatum im Format YYYY-MM-DD (oder " +
-      "null); lieferant = der Name des Rechnungsstellers/Lieferanten oben auf der Rechnung (oder null). " +
+      "null); lieferant = der Name des Rechnungsstellers/Lieferanten oben auf der Rechnung (oder null); " +
+      "belegnummer = die Rechnungs-/Belegnummer der Rechnung als Text – bei BNP Paribas Lease i. d. R. eine " +
+      "11-stellige Zahl, die mit dem Jahr beginnt (z. B. „20260066370\"); Label meist „Facture N°\", " +
+      "„N° de facture\", „Numéro de facture\" oder „Numéro\"; wenn nicht erkennbar: null. " +
       'Lass KEINE Seite aus. Antworte AUSSCHLIESSLICH mit JSON: {"seiten": [ … ], "belegdatum": …, ' +
-      '"lieferant": …}. Punkt als Dezimaltrennzeichen, KEINE Tausenderpunkte. Nur JSON.',
+      '"lieferant": …, "belegnummer": …}. Punkt als Dezimaltrennzeichen, KEINE Tausenderpunkte. Nur JSON.',
   },
 };
 
