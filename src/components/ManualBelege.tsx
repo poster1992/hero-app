@@ -1,7 +1,5 @@
 import Link from "next/link";
 import { listManualReceipts, searchManualOcrIds } from "@/lib/manual-receipts";
-import { getManualOcrIndexStatus } from "@/app/dashboard/belege/manual-ocr-index";
-import ManualOcrPanel from "@/components/ManualOcrPanel";
 import { listChecklist } from "@/lib/belege-checklist";
 import { getBookAccounts, getProjects } from "@/lib/hero-api";
 import ManualBelegeForm from "@/components/ManualBelegeForm";
@@ -33,15 +31,13 @@ export default async function ManualBelege({
   let accounts: Awaited<ReturnType<typeof getBookAccounts>> = [];
   let checklist: Awaited<ReturnType<typeof listChecklist>> = [];
   let projects: Awaited<ReturnType<typeof getProjects>> = [];
-  let ocrStatus = { total: 0, done: 0 };
   let error: string | null = null;
   try {
-    [receipts, accounts, checklist, projects, ocrStatus] = await Promise.all([
+    [receipts, accounts, checklist, projects] = await Promise.all([
       listManualReceipts(year),
       getBookAccounts(),
       listChecklist(year, month),
       getProjects().catch(() => []),
-      getManualOcrIndexStatus().catch(() => ({ total: 0, done: 0 })),
     ]);
   } catch (e) {
     error = e instanceof Error ? e.message : "Manuelle Belege konnten nicht geladen werden.";
@@ -115,7 +111,6 @@ export default async function ManualBelege({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <BelegeChecklist items={checklist} year={year} month={month} periodLabel={monthLabel} />
-          <ManualOcrPanel status={ocrStatus} />
           <Link
             href="/dashboard/belege/posteingang"
             className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900"
