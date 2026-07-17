@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useMemo, useState } from "react";
+import { useActionState, useEffect, useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import {
   saveSupplierIbanAction,
   setDirectDebitAction,
@@ -18,12 +19,31 @@ export interface SupplierIbanItem {
 }
 
 function SupplierRow({ item }: { item: SupplierIbanItem }) {
+  const router = useRouter();
   const [state, action, pending] = useActionState<SaveIbanState, FormData>(
     saveSupplierIbanAction,
     {}
   );
   const [dd, setDd] = useState(item.directDebit);
+  const [, startDd] = useTransition();
   const has = item.iban.trim().length > 0;
+
+  // Nach erfolgreichem Speichern die Seite aktualisieren (Status-Punkt + Zähler).
+  useEffect(() => {
+    if (state.success) router.refresh();
+  }, [state, router]);
+
+  const toggleDirectDebit = (checked: boolean) => {
+    setDd(checked);
+    const fd = new FormData();
+    fd.set("customerId", String(item.customerId));
+    fd.set("name", item.name);
+    if (checked) fd.set("directDebit", "1");
+    startDd(async () => {
+      await setDirectDebitAction(fd);
+      router.refresh();
+    });
+  };
   return (
     <tr className="border-b border-gray-200 last:border-0 hover:bg-gray-100">
       <td className="px-4 py-2 align-middle">
@@ -86,23 +106,14 @@ function SupplierRow({ item }: { item: SupplierIbanItem }) {
         </form>
       </td>
       <td className="px-4 py-2 align-middle">
-        <form action={setDirectDebitAction}>
-          <input type="hidden" name="customerId" value={item.customerId} />
-          <input type="hidden" name="name" value={item.name} />
-          <label className="flex items-center gap-1.5 text-sm text-gray-700">
-            <input
-              type="checkbox"
-              name="directDebit"
-              value="1"
-              checked={dd}
-              onChange={(e) => {
-                setDd(e.target.checked);
-                e.currentTarget.form?.requestSubmit();
-              }}
-            />
-            Bankeinzug
-          </label>
-        </form>
+        <label className="flex items-center gap-1.5 text-sm text-gray-700">
+          <input
+            type="checkbox"
+            checked={dd}
+            onChange={(e) => toggleDirectDebit(e.target.checked)}
+          />
+          Bankeinzug
+        </label>
       </td>
     </tr>
   );
