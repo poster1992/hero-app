@@ -34,7 +34,8 @@ export type BelegSumKind =
   | "garagelosch"
   | "reifenkruetten"
   | "henrichbaustoff"
-  | "buschmannwerbung";
+  | "buschmannwerbung"
+  | "kessler";
 
 export interface BelegSumResult {
   ok: boolean;
@@ -123,6 +124,7 @@ export const KIND_LABEL: Record<BelegSumKind, string> = {
   reifenkruetten: "Reifen Krütten",
   henrichbaustoff: "Henrich Baustoffzentrum",
   buschmannwerbung: "Buschmann Werbung",
+  kessler: "M. Kessler",
 };
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -366,6 +368,12 @@ const SUM_CONFIG: Record<
     account: { number: "4530", name: "Laufende Kfz-Betriebskosten" },
     prompt: materialInvoicePrompt("Buschmann Werbung", "Fahrzeugbeschriftung / Kfz-Kosten"),
   },
+  kessler: {
+    label: "Gesamtbetrag brutto",
+    supplierSearch: "M. Kessler",
+    account: { number: "4955", name: "Buchführungskosten" },
+    prompt: materialInvoicePrompt("Firma M. Kessler", "Buchführung / Steuerberatung"),
+  },
   postdeep: {
     label: "Total TTC",
     supplierSearch: "Post Telecom",
@@ -556,6 +564,7 @@ export async function extractBeleg(input: {
                   "idealfliesen (Idealfliesen – Subunternehmer), garagelosch (Garage Losch – Kfz-Reparatur), " +
                   "reifenkruetten (Reifen Krütten – Reifen), henrichbaustoff (Henrich Baustoffzentrum – Baustoffe), " +
                   "buschmannwerbung (Buschmann Werbung – Fahrzeugbeschriftung/Kfz), " +
+                  "kessler (Firma M. Kessler – Buchführung/Steuerberatung), " +
                   "lohn (Lohnabrechnung/Lohnjournal), oder unbekannt. Nur das eine Wort, keine Erklärung.",
               },
             ],
@@ -565,7 +574,7 @@ export async function extractBeleg(input: {
       const ctb = cls.content.find((b) => b.type === "text");
       const word = ctb && ctb.type === "text" ? ctb.text.trim().toLowerCase().replace(/[^a-z]/g, "") : "";
       const detected = (
-        ["circle", "mixvoip", "bgl", "palettecad", "herosoftware", "activite", "etges", "niederer", "raabkarcher", "fliesenzentrum", "etbkenn", "kiesel", "moselbaustoff", "postdeep", "johanntrierweiler", "akemi", "maroldt", "hieronimi", "kennerbeton", "bureaucaisse", "sigre", "carlgeisen", "wohlwert", "ibod", "eon", "idealfliesen", "garagelosch", "reifenkruetten", "henrichbaustoff", "buschmannwerbung", "lohn"] as BelegSumKind[]
+        ["circle", "mixvoip", "bgl", "palettecad", "herosoftware", "activite", "etges", "niederer", "raabkarcher", "fliesenzentrum", "etbkenn", "kiesel", "moselbaustoff", "postdeep", "johanntrierweiler", "akemi", "maroldt", "hieronimi", "kennerbeton", "bureaucaisse", "sigre", "carlgeisen", "wohlwert", "ibod", "eon", "idealfliesen", "garagelosch", "reifenkruetten", "henrichbaustoff", "buschmannwerbung", "kessler", "lohn"] as BelegSumKind[]
       ).find((k) => word === k);
       if (!detected) {
         return {

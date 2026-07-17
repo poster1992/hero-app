@@ -61,7 +61,8 @@ type SumTyp =
   | "garagelosch"
   | "reifenkruetten"
   | "henrichbaustoff"
-  | "buschmannwerbung";
+  | "buschmannwerbung"
+  | "kessler";
 
 /** Bezeichnung des summierten Betrags je erkanntem Typ (für die Meldung). */
 const KIND_AMOUNT_LABEL: Record<string, string> = {
@@ -96,6 +97,7 @@ const KIND_AMOUNT_LABEL: Record<string, string> = {
   reifenkruetten: "Gesamtbetrag brutto",
   henrichbaustoff: "Gesamtbetrag brutto",
   buschmannwerbung: "Gesamtbetrag brutto",
+  kessler: "Gesamtbetrag brutto",
 };
 
 /** Subset of a manual receipt needed to prefill the edit form. */
@@ -399,6 +401,7 @@ export function ManualBelegeFormFields({
                     <option value="reifenkruetten">Typ: Reifen Krütten (Kfz)</option>
                     <option value="henrichbaustoff">Typ: Henrich Baustoffzentrum</option>
                     <option value="buschmannwerbung">Typ: Buschmann Werbung (Kfz)</option>
+                    <option value="kessler">Typ: M. Kessler (Buchführung)</option>
                   </select>
                   {isSumType && (
                     <button
