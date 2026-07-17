@@ -128,6 +128,20 @@ export const KIND_LABEL: Record<BelegSumKind, string> = {
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 /**
+ * Ist ein Beleg vertraulich (Lohn o. Ä.) und darf daher NICHT automatisch in die
+ * Rechnungsprüfung/Workflow-Automatik laufen? Erkennung über den Belegtyp „lohn"
+ * sowie über einen Lohn-/Gehalts-Kontonamen (falls jemand ein solches Konto zuweist).
+ */
+export function isConfidentialBeleg(
+  kind: BelegSumKind | null | undefined,
+  accountName: string | null | undefined
+): boolean {
+  if (kind === "lohn") return true;
+  const n = (accountName ?? "").toLowerCase();
+  return /lohn|gehalt|geh[aä]lter|personalkosten|lohnjournal/.test(n);
+}
+
+/**
  * Baustein für einfache Material-/Baustoff-Rechnungen (eine Rechnung je PDF):
  * liest Brutto-Gesamtbetrag, MwSt, Datum, Lieferant, Beschreibung, Belegnummer
  * und die Skonto-Angaben (€, Zahlbetrag, Zahlungsziel) – wie bei Etges & Dächer.

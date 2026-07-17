@@ -366,6 +366,14 @@ export default function ManualBelegeTable({
                   <td className="px-3 py-1.5 tabular-nums text-gray-700">{formatDate(r.date)}</td>
                   <td className="px-3 py-1.5 text-gray-900">
                     {r.supplier ?? "—"}
+                    {r.confidential && (
+                      <span
+                        title="Vertraulich (z. B. Lohn) – von Rechnungsprüfung/Workflow-Automatik ausgeschlossen"
+                        className="ml-1.5 whitespace-nowrap rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold text-violet-700 ring-1 ring-violet-500/40"
+                      >
+                        🔒 Vertraulich
+                      </span>
+                    )}
                     {r.duplicate && (
                       <span
                         title="Mögliche Dublette: gleicher Lieferant, Betrag und Datum wie ein anderer Beleg"

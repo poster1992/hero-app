@@ -549,6 +549,8 @@ export async function startReviewChainForManualTask(task: {
   if (!reviewWf) return; // Keine Rechnungsprüfungs-Regel → nichts zu starten.
 
   const beleg = await getManualReceipt(belegId).catch(() => null);
+  // Vertrauliche Belege (Lohn o. Ä.) NIE in die Rechnungsprüfung geben.
+  if (beleg?.confidential) return;
   const supplier = beleg?.supplier ?? "";
   const assignee = effectiveAssignee(reviewWf.config, supplier);
   if (!assignee) return;

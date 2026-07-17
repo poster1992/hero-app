@@ -116,6 +116,7 @@ export interface EditableReceipt {
   skontoAmount: number | null;
   skontoPayAmount: number | null;
   skontoDueDate: string | null;
+  confidential?: boolean;
 }
 
 export function ManualBelegeFormFields({
@@ -490,6 +491,22 @@ export function ManualBelegeFormFields({
                   className={inputClass}
                   placeholder="Verwendungszweck"
                 />
+              </div>
+              <div className="lg:col-span-3">
+                <label className="flex items-start gap-2 rounded-md border border-amber-400/40 bg-amber-50 px-3 py-2 text-sm text-gray-700">
+                  <input
+                    type="checkbox"
+                    name="confidential"
+                    value="1"
+                    defaultChecked={receipt?.confidential ?? false}
+                    className="mt-0.5 accent-brand-red"
+                  />
+                  <span>
+                    <strong>Vertraulich</strong> (z. B. Lohn) – von der{" "}
+                    <strong>Rechnungsprüfung</strong> und der Workflow-Automatik ausschließen. Löhne werden
+                    beim Sammel-Upload automatisch so markiert.
+                  </span>
+                </label>
               </div>
               <div>
                 <label className="mb-1 block text-sm text-gray-600">Betrag (brutto) *</label>

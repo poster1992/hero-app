@@ -24,6 +24,8 @@ export interface ManualReceipt {
   isPaid: boolean;
   /** true = beim Bezahlen wurde Skonto gezogen (nur dann zählt der reduzierte Zahlbetrag). */
   paidWithSkonto: boolean;
+  /** true = vertraulich (z. B. Lohn) → NICHT in die Rechnungsprüfung/Workflow-Automatik. */
+  confidential: boolean;
   paidDate: string | null;
   /** Optional zugeordnetes Projekt (HERO project_match id). */
   projectId: number | null;
@@ -53,6 +55,7 @@ interface ReceiptRow extends RowDataPacket {
   mime: string | null;
   is_paid: number | null;
   paid_with_skonto: number | null;
+  confidential: number | null;
   paid_date: string | null;
   project_id: number | null;
   project_relative_id: number | null;
@@ -85,6 +88,7 @@ function mapRow(r: ReceiptRow): ManualReceipt {
     hasFile: !!r.stored_name,
     isPaid: r.is_paid === 1,
     paidWithSkonto: r.paid_with_skonto === 1,
+    confidential: r.confidential === 1,
     paidDate: r.paid_date ? String(r.paid_date).slice(0, 10) : null,
     projectId: r.project_id ?? null,
     projectRelativeId: r.project_relative_id ?? null,
@@ -100,7 +104,7 @@ function mapRow(r: ReceiptRow): ManualReceipt {
 export async function listManualReceipts(year: number): Promise<ManualReceipt[]> {
   const [rows] = await getPool().query<ReceiptRow[]>(
     `SELECT id, beleg_date, supplier, description, gross, vat_rate, account_number, account_name,
-            file_name, stored_name, mime, is_paid, paid_with_skonto, paid_date, project_id, project_relative_id, project_name,
+            file_name, stored_name, mime, is_paid, paid_with_skonto, confidential, paid_date, project_id, project_relative_id, project_name,
             invoice_number, skonto_amount, skonto_pay_amount, skonto_due_date
      FROM manual_receipts
      WHERE beleg_date IS NULL OR YEAR(beleg_date) = ?
@@ -114,7 +118,7 @@ export async function listManualReceipts(year: number): Promise<ManualReceipt[]>
 export async function getManualReceipt(id: number): Promise<ManualReceipt | null> {
   const [rows] = await getPool().query<ReceiptRow[]>(
     `SELECT id, beleg_date, supplier, description, gross, vat_rate, account_number, account_name,
-            file_name, stored_name, mime, is_paid, paid_with_skonto, paid_date, project_id, project_relative_id, project_name,
+            file_name, stored_name, mime, is_paid, paid_with_skonto, confidential, paid_date, project_id, project_relative_id, project_name,
             invoice_number, skonto_amount, skonto_pay_amount, skonto_due_date
      FROM manual_receipts WHERE id = ? LIMIT 1`,
     [id]
@@ -175,6 +179,8 @@ export async function createManualReceipt(input: {
   skontoDueDate?: string | null;
   /** Volltext für die Suche (z. B. direkt aus dem Posteingang-OCR). */
   ocrText?: string | null;
+  /** true = vertraulich (Lohn o. Ä.) → nicht in Rechnungsprüfung/Automatik. */
+  confidential?: boolean;
 }): Promise<number> {
   let storedName: string | null = null;
   if (input.file) {
@@ -185,8 +191,8 @@ export async function createManualReceipt(input: {
   }
   const [res] = await getPool().query(
     `INSERT INTO manual_receipts
-       (beleg_date, supplier, description, gross, vat_rate, account_number, account_name, file_name, stored_name, mime, uploaded_by, source, project_id, project_relative_id, project_name, invoice_number, skonto_amount, skonto_pay_amount, skonto_due_date, ocr_text)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (beleg_date, supplier, description, gross, vat_rate, account_number, account_name, file_name, stored_name, mime, uploaded_by, source, project_id, project_relative_id, project_name, invoice_number, skonto_amount, skonto_pay_amount, skonto_due_date, ocr_text, confidential)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.date,
       input.supplier,
@@ -208,6 +214,7 @@ export async function createManualReceipt(input: {
       input.skontoPayAmount ?? null,
       input.skontoDueDate ?? null,
       input.ocrText && input.ocrText.trim() ? input.ocrText.trim() : null,
+      input.confidential ? 1 : 0,
     ]
   );
   return (res as { insertId: number }).insertId;
@@ -245,11 +252,15 @@ export async function getManualDuplicateKeys(): Promise<Set<string>> {
   return keys;
 }
 
-/** Im Posteingang (source='inbox') erfasste Belege – für die Workflow-Auslösung. */
+/**
+ * Im Posteingang (source='inbox') erfasste Belege – für die Workflow-Auslösung.
+ * Vertrauliche Belege (Lohn o. Ä., confidential=1) werden bewusst ausgeschlossen,
+ * damit sie KEINE Buchungsaufgabe/Rechnungsprüfung auslösen.
+ */
 export async function listInboxReceipts(): Promise<InboxReceipt[]> {
   const [rows] = await getPool().query<RowDataPacket[]>(
     `SELECT id, beleg_date, created, supplier, description, gross
-     FROM manual_receipts WHERE source = 'inbox' ORDER BY id DESC`
+     FROM manual_receipts WHERE source = 'inbox' AND confidential = 0 ORDER BY id DESC`
   );
   return (rows as {
     id: number;
@@ -286,6 +297,7 @@ export async function updateManualReceipt(input: {
   skontoAmount?: number | null;
   skontoPayAmount?: number | null;
   skontoDueDate?: string | null;
+  confidential?: boolean;
 }): Promise<void> {
   const pool = getPool();
   const projectId = input.projectId ?? null;
@@ -295,6 +307,7 @@ export async function updateManualReceipt(input: {
   const skontoAmount = input.skontoAmount ?? null;
   const skontoPayAmount = input.skontoPayAmount ?? null;
   const skontoDueDate = input.skontoDueDate ?? null;
+  const confidential = input.confidential ? 1 : 0;
 
   if (input.file) {
     // Alte Datei merken, um sie nach dem Ersetzen zu entfernen.
@@ -314,7 +327,7 @@ export async function updateManualReceipt(input: {
          SET beleg_date = ?, supplier = ?, description = ?, gross = ?, vat_rate = ?,
              account_number = ?, account_name = ?, file_name = ?, stored_name = ?, mime = ?,
              project_id = ?, project_relative_id = ?, project_name = ?,
-             invoice_number = ?, skonto_amount = ?, skonto_pay_amount = ?, skonto_due_date = ?
+             invoice_number = ?, skonto_amount = ?, skonto_pay_amount = ?, skonto_due_date = ?, confidential = ?
        WHERE id = ?`,
       [
         input.date,
@@ -334,6 +347,7 @@ export async function updateManualReceipt(input: {
         skontoAmount,
         skontoPayAmount,
         skontoDueDate,
+        confidential,
         input.id,
       ]
     );
@@ -353,7 +367,7 @@ export async function updateManualReceipt(input: {
        SET beleg_date = ?, supplier = ?, description = ?, gross = ?, vat_rate = ?,
            account_number = ?, account_name = ?,
            project_id = ?, project_relative_id = ?, project_name = ?,
-           invoice_number = ?, skonto_amount = ?, skonto_pay_amount = ?, skonto_due_date = ?
+           invoice_number = ?, skonto_amount = ?, skonto_pay_amount = ?, skonto_due_date = ?, confidential = ?
      WHERE id = ?`,
     [
       input.date,
@@ -370,6 +384,7 @@ export async function updateManualReceipt(input: {
       skontoAmount,
       skontoPayAmount,
       skontoDueDate,
+      confidential,
       input.id,
     ]
   );
@@ -436,7 +451,7 @@ export async function searchManualOcrIds(query: string): Promise<Set<number>> {
 export async function listManualReceiptsByProject(projectId: number): Promise<ManualReceipt[]> {
   const [rows] = await getPool().query<ReceiptRow[]>(
     `SELECT id, beleg_date, supplier, description, gross, vat_rate, account_number, account_name,
-            file_name, stored_name, mime, is_paid, paid_with_skonto, paid_date, project_id, project_relative_id, project_name,
+            file_name, stored_name, mime, is_paid, paid_with_skonto, confidential, paid_date, project_id, project_relative_id, project_name,
             invoice_number, skonto_amount, skonto_pay_amount, skonto_due_date
      FROM manual_receipts WHERE project_id = ? ORDER BY beleg_date DESC, id DESC`,
     [projectId]

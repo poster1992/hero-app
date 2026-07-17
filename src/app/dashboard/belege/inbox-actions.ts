@@ -6,7 +6,7 @@ import { getUserByUsername } from "@/lib/users";
 import { getAllowedModules } from "@/lib/role-store";
 import { getBookAccounts } from "@/lib/hero-api";
 import { createManualReceipt } from "@/lib/manual-receipts";
-import { extractBeleg } from "@/lib/beleg-extract";
+import { extractBeleg, isConfidentialBeleg } from "@/lib/beleg-extract";
 import { rotateBuffer } from "@/lib/auto-rotate";
 
 const PATH = "/dashboard/belege";
@@ -116,6 +116,8 @@ export async function ingestInboxBelegeAction(formData: FormData): Promise<Inbox
           skontoDueDate: ex.skontoDueDate ?? null,
           // Volltext aus demselben KI-Lauf → sofort durchsuchbar, kein zweiter OCR-Durchlauf.
           ocrText: ex.fullText ?? null,
+          // Löhne o. Ä. als vertraulich markieren → keine Buchungsaufgabe/Rechnungsprüfung.
+          confidential: isConfidentialBeleg(ex.kind, accountName),
         });
         created++;
         results.push({

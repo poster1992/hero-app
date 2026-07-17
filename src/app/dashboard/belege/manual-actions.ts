@@ -80,6 +80,7 @@ export async function uploadBelegAction(
   const skontoPayAmount =
     skontoPayAmountN != null && Number.isFinite(skontoPayAmountN) ? skontoPayAmountN : null;
   const skontoDueDate = String(formData.get("skontoDueDate") ?? "").trim() || null;
+  const confidential = formData.get("confidential") === "1" || formData.get("confidential") === "on";
 
   const upload = formData.get("file");
   let file: { buffer: Buffer; originalName: string; mime: string } | null = null;
@@ -111,6 +112,7 @@ export async function uploadBelegAction(
       skontoAmount,
       skontoPayAmount,
       skontoDueDate,
+      confidential,
     });
   } catch {
     return { error: "Beleg konnte nicht gespeichert werden." };
@@ -176,6 +178,7 @@ export async function updateBelegAction(
   const skontoPayAmount =
     skontoPayAmountN != null && Number.isFinite(skontoPayAmountN) ? skontoPayAmountN : null;
   const skontoDueDate = String(formData.get("skontoDueDate") ?? "").trim() || null;
+  const confidential = formData.get("confidential") === "1" || formData.get("confidential") === "on";
 
   const upload = formData.get("file");
   let file: { buffer: Buffer; originalName: string; mime: string } | null = null;
@@ -207,6 +210,7 @@ export async function updateBelegAction(
       skontoAmount,
       skontoPayAmount,
       skontoDueDate,
+      confidential,
     });
   } catch {
     return { error: "Beleg konnte nicht aktualisiert werden." };
@@ -280,6 +284,7 @@ export async function loadBelegEditDataAction(id: number): Promise<BelegEditData
         skontoAmount: r.skontoAmount,
         skontoPayAmount: r.skontoPayAmount,
         skontoDueDate: r.skontoDueDate,
+        confidential: r.confidential,
       }
     : null;
   return { receipt, accounts, projects, suppliers };
