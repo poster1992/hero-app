@@ -110,18 +110,22 @@ function SupplierRow({ item }: { item: SupplierIbanItem }) {
 
 export default function SupplierIbanManager({ suppliers }: { suppliers: SupplierIbanItem[] }) {
   const [search, setSearch] = useState("");
-  const [onlyMissing, setOnlyMissing] = useState(false);
+  const [filter, setFilter] = useState<"all" | "with" | "missing" | "debit">("all");
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return suppliers.filter((s) => {
-      if (onlyMissing && s.iban.trim().length > 0) return false;
+      const has = s.iban.trim().length > 0;
+      if (filter === "with" && !has) return false;
+      if (filter === "missing" && has) return false;
+      if (filter === "debit" && !s.directDebit) return false;
       if (q && !s.name.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [suppliers, search, onlyMissing]);
+  }, [suppliers, search, filter]);
 
   const withIban = suppliers.filter((s) => s.iban.trim().length > 0).length;
+  const withDebit = suppliers.filter((s) => s.directDebit).length;
 
   return (
     <div className="flex flex-col gap-4">
@@ -133,16 +137,18 @@ export default function SupplierIbanManager({ suppliers }: { suppliers: Supplier
           placeholder="Lieferant suchen …"
           className="w-full max-w-sm rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-brand-red focus:outline-none"
         />
-        <label className="flex items-center gap-2 text-sm text-gray-700">
-          <input
-            type="checkbox"
-            checked={onlyMissing}
-            onChange={(e) => setOnlyMissing(e.target.checked)}
-          />
-          nur ohne IBAN
-        </label>
+        <select
+          value={filter}
+          onChange={(e) => setFilter(e.target.value as "all" | "with" | "missing" | "debit")}
+          className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 outline-none focus:border-brand-red/60"
+        >
+          <option value="all">Alle</option>
+          <option value="with">Mit IBAN</option>
+          <option value="missing">Ohne IBAN</option>
+          <option value="debit">Bankeinzug</option>
+        </select>
         <span className="ml-auto text-sm text-gray-500">
-          {withIban} / {suppliers.length} mit IBAN
+          {withIban} / {suppliers.length} mit IBAN · {withDebit} Bankeinzug
         </span>
       </div>
 
