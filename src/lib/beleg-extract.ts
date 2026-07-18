@@ -399,9 +399,11 @@ const SUM_CONFIG: Record<
       "MwSt der ganzen Rechnung, beschriftet mit „Total TTC\" (bzw. „Total à payer\"/„Montant total\") – " +
       "NICHT Seiten-Zwischensummen, NICHT „Total HT\"/„Total HTVA\". steuersatz = TVA-Satz in Prozent als " +
       "Zahl. Zusätzlich auf oberster Ebene: belegdatum (Rechnungsdatum YYYY-MM-DD oder null), lieferant, " +
-      "beschreibung (kurz, z. B. „Tankkosten\" + Abrechnungszeitraum/Monat). Antworte AUSSCHLIESSLICH mit " +
-      'JSON: {"seiten": [ EIN Objekt ], "belegdatum": …, "lieferant": …, "beschreibung": …}. Punkt als ' +
-      "Dezimaltrennzeichen, KEINE Tausenderpunkte. Nur JSON.",
+      "beschreibung (kurz, z. B. „Tankkosten\" + Abrechnungszeitraum/Monat), belegnummer (die Rechnungs-/" +
+      "Belegnummer der Rechnung als Text – Label z. B. „Facture N°\", „N° de facture\", „Numéro\", " +
+      "„Rechnungsnummer\"; wenn nicht erkennbar: null). Antworte AUSSCHLIESSLICH mit " +
+      'JSON: {"seiten": [ EIN Objekt ], "belegdatum": …, "lieferant": …, "beschreibung": …, "belegnummer": …}. ' +
+      "Punkt als Dezimaltrennzeichen, KEINE Tausenderpunkte. Nur JSON.",
   },
   herosoftware: {
     label: "Total",
