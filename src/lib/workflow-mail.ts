@@ -37,19 +37,14 @@ export function buildBaustelleFertigEmailHtml(m: BaustelleFertigMail): string {
         <tr><td style="padding:28px 32px 8px;">
           <h1 style="margin:0 0 6px;font-size:21px;color:#111417;">✅ Baustelle fertiggestellt</h1>
           <p style="margin:0 0 18px;font-size:15px;line-height:1.6;color:#3f4650;">
-            Im Logbuch wurde eine Baustelle als fertig gemeldet. Bitte die <strong>Abschlussrechnung</strong> anstoßen.
+            Im Logbuch wurde eine Baustelle als fertig gemeldet.
           </p>
           <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;margin:0 0 18px;">
             ${row("Kunde", esc(m.customerName || "–"))}
             ${row("Projekt", esc(m.projectLabel))}
             ${row("Gemeldet", esc(m.dateLabel) + (m.author ? ` · ${esc(m.author)}` : ""))}
           </table>
-          <div style="margin:0 0 22px;padding:14px 16px;background:#fafbfc;border:1px solid #eceef1;border-left:3px solid ${RED};border-radius:8px;font-size:14px;line-height:1.6;color:#3f4650;white-space:pre-wrap;">${esc(m.logText)}</div>
-          <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 8px;"><tr>
-            <td align="center" bgcolor="${RED}" style="border-radius:8px;">
-              <a href="${m.projectUrl}" target="_blank" style="display:inline-block;padding:12px 26px;font-size:15px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:8px;">Zum Projekt &rsaquo;</a>
-            </td>
-          </tr></table>
+          <div style="margin:0 0 4px;padding:14px 16px;background:#fafbfc;border:1px solid #eceef1;border-left:3px solid ${RED};border-radius:8px;font-size:14px;line-height:1.6;color:#3f4650;white-space:pre-wrap;">${esc(m.logText)}</div>
         </td></tr>
         <tr><td style="padding:20px 32px;border-top:1px solid #eceef1;background:#fafbfc;">
           <p style="margin:0;font-size:12px;line-height:1.6;color:#8a929c;">
@@ -73,8 +68,6 @@ export function buildBaustelleFertigEmailText(m: BaustelleFertigMail): string {
     "",
     m.logText,
     "",
-    `Zum Projekt: ${m.projectUrl}`,
-    "",
-    "Bitte die Abschlussrechnung anstoßen. — FLOORTEC Dashboard",
+    "— FLOORTEC Dashboard",
   ].join("\n");
 }
