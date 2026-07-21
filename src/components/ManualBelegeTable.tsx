@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { setBelegPaidAction } from "@/app/dashboard/belege/manual-actions";
+import { buildMultilineSepaAction, type SepaItem } from "@/app/dashboard/belege/sepa-actions";
 import BelegEditButton from "@/components/BelegEditButton";
 import DeleteBelegButton from "@/components/DeleteBelegButton";
 import type { ProjectOption, SupplierOption } from "@/components/ManualBelegeForm";
@@ -357,6 +358,70 @@ export default function ManualBelegeTable({
     URL.revokeObjectURL(url);
   };
 
+  // --- Multiline SEPA-Export (offene manuelle Belege bezahlen) ---
+  // Nutzt dieselbe Server-Aktion wie die HERO-Belege; die IBAN wird dort über
+  // den Lieferantennamen (→ HERO-Kontakt) aufgelöst. Nur OFFENE Belege wählbar.
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [sepaBusy, setSepaBusy] = useState(false);
+  const [sepaError, setSepaError] = useState<string | null>(null);
+  const [sepaMissing, setSepaMissing] = useState<{ name: string }[] | null>(null);
+
+  const selectable = filtered.filter((r) => !r.isPaid);
+  const selectedRows = selectable.filter((r) => selected.has(r.id));
+  const allSelectableSelected = selectable.length > 0 && selectable.every((r) => selected.has(r.id));
+  const toggleRow = (id: number) =>
+    setSelected((prev) => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  const toggleAll = () =>
+    setSelected((prev) => {
+      const n = new Set(prev);
+      if (allSelectableSelected) selectable.forEach((r) => n.delete(r.id));
+      else selectable.forEach((r) => n.add(r.id));
+      return n;
+    });
+
+  const runSepa = async () => {
+    if (selectedRows.length === 0) return;
+    setSepaBusy(true);
+    setSepaError(null);
+    setSepaMissing(null);
+    try {
+      const items: SepaItem[] = selectedRows.map((r) => ({
+        customerId: null, // manueller Beleg → Auflösung über den Lieferantennamen
+        name: r.supplier ?? "",
+        // Voller Bruttobetrag (Skonto wird hier bewusst nicht automatisch gezogen).
+        amount: r.gross,
+        reference: r.invoiceNumber || `Beleg ${r.id}`,
+      }));
+      const res = await buildMultilineSepaAction(items);
+      if (res.error) {
+        setSepaError(res.error);
+        return;
+      }
+      if (res.missing.length > 0) {
+        setSepaMissing(res.missing.map((m) => ({ name: m.name })));
+        return;
+      }
+      if (res.xml && res.filename) {
+        const blob = new Blob([res.xml], { type: "application/xml;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = res.filename;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+    } catch {
+      setSepaError("SEPA-Export fehlgeschlagen.");
+    } finally {
+      setSepaBusy(false);
+    }
+  };
+
   const reset = () => {
     setText({
       id: "",
@@ -393,6 +458,16 @@ export default function ManualBelegeTable({
           <p className="text-sm text-gray-600">
             {filtered.length} {filtered.length === 1 ? "Beleg" : "Belege"} · {currencyFormatter.format(total)}
           </p>
+          {sepaError && <span className="text-sm text-rose-600">{sepaError}</span>}
+          <button
+            type="button"
+            onClick={runSepa}
+            disabled={sepaBusy || selectedRows.length === 0}
+            title="Ausgewählte offene Belege als SEPA-Sammelüberweisung (XML) exportieren – IBAN kommt aus den Lieferanten-IBANs"
+            className="rounded-md bg-brand-red px-3 py-1 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+          >
+            {sepaBusy ? "Erzeuge SEPA …" : `Multiline SEPA-Export (${selectedRows.length})`}
+          </button>
           <button
             type="button"
             onClick={exportCsv}
@@ -423,12 +498,37 @@ export default function ManualBelegeTable({
         </div>
       </div>
 
+      {sepaMissing && sepaMissing.length > 0 && (
+        <div className="border-b border-amber-300 bg-amber-50 px-5 py-3 text-sm text-amber-900">
+          <p className="font-semibold">
+            Für folgende Lieferanten fehlt eine IBAN – bitte erst pflegen, dann erneut exportieren:
+          </p>
+          <p className="mt-1">{[...new Set(sepaMissing.map((m) => m.name || "—"))].join(", ")}</p>
+          <a
+            href="/dashboard/belege/ibans"
+            className="mt-1 inline-block font-medium text-brand-red hover:underline"
+          >
+            → Lieferanten-IBANs pflegen
+          </a>
+        </div>
+      )}
+
       {rows.length === 0 ? (
         <p className="px-5 py-8 text-center text-sm text-gray-500">Keine manuellen Belege in diesem Zeitraum.</p>
       ) : (
         <table className="w-full border-collapse text-sm">
           <thead className="bg-gray-50">
             <tr className="text-left text-xs uppercase tracking-wide text-gray-500">
+              <th className="px-3 py-1.5 font-semibold" title="Offene Belege für den SEPA-Export auswählen">
+                <input
+                  type="checkbox"
+                  checked={allSelectableSelected}
+                  onChange={toggleAll}
+                  disabled={selectable.length === 0}
+                  className="h-4 w-4 cursor-pointer accent-brand-red disabled:opacity-40"
+                  title="Alle offenen Belege der Anzeige auswählen"
+                />
+              </th>
               <th className="px-3 py-1.5 font-semibold" title="Eindeutige, fortlaufende Beleg-ID (zum Melden von Problemen)">ID</th>
               <th className="px-3 py-1.5 font-semibold">Datum</th>
               <th className="px-3 py-1.5 font-semibold">Lieferant</th>
@@ -447,6 +547,7 @@ export default function ManualBelegeTable({
             </tr>
             {/* Filterzeile im Tabellenkopf */}
             <tr className="border-t border-gray-200 bg-white align-top">
+              <th className="px-2 py-1.5" />
               <th className="px-2 py-1.5">{colInput("id")}</th>
               <th className="px-2 py-1.5">{colInput("datum")}</th>
               <th className="px-2 py-1.5">{colInput("lieferant")}</th>
@@ -487,13 +588,24 @@ export default function ManualBelegeTable({
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={15} className="px-5 py-8 text-center text-sm text-gray-500">
+                <td colSpan={16} className="px-5 py-8 text-center text-sm text-gray-500">
                   Keine Belege für die gewählten Spaltenfilter.
                 </td>
               </tr>
             ) : (
               filtered.map((r) => (
                 <tr key={r.id} className="border-t border-gray-100">
+                  <td className="px-3 py-1.5">
+                    {!r.isPaid && (
+                      <input
+                        type="checkbox"
+                        checked={selected.has(r.id)}
+                        onChange={() => toggleRow(r.id)}
+                        className="h-4 w-4 cursor-pointer accent-brand-red"
+                        title="Für SEPA-Sammelüberweisung auswählen"
+                      />
+                    )}
+                  </td>
                   <td className="px-3 py-1.5 tabular-nums font-semibold text-gray-500" title="Eindeutige, fortlaufende Beleg-ID">
                     #{r.id}
                   </td>

@@ -1,9 +1,13 @@
 "use server";
 
 import { getSession } from "@/lib/session";
-import { getCompanyBankInfo } from "@/lib/hero-api";
+import { getCompanyBankInfo, getSupplierContacts } from "@/lib/hero-api";
 import { getSupplierIbanMap, upsertSupplierIban, setSupplierDirectDebit } from "@/lib/supplier-ibans";
 import { buildSepaCreditTransfer, type SepaPayment } from "@/lib/sepa";
+
+/** Normalisiert einen Lieferantennamen für den Abgleich (Groß/Klein, Mehrfach-Leerzeichen). */
+const normSupplier = (s: string | null | undefined) =>
+  (s ?? "").toLowerCase().replace(/\s+/g, " ").trim();
 
 export interface SepaItem {
   customerId: number | null;
@@ -85,16 +89,30 @@ export async function buildMultilineSepaAction(items: SepaItem[]): Promise<SepaR
     return { missing: [], error: "Firmen-IBAN (Auftraggeber) fehlt in HERO." };
   }
 
+  // Manuelle Belege liefern keine HERO-customerId, nur den Lieferantennamen.
+  // Diese werden über die HERO-Kontakte (Name → id) auf eine customerId
+  // aufgelöst, damit sie dieselbe IBAN-Zuordnung wie HERO-Belege nutzen.
+  let nameToId: Map<string, number> | null = null;
+  if (items.some((it) => it.customerId == null && it.name)) {
+    try {
+      const contacts = await getSupplierContacts();
+      nameToId = new Map(contacts.map((c) => [normSupplier(c.name), c.id]));
+    } catch {
+      nameToId = new Map();
+    }
+  }
+
   const payments: SepaPayment[] = [];
   const missing: { customerId: number | null; name: string }[] = [];
 
   for (const it of items) {
     if (it.amount <= 0) continue;
-    const entry = it.customerId != null ? ibanMap.get(it.customerId) : undefined;
+    const customerId = it.customerId ?? (nameToId?.get(normSupplier(it.name)) ?? null);
+    const entry = customerId != null ? ibanMap.get(customerId) : undefined;
     // Bankeinzug-Lieferanten werden per Lastschrift gezogen → nicht überweisen.
     if (entry?.directDebit) continue;
     if (!entry || !entry.iban) {
-      missing.push({ customerId: it.customerId, name: it.name });
+      missing.push({ customerId, name: it.name });
       continue;
     }
     payments.push({
@@ -103,13 +121,17 @@ export async function buildMultilineSepaAction(items: SepaItem[]): Promise<SepaR
       creditorBic: entry.bic,
       amount: it.amount,
       reference: it.reference,
-      endToEndId: it.reference || `BELEG-${it.customerId}`,
+      endToEndId: it.reference || `BELEG-${customerId ?? "M"}`,
     });
   }
 
   if (missing.length > 0) {
     // Erst alle IBANs pflegen, dann exportieren.
     return { missing };
+  }
+
+  if (payments.length === 0) {
+    return { missing: [], error: "Keine überweisbaren Belege (evtl. alle per Bankeinzug oder Betrag 0)." };
   }
 
   const today = new Date().toISOString().slice(0, 10);
