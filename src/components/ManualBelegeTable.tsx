@@ -250,6 +250,113 @@ export default function ManualBelegeTable({
 
   const total = filtered.reduce((s, r) => s + r.gross, 0);
   const anyFilter = status !== "" || beleg !== "" || TEXT_COLS.some((c) => text[c].trim() !== "");
+
+  // --- Steuerberater-Export (alle angezeigten Belege) ---
+  const withFileCount = filtered.filter((r) => r.hasFile).length;
+  const [zipping, setZipping] = useState<string | null>(null);
+
+  // Dateiendung aus Originalname bzw. MIME ableiten (Fallback .pdf).
+  const fileExt = (r: BelegRow): string => {
+    const fromName = r.fileName?.match(/\.[a-z0-9]+$/i)?.[0];
+    if (fromName) return fromName.toLowerCase();
+    if (r.mime?.includes("pdf")) return ".pdf";
+    if (r.mime?.startsWith("image/")) return `.${r.mime.slice(6).split("+")[0]}`;
+    return ".pdf";
+  };
+
+  const exportPdfs = async () => {
+    const withFile = filtered.filter((r) => r.hasFile);
+    if (withFile.length === 0) return;
+    setZipping(`0 / ${withFile.length}`);
+    try {
+      const JSZip = (await import("jszip")).default;
+      const zip = new JSZip();
+      const used = new Set<string>();
+      let done = 0;
+      for (const r of withFile) {
+        try {
+          const res = await fetch(`/api/beleg?id=${r.id}`);
+          if (res.ok) {
+            const blob = await res.blob();
+            const ext = fileExt(r);
+            const label = (r.invoiceNumber || `Beleg-${r.id}`).toString();
+            const safeParty = (r.supplier ?? "").replace(/[^\wäöüÄÖÜß .-]/g, "_").slice(0, 40);
+            let name = `${label}_${safeParty}${ext}`.replace(/\s+/g, " ").trim();
+            let i = 2;
+            while (used.has(name)) name = name.replace(ext, ` (${i++})${ext}`);
+            used.add(name);
+            zip.file(name, blob);
+          }
+        } catch {
+          // einzelnes Dokument überspringen
+        }
+        done++;
+        setZipping(`${done} / ${withFile.length}`);
+      }
+      const out = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(out);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Belege-${periodLabel.replace(/[^\wäöüÄÖÜß-]+/g, "-")}-${new Date().toISOString().slice(0, 10)}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setZipping(null);
+    }
+  };
+
+  const exportCsv = () => {
+    const money2 = (n: number) => n.toFixed(2).replace(".", ",");
+    const esc = (v: string) => {
+      const s = String(v ?? "");
+      return /[;"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const header = [
+      "ID",
+      "Datum",
+      "Lieferant",
+      "Beleg-Nr.",
+      "Konto",
+      "Projekt",
+      "Netto",
+      "MwSt",
+      "Brutto",
+      "Skonto",
+      "Skontozahlbetrag",
+      "Skonto bis",
+      "Status",
+      "Beleg vorhanden",
+    ];
+    const lines = filtered.map((r) =>
+      [
+        `#${r.id}`,
+        formatDate(r.date),
+        r.supplier ?? "",
+        r.invoiceNumber ?? "",
+        r.accountNumber ? `${r.accountNumber} ${r.accountName ?? ""}`.trim() : "",
+        r.projectId ? `${r.projectRelativeId != null ? `#${r.projectRelativeId} ` : ""}${r.projectName ?? "Projekt"}` : "",
+        money2(r.net),
+        money2(r.vat),
+        money2(r.gross),
+        r.skontoAmount != null ? money2(r.skontoAmount) : "",
+        r.skontoPayAmount != null ? money2(r.skontoPayAmount) : "",
+        formatDate(r.skontoDueDate),
+        r.isPaid ? "Bezahlt" : "Offen",
+        r.hasFile ? "ja" : "nein",
+      ]
+        .map(esc)
+        .join(";")
+    );
+    // BOM, damit Excel Umlaute korrekt liest.
+    const csv = "﻿" + [header.join(";"), ...lines].join("\r\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Belege-${periodLabel.replace(/[^\wäöüÄÖÜß-]+/g, "-")}-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const reset = () => {
     setText({
       id: "",
@@ -282,10 +389,28 @@ export default function ManualBelegeTable({
     <div className="overflow-x-auto rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-gray-200 px-5 py-4">
         <h2 className="text-lg font-medium text-gray-900">Erfasste Belege {periodLabel}</h2>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <p className="text-sm text-gray-600">
             {filtered.length} {filtered.length === 1 ? "Beleg" : "Belege"} · {currencyFormatter.format(total)}
           </p>
+          <button
+            type="button"
+            onClick={exportCsv}
+            disabled={filtered.length === 0}
+            title="Liste der angezeigten Belege als CSV (für den Steuerberater)"
+            className="rounded-md border border-gray-300 px-2.5 py-1 text-sm font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900 disabled:opacity-50"
+          >
+            ⬇ CSV ({filtered.length})
+          </button>
+          <button
+            type="button"
+            onClick={exportPdfs}
+            disabled={zipping !== null || withFileCount === 0}
+            title="Alle Beleg-Dateien der Anzeige als ZIP (für den Steuerberater)"
+            className="rounded-md border border-gray-300 px-2.5 py-1 text-sm font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900 disabled:opacity-50"
+          >
+            {zipping ? `Belege … ${zipping}` : `⬇ Belege (PDF-ZIP) (${withFileCount})`}
+          </button>
           {anyFilter && (
             <button
               type="button"
