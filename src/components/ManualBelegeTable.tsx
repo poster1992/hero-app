@@ -729,6 +729,18 @@ export default function ManualBelegeTable({
           className="fixed z-50 w-44 overflow-hidden rounded-md border border-gray-200 bg-white py-1 shadow-xl"
           style={{ left: menu.x, top: menu.y }}
         >
+          {menu.row.hasFile && (
+            <button
+              type="button"
+              onClick={() => {
+                window.open(`/api/beleg?id=${menu.row.id}`, "_blank", "noopener,noreferrer");
+                setMenu(null);
+              }}
+              className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+            >
+              👁 Ansehen
+            </button>
+          )}
           <button
             type="button"
             onClick={() => {
