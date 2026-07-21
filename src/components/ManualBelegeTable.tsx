@@ -201,7 +201,6 @@ export default function ManualBelegeTable({
     skontobis: "",
   });
   const [status, setStatus] = useState<"" | "open" | "paid">("");
-  const [beleg, setBeleg] = useState<"" | "with" | "without">("");
 
   const setCol = (col: TextCol, value: string) => setText((t) => ({ ...t, [col]: value }));
 
@@ -237,8 +236,6 @@ export default function ManualBelegeTable({
     return rows.filter((r) => {
       if (status === "open" && r.isPaid) return false;
       if (status === "paid" && !r.isPaid) return false;
-      if (beleg === "with" && !r.hasFile) return false;
-      if (beleg === "without" && r.hasFile) return false;
       const v = searchValues.get(r.id);
       if (!v) return true;
       for (const [col, q] of active) {
@@ -246,10 +243,10 @@ export default function ManualBelegeTable({
       }
       return true;
     });
-  }, [rows, text, status, beleg, searchValues]);
+  }, [rows, text, status, searchValues]);
 
   const total = filtered.reduce((s, r) => s + r.gross, 0);
-  const anyFilter = status !== "" || beleg !== "" || TEXT_COLS.some((c) => text[c].trim() !== "");
+  const anyFilter = status !== "" || TEXT_COLS.some((c) => text[c].trim() !== "");
 
   // --- Steuerberater-Export (alle angezeigten Belege) ---
   const withFileCount = filtered.filter((r) => r.hasFile).length;
@@ -437,7 +434,6 @@ export default function ManualBelegeTable({
       skontobis: "",
     });
     setStatus("");
-    setBeleg("");
   };
 
   // --- Zeilen-Aktionen per Rechtsklick (Kontextmenü) ---
@@ -560,7 +556,6 @@ export default function ManualBelegeTable({
               <th className="px-3 py-1.5 text-right font-semibold">Skontozahlbetrag</th>
               <th className="px-3 py-1.5 font-semibold">Skonto bis</th>
               <th className="px-3 py-1.5 font-semibold">Status</th>
-              <th className="px-3 py-1.5 font-semibold">Beleg</th>
             </tr>
             {/* Filterzeile im Tabellenkopf */}
             <tr className="border-t border-gray-200 bg-white align-top">
@@ -588,23 +583,12 @@ export default function ManualBelegeTable({
                   <option value="paid">Bezahlt</option>
                 </select>
               </th>
-              <th className="px-2 py-1.5">
-                <select
-                  value={beleg}
-                  onChange={(e) => setBeleg(e.target.value as "" | "with" | "without")}
-                  className={filterInputClass}
-                >
-                  <option value="">Alle</option>
-                  <option value="with">Mit</option>
-                  <option value="without">Ohne</option>
-                </select>
-              </th>
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={15} className="px-5 py-8 text-center text-sm text-gray-500">
+                <td colSpan={14} className="px-5 py-8 text-center text-sm text-gray-500">
                   Keine Belege für die gewählten Spaltenfilter.
                 </td>
               </tr>
@@ -691,20 +675,6 @@ export default function ManualBelegeTable({
                   <td className="px-3 py-1.5 tabular-nums text-gray-700">{formatDate(r.skontoDueDate)}</td>
                   <td className="px-3 py-1.5">
                     <PaidCell r={r} />
-                  </td>
-                  <td className="px-3 py-1.5">
-                    {r.hasFile ? (
-                      <a
-                        href={`/api/beleg?id=${r.id}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-brand-red hover:underline"
-                      >
-                        ansehen
-                      </a>
-                    ) : (
-                      <span className="text-gray-400">—</span>
-                    )}
                   </td>
                 </tr>
               ))
