@@ -2,11 +2,32 @@
 
 import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { setBelegPaidAction, deleteBelegAction } from "@/app/dashboard/belege/manual-actions";
+import {
+  setBelegPaidAction,
+  deleteBelegAction,
+  saveBelegColumnsAction,
+} from "@/app/dashboard/belege/manual-actions";
 import { buildMultilineSepaAction, type SepaItem } from "@/app/dashboard/belege/sepa-actions";
 import BelegDetailModal from "@/components/BelegDetailModal";
 import type { ProjectOption, SupplierOption } from "@/components/ManualBelegeForm";
 import type { ManualReceipt } from "@/lib/manual-receipts";
+
+/** Ein-/ausblendbare Spalten der Tabelle (Reihenfolge = Menü-Reihenfolge). */
+const TOGGLE_COLUMNS: { key: string; label: string }[] = [
+  { key: "id", label: "ID" },
+  { key: "datum", label: "Datum" },
+  { key: "lieferant", label: "Lieferant" },
+  { key: "belegnr", label: "Beleg-Nr." },
+  { key: "konto", label: "Konto" },
+  { key: "projekt", label: "Projekt" },
+  { key: "netto", label: "Netto" },
+  { key: "mwst", label: "MwSt" },
+  { key: "brutto", label: "Brutto" },
+  { key: "skonto", label: "Skonto €" },
+  { key: "skontozahl", label: "Skontozahlbetrag" },
+  { key: "skontobis", label: "Skonto bis" },
+  { key: "status", label: "Status" },
+];
 
 type AccountOption = { number: string; name: string };
 export type BelegRow = ManualReceipt & { duplicate: boolean };
@@ -179,12 +200,15 @@ export default function ManualBelegeTable({
   projects,
   suppliers,
   periodLabel,
+  hiddenColumns = [],
 }: {
   rows: BelegRow[];
   accounts: AccountOption[];
   projects: ProjectOption[];
   suppliers: SupplierOption[];
   periodLabel: string;
+  /** Pro-User ausgeblendete Spalten-Keys (aus der gespeicherten Konfiguration). */
+  hiddenColumns?: string[];
 }) {
   const [text, setText] = useState<Record<TextCol, string>>({
     id: "",
@@ -206,6 +230,27 @@ export default function ManualBelegeTable({
   const toggleSort = (col: "id" | "datum") =>
     setSort((s) => (s?.col === col ? { col, dir: s.dir === "asc" ? "desc" : "asc" } : { col, dir: "desc" }));
   const sortArrow = (col: "id" | "datum") => (sort?.col === col ? (sort.dir === "asc" ? " ▲" : " ▼") : "");
+
+  // Spalten ein-/ausblenden (pro User gespeichert). show(key) = Spalte sichtbar.
+  const [hidden, setHidden] = useState<Set<string>>(new Set(hiddenColumns));
+  const [colMenu, setColMenu] = useState(false);
+  const show = (key: string) => !hidden.has(key);
+  const toggleColumn = (key: string) => {
+    setHidden((prev) => {
+      const n = new Set(prev);
+      if (n.has(key)) n.delete(key);
+      else n.add(key);
+      // Persistieren (pro User); UI reagiert sofort, Speichern läuft im Hintergrund.
+      void saveBelegColumnsAction([...n]);
+      return n;
+    });
+  };
+  const showAllColumns = () => {
+    setHidden(new Set());
+    void saveBelegColumnsAction([]);
+  };
+  // Sichtbare Datenspalten + Auswahlspalte → für colSpan der Leer-Zeile.
+  const visibleColSpan = 1 + TOGGLE_COLUMNS.filter((c) => show(c.key)).length;
 
   const setCol = (col: TextCol, value: string) => setText((t) => ({ ...t, [col]: value }));
 
@@ -525,6 +570,46 @@ export default function ManualBelegeTable({
           >
             {zipping ? `Belege … ${zipping}` : `⬇ Belege (PDF-ZIP) (${withFileCount})`}
           </button>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setColMenu((v) => !v)}
+              title="Spalten ein-/ausblenden (wird pro Benutzer gespeichert)"
+              className="rounded-md border border-gray-300 px-2.5 py-1 text-sm font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900"
+            >
+              ⚙ Spalten
+            </button>
+            {colMenu && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setColMenu(false)} />
+                <div className="absolute right-0 z-50 mt-1 max-h-80 w-56 overflow-auto rounded-md border border-gray-200 bg-white py-1 shadow-xl">
+                  {TOGGLE_COLUMNS.map((c) => (
+                    <label
+                      key={c.key}
+                      className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={show(c.key)}
+                        onChange={() => toggleColumn(c.key)}
+                        className="h-4 w-4 accent-brand-red"
+                      />
+                      {c.label}
+                    </label>
+                  ))}
+                  <div className="mt-1 border-t border-gray-100 px-3 py-1.5">
+                    <button
+                      type="button"
+                      onClick={showAllColumns}
+                      className="text-xs font-medium text-brand-red hover:underline"
+                    >
+                      Alle anzeigen
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
           {anyFilter && (
             <button
               type="button"
@@ -568,68 +653,66 @@ export default function ManualBelegeTable({
                   title="Alle offenen Belege der Anzeige auswählen"
                 />
               </th>
-              <th className="px-3 py-1.5 font-semibold" title="Eindeutige, fortlaufende Beleg-ID (zum Melden von Problemen). Klicken zum Sortieren.">
-                <button
-                  type="button"
-                  onClick={() => toggleSort("id")}
-                  className="uppercase tracking-wide hover:text-gray-800"
-                >
-                  ID{sortArrow("id")}
-                </button>
-              </th>
-              <th className="px-3 py-1.5 font-semibold" title="Nach Datum sortieren">
-                <button
-                  type="button"
-                  onClick={() => toggleSort("datum")}
-                  className="uppercase tracking-wide hover:text-gray-800"
-                >
-                  Datum{sortArrow("datum")}
-                </button>
-              </th>
-              <th className="px-3 py-1.5 font-semibold">Lieferant</th>
-              <th className="px-3 py-1.5 font-semibold">Beleg-Nr.</th>
-              <th className="px-3 py-1.5 font-semibold">Konto</th>
-              <th className="px-3 py-1.5 font-semibold">Projekt</th>
-              <th className="px-3 py-1.5 text-right font-semibold">Netto</th>
-              <th className="px-3 py-1.5 text-right font-semibold">MwSt</th>
-              <th className="px-3 py-1.5 text-right font-semibold">Brutto</th>
-              <th className="px-3 py-1.5 text-right font-semibold">Skonto €</th>
-              <th className="px-3 py-1.5 text-right font-semibold">Skontozahlbetrag</th>
-              <th className="px-3 py-1.5 font-semibold">Skonto bis</th>
-              <th className="px-3 py-1.5 font-semibold">Status</th>
+              {show("id") && (
+                <th className="px-3 py-1.5 font-semibold" title="Eindeutige, fortlaufende Beleg-ID (zum Melden von Problemen). Klicken zum Sortieren.">
+                  <button type="button" onClick={() => toggleSort("id")} className="uppercase tracking-wide hover:text-gray-800">
+                    ID{sortArrow("id")}
+                  </button>
+                </th>
+              )}
+              {show("datum") && (
+                <th className="px-3 py-1.5 font-semibold" title="Nach Datum sortieren">
+                  <button type="button" onClick={() => toggleSort("datum")} className="uppercase tracking-wide hover:text-gray-800">
+                    Datum{sortArrow("datum")}
+                  </button>
+                </th>
+              )}
+              {show("lieferant") && <th className="px-3 py-1.5 font-semibold">Lieferant</th>}
+              {show("belegnr") && <th className="px-3 py-1.5 font-semibold">Beleg-Nr.</th>}
+              {show("konto") && <th className="px-3 py-1.5 font-semibold">Konto</th>}
+              {show("projekt") && <th className="px-3 py-1.5 font-semibold">Projekt</th>}
+              {show("netto") && <th className="px-3 py-1.5 text-right font-semibold">Netto</th>}
+              {show("mwst") && <th className="px-3 py-1.5 text-right font-semibold">MwSt</th>}
+              {show("brutto") && <th className="px-3 py-1.5 text-right font-semibold">Brutto</th>}
+              {show("skonto") && <th className="px-3 py-1.5 text-right font-semibold">Skonto €</th>}
+              {show("skontozahl") && <th className="px-3 py-1.5 text-right font-semibold">Skontozahlbetrag</th>}
+              {show("skontobis") && <th className="px-3 py-1.5 font-semibold">Skonto bis</th>}
+              {show("status") && <th className="px-3 py-1.5 font-semibold">Status</th>}
             </tr>
             {/* Filterzeile im Tabellenkopf */}
             <tr className="border-t border-gray-200 bg-white align-top">
               <th className="px-2 py-1.5" />
-              <th className="px-2 py-1.5">{colInput("id")}</th>
-              <th className="px-2 py-1.5">{colInput("datum")}</th>
-              <th className="px-2 py-1.5">{colInput("lieferant")}</th>
-              <th className="px-2 py-1.5">{colInput("belegnr")}</th>
-              <th className="px-2 py-1.5">{colInput("konto")}</th>
-              <th className="px-2 py-1.5">{colInput("projekt")}</th>
-              <th className="px-2 py-1.5">{colInput("netto", "right")}</th>
-              <th className="px-2 py-1.5">{colInput("mwst", "right")}</th>
-              <th className="px-2 py-1.5">{colInput("brutto", "right")}</th>
-              <th className="px-2 py-1.5">{colInput("skonto", "right")}</th>
-              <th className="px-2 py-1.5">{colInput("skontozahl", "right")}</th>
-              <th className="px-2 py-1.5">{colInput("skontobis")}</th>
-              <th className="px-2 py-1.5">
-                <select
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value as "" | "open" | "paid")}
-                  className={filterInputClass}
-                >
-                  <option value="">Alle</option>
-                  <option value="open">Offen</option>
-                  <option value="paid">Bezahlt</option>
-                </select>
-              </th>
+              {show("id") && <th className="px-2 py-1.5">{colInput("id")}</th>}
+              {show("datum") && <th className="px-2 py-1.5">{colInput("datum")}</th>}
+              {show("lieferant") && <th className="px-2 py-1.5">{colInput("lieferant")}</th>}
+              {show("belegnr") && <th className="px-2 py-1.5">{colInput("belegnr")}</th>}
+              {show("konto") && <th className="px-2 py-1.5">{colInput("konto")}</th>}
+              {show("projekt") && <th className="px-2 py-1.5">{colInput("projekt")}</th>}
+              {show("netto") && <th className="px-2 py-1.5">{colInput("netto", "right")}</th>}
+              {show("mwst") && <th className="px-2 py-1.5">{colInput("mwst", "right")}</th>}
+              {show("brutto") && <th className="px-2 py-1.5">{colInput("brutto", "right")}</th>}
+              {show("skonto") && <th className="px-2 py-1.5">{colInput("skonto", "right")}</th>}
+              {show("skontozahl") && <th className="px-2 py-1.5">{colInput("skontozahl", "right")}</th>}
+              {show("skontobis") && <th className="px-2 py-1.5">{colInput("skontobis")}</th>}
+              {show("status") && (
+                <th className="px-2 py-1.5">
+                  <select
+                    value={status}
+                    onChange={(e) => setStatus(e.target.value as "" | "open" | "paid")}
+                    className={filterInputClass}
+                  >
+                    <option value="">Alle</option>
+                    <option value="open">Offen</option>
+                    <option value="paid">Bezahlt</option>
+                  </select>
+                </th>
+              )}
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={14} className="px-5 py-8 text-center text-sm text-gray-500">
+                <td colSpan={visibleColSpan} className="px-5 py-8 text-center text-sm text-gray-500">
                   Keine Belege für die gewählten Spaltenfilter.
                 </td>
               </tr>
@@ -659,64 +742,80 @@ export default function ManualBelegeTable({
                       />
                     )}
                   </td>
-                  <td className="px-3 py-1.5 tabular-nums font-semibold text-gray-500" title="Eindeutige, fortlaufende Beleg-ID">
-                    #{r.id}
-                  </td>
-                  <td className="px-3 py-1.5 tabular-nums text-gray-700">{formatDate(r.date)}</td>
-                  <td className="px-3 py-1.5 text-gray-900">
-                    {r.supplier ?? "—"}
-                    {r.confidential && (
-                      <span
-                        title="Vertraulich (z. B. Lohn) – von Rechnungsprüfung/Workflow-Automatik ausgeschlossen"
-                        className="ml-1.5 whitespace-nowrap rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold text-violet-700 ring-1 ring-violet-500/40"
-                      >
-                        🔒 Vertraulich
-                      </span>
-                    )}
-                    {r.duplicate && (
-                      <span
-                        title="Mögliche Dublette: gleicher Lieferant, Betrag und Datum wie ein anderer Beleg"
-                        className="ml-1.5 whitespace-nowrap rounded-full bg-amber-400/20 px-2 py-0.5 text-[10px] font-semibold text-amber-800 ring-1 ring-amber-500/40"
-                      >
-                        ⚠ Dublette
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-3 py-1.5 tabular-nums text-gray-700">{r.invoiceNumber ?? "—"}</td>
-                  <td className="px-3 py-1.5 text-gray-700">
-                    {r.accountNumber ? `${r.accountNumber} ${r.accountName ?? ""}` : "—"}
-                  </td>
-                  <td className="px-3 py-1.5 text-gray-700">
-                    {r.projectId ? (
-                      <a
-                        href={`/dashboard/projekte/${r.projectId}?${new URLSearchParams({
-                          ...(r.projectName ? { name: r.projectName } : {}),
-                          ...(r.projectRelativeId != null ? { nr: String(r.projectRelativeId) } : {}),
-                        }).toString()}`}
-                        className="text-brand-red hover:underline"
-                      >
-                        {r.projectRelativeId != null ? `#${r.projectRelativeId} ` : ""}
-                        {r.projectName ?? "Projekt"}
-                      </a>
-                    ) : (
-                      <span className="text-gray-400">—</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">{currencyFormatter.format(r.net)}</td>
-                  <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">{currencyFormatter.format(r.vat)}</td>
-                  <td className="px-3 py-1.5 text-right font-medium tabular-nums text-gray-900">
-                    {currencyFormatter.format(r.gross)}
-                  </td>
-                  <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">
-                    {r.skontoAmount != null ? currencyFormatter.format(r.skontoAmount) : "—"}
-                  </td>
-                  <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">
-                    {r.skontoPayAmount != null ? currencyFormatter.format(r.skontoPayAmount) : "—"}
-                  </td>
-                  <td className="px-3 py-1.5 tabular-nums text-gray-700">{formatDate(r.skontoDueDate)}</td>
-                  <td className="px-3 py-1.5">
-                    <PaidCell r={r} />
-                  </td>
+                  {show("id") && (
+                    <td className="px-3 py-1.5 tabular-nums font-semibold text-gray-500" title="Eindeutige, fortlaufende Beleg-ID">
+                      #{r.id}
+                    </td>
+                  )}
+                  {show("datum") && <td className="px-3 py-1.5 tabular-nums text-gray-700">{formatDate(r.date)}</td>}
+                  {show("lieferant") && (
+                    <td className="px-3 py-1.5 text-gray-900">
+                      {r.supplier ?? "—"}
+                      {r.confidential && (
+                        <span
+                          title="Vertraulich (z. B. Lohn) – von Rechnungsprüfung/Workflow-Automatik ausgeschlossen"
+                          className="ml-1.5 whitespace-nowrap rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold text-violet-700 ring-1 ring-violet-500/40"
+                        >
+                          🔒 Vertraulich
+                        </span>
+                      )}
+                      {r.duplicate && (
+                        <span
+                          title="Mögliche Dublette: gleicher Lieferant, Betrag und Datum wie ein anderer Beleg"
+                          className="ml-1.5 whitespace-nowrap rounded-full bg-amber-400/20 px-2 py-0.5 text-[10px] font-semibold text-amber-800 ring-1 ring-amber-500/40"
+                        >
+                          ⚠ Dublette
+                        </span>
+                      )}
+                    </td>
+                  )}
+                  {show("belegnr") && <td className="px-3 py-1.5 tabular-nums text-gray-700">{r.invoiceNumber ?? "—"}</td>}
+                  {show("konto") && (
+                    <td className="px-3 py-1.5 text-gray-700">
+                      {r.accountNumber ? `${r.accountNumber} ${r.accountName ?? ""}` : "—"}
+                    </td>
+                  )}
+                  {show("projekt") && (
+                    <td className="px-3 py-1.5 text-gray-700">
+                      {r.projectId ? (
+                        <a
+                          href={`/dashboard/projekte/${r.projectId}?${new URLSearchParams({
+                            ...(r.projectName ? { name: r.projectName } : {}),
+                            ...(r.projectRelativeId != null ? { nr: String(r.projectRelativeId) } : {}),
+                          }).toString()}`}
+                          className="text-brand-red hover:underline"
+                        >
+                          {r.projectRelativeId != null ? `#${r.projectRelativeId} ` : ""}
+                          {r.projectName ?? "Projekt"}
+                        </a>
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
+                    </td>
+                  )}
+                  {show("netto") && <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">{currencyFormatter.format(r.net)}</td>}
+                  {show("mwst") && <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">{currencyFormatter.format(r.vat)}</td>}
+                  {show("brutto") && (
+                    <td className="px-3 py-1.5 text-right font-medium tabular-nums text-gray-900">
+                      {currencyFormatter.format(r.gross)}
+                    </td>
+                  )}
+                  {show("skonto") && (
+                    <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">
+                      {r.skontoAmount != null ? currencyFormatter.format(r.skontoAmount) : "—"}
+                    </td>
+                  )}
+                  {show("skontozahl") && (
+                    <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">
+                      {r.skontoPayAmount != null ? currencyFormatter.format(r.skontoPayAmount) : "—"}
+                    </td>
+                  )}
+                  {show("skontobis") && <td className="px-3 py-1.5 tabular-nums text-gray-700">{formatDate(r.skontoDueDate)}</td>}
+                  {show("status") && (
+                    <td className="px-3 py-1.5">
+                      <PaidCell r={r} />
+                    </td>
+                  )}
                 </tr>
               ))
             )}

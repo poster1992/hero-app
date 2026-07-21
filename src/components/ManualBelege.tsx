@@ -2,6 +2,9 @@ import Link from "next/link";
 import { listManualReceipts, searchManualOcrIds } from "@/lib/manual-receipts";
 import { listChecklist } from "@/lib/belege-checklist";
 import { getBookAccounts, getProjects, getSupplierContacts } from "@/lib/hero-api";
+import { getSession } from "@/lib/session";
+import { getUserByUsername } from "@/lib/users";
+import { getHiddenBelegColumns } from "@/lib/belege-column-prefs";
 import ManualBelegeForm from "@/components/ManualBelegeForm";
 import ManualBelegeTable from "@/components/ManualBelegeTable";
 import BelegeChecklist from "@/components/BelegeChecklist";
@@ -43,6 +46,16 @@ export default async function ManualBelege({
     ]);
   } catch (e) {
     error = e instanceof Error ? e.message : "Manuelle Belege konnten nicht geladen werden.";
+  }
+
+  // Pro-User ausgeblendete Spalten laden (individuelle Tabellen-Konfiguration).
+  let hiddenColumns: string[] = [];
+  try {
+    const session = await getSession();
+    const user = session ? await getUserByUsername(session.username) : null;
+    if (user) hiddenColumns = await getHiddenBelegColumns(user.id);
+  } catch {
+    // Ohne Konfiguration sind einfach alle Spalten sichtbar.
   }
 
   // Bei aktiver Suche: zusätzlich die per OCR-Volltext passenden Beleg-IDs.
@@ -129,7 +142,7 @@ export default async function ManualBelege({
         </div>
       )}
 
-      <ManualBelegeTable rows={rows} accounts={accounts} projects={projects} suppliers={suppliers} periodLabel={periodLabel} />
+      <ManualBelegeTable rows={rows} accounts={accounts} projects={projects} suppliers={suppliers} periodLabel={periodLabel} hiddenColumns={hiddenColumns} />
     </div>
   );
 }

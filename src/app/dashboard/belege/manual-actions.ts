@@ -12,6 +12,7 @@ import {
 } from "@/lib/manual-receipts";
 import { getBookAccounts, getProjects, getSupplierContacts } from "@/lib/hero-api";
 import { deleteTasksForBeleg } from "@/lib/tasks";
+import { setHiddenBelegColumns } from "@/lib/belege-column-prefs";
 import type { EditableReceipt, ProjectOption, SupplierOption } from "@/components/ManualBelegeForm";
 import {
   addChecklistItem,
@@ -292,6 +293,15 @@ export async function loadBelegEditDataAction(id: number): Promise<BelegEditData
 }
 
 /** Löscht einen manuellen Beleg (inkl. Datei). */
+/** Speichert die pro-User ausgeblendeten Spalten der manuellen Belegtabelle. */
+export async function saveBelegColumnsAction(hidden: string[]): Promise<void> {
+  const session = await getSession();
+  if (!session) return;
+  const user = await getUserByUsername(session.username);
+  if (!user) return;
+  await setHiddenBelegColumns(user.id, Array.isArray(hidden) ? hidden : []);
+}
+
 export async function deleteBelegAction(formData: FormData): Promise<void> {
   const session = await getSession();
   if (!session) return;
