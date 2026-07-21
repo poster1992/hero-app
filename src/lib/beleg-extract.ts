@@ -35,7 +35,9 @@ export type BelegSumKind =
   | "reifenkruetten"
   | "henrichbaustoff"
   | "buschmannwerbung"
-  | "kessler";
+  | "kessler"
+  /** Generischer Fallback für unbekannte/nicht klassifizierte Belege. */
+  | "sonstiges";
 
 export interface BelegSumResult {
   ok: boolean;
@@ -125,7 +127,68 @@ export const KIND_LABEL: Record<BelegSumKind, string> = {
   henrichbaustoff: "Henrich Baustoffzentrum",
   buschmannwerbung: "Buschmann Werbung",
   kessler: "M. Kessler",
+  sonstiges: "Sonstiger Beleg",
 };
+
+/**
+ * Kategorien für den generischen Fallback → jeweils ein in HERO BESTÄTIGT
+ * existierendes Buchungskonto (dieselben Konten wie in SUM_CONFIG). Bewusst NUR
+ * gesicherte Konten, damit eine Vorbuchung nie eine nicht existierende Kontonr.
+ * vorschlägt. Kategorien ohne sichere Zuordnung → kein Konto (User wählt selbst).
+ */
+const GENERIC_ACCOUNTS: Record<string, { number: string; name: string }> = {
+  material: { number: "3000", name: "Wareneingang / Material" },
+  fremdleistung: { number: "3100", name: "Fremdleistungen" },
+  miete: { number: "4210", name: "Miete / Pacht" },
+  energie: { number: "4240", name: "Strom, Wasser, Gas" },
+  kfz_betrieb: { number: "4530", name: "Laufende Kfz-Betriebskosten" },
+  kfz_reparatur: { number: "4540", name: "Kfz-Reparaturen" },
+  kfz_steuer: { number: "4510", name: "Kfz-Steuer" },
+  leasing: { number: "4595", name: "Leasing/Mietwagen" },
+  telefon: { number: "4920", name: "Telefon" },
+  lizenzen: {
+    number: "4964",
+    name: "Aufwendungen für die zeitlich befristete Überlassung von Rechten (Lizenzen, Konzessionen)",
+  },
+  buchfuehrung: { number: "4955", name: "Buchführungskosten" },
+  entsorgung: { number: "4969", name: "Aufwendungen für Abraum- und Abfallbeseitigung" },
+  betriebsbedarf: { number: "4980", name: "Sonstiger Betriebsbedarf" },
+};
+
+/**
+ * Robuster Allzweck-Prompt für BELIEBIGE Eingangsbelege, deren Lieferant NICHT
+ * vorab bekannt ist (Rechnung, Quittung, Kassenbon, ausländische Rechnung …).
+ * Liest dieselben Felder wie die Material-Rechnungen plus eine grobe Kategorie
+ * für den Kontovorschlag (→ GENERIC_ACCOUNTS).
+ */
+function genericInvoicePrompt(): string {
+  return (
+    "Dies ist ein BELIEBIGER Eingangsbeleg (Rechnung, Quittung, Kassenbon o. Ä.) — der Lieferant ist " +
+    "NICHT vorab bekannt. Lies die Werte robust aus, egal wie der Beleg aufgebaut oder wie gut lesbar er " +
+    "ist. Das Dokument enthält in der Regel GENAU EINE Rechnung/Quittung (evtl. mehrseitig). Gib in " +
+    "seiten GENAU EIN Objekt {betrag, steuersatz} zurück. betrag = der zu zahlende BRUTTO-Gesamtbetrag " +
+    "inkl. MwSt (die Endsumme; Label z. B. „Gesamtbetrag\", „Rechnungsbetrag\", „Bruttobetrag\", " +
+    "„Endbetrag\", „Zu zahlender Betrag\", „Total\", „Total TTC\", „Summe\", „zu zahlen\") – NICHT der " +
+    "Netto-/HT-Wert, NICHT eine Zwischensumme, NICHT nur die MwSt. Sind nur Netto- und MwSt-Betrag " +
+    "ausgewiesen, nimm deren SUMME (brutto). steuersatz = der Haupt-MwSt-/TVA-Satz in Prozent als Zahl " +
+    "(0 bei steuerfrei/Reverse-Charge). Gib zusätzlich auf oberster Ebene an: belegdatum (Rechnungs-/" +
+    "Belegdatum YYYY-MM-DD oder null – reine Zahlen-Datumsangaben europäisch als Tag/Monat/Jahr), " +
+    "lieferant (Name des Rechnungsstellers oben auf dem Beleg, oder null), beschreibung (kurze " +
+    "Leistungsbezeichnung – was wurde gekauft/geleistet, oder null), belegnummer (Rechnungs-/Belegnummer " +
+    "als Text, oder null), skonto_eur (Skontobetrag in EUR als Zahl, oder null), skonto_zahlbetrag (bei " +
+    "Skontoabzug zu zahlender Betrag als Zahl, oder null), skonto_zahlungsziel (Datum bis zu dem der " +
+    "Skonto gilt, YYYY-MM-DD, oder null), kategorie (ordne den Beleg GENAU EINER dieser Kategorien zu, " +
+    "nur EIN Wort: material = Baustoffe/Waren/Material; fremdleistung = Subunternehmer/Fremdarbeit; " +
+    "miete = Miete/Pacht; energie = Strom/Wasser/Gas; kfz_betrieb = Tanken/Reifen/laufende Kfz-Kosten; " +
+    "kfz_reparatur = Werkstatt/Reparatur; kfz_steuer = Kfz-Steuer; leasing = Fahrzeug-Leasing; " +
+    "telefon = Telefon/Internet/Telekom; lizenzen = Software/Lizenzen/Abos; buchfuehrung = Steuerberater/" +
+    "Buchhaltung; entsorgung = Abfall/Container/Entsorgung; betriebsbedarf = Arbeitskleidung/Werkzeug/" +
+    "sonstiger Betriebsbedarf; sonstiges = wenn nichts davon eindeutig passt). Antworte AUSSCHLIESSLICH " +
+    'mit JSON: {"seiten": [ EIN Objekt ], "belegdatum": …, "lieferant": …, "beschreibung": …, ' +
+    '"belegnummer": …, "skonto_eur": …, "skonto_zahlbetrag": …, "skonto_zahlungsziel": …, ' +
+    '"kategorie": …}. Punkt als Dezimaltrennzeichen, KEINE Tausenderpunkte. Nur JSON.'
+  );
+}
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -374,6 +437,12 @@ const SUM_CONFIG: Record<
     account: { number: "4955", name: "Buchführungskosten" },
     prompt: materialInvoicePrompt("Firma M. Kessler", "Buchführung / Steuerberatung"),
   },
+  // Generischer Fallback für unbekannte Belege: kein fester Lieferant/Konto,
+  // Konto kommt über die ausgelesene Kategorie (GENERIC_ACCOUNTS).
+  sonstiges: {
+    label: "Gesamtbetrag brutto",
+    prompt: genericInvoicePrompt(),
+  },
   postdeep: {
     label: "Total TTC",
     supplierSearch: "Post Telecom",
@@ -534,7 +603,9 @@ export async function extractBeleg(input: {
     const client = new Anthropic({ maxRetries: 2, timeout: 120_000 });
 
     // Belegtyp bestimmen: automatisch erkennen oder vorgegeben.
+    // generic = generischer Fallback-Prompt (unbekannter Lieferant / kein Treffer).
     let kind: BelegSumKind;
+    let generic = false;
     if (input.kind === "auto") {
       const cls = await client.messages.create({
         model: "claude-haiku-4-5",
@@ -579,28 +650,19 @@ export async function extractBeleg(input: {
         ["circle", "mixvoip", "bgl", "palettecad", "herosoftware", "activite", "etges", "niederer", "raabkarcher", "fliesenzentrum", "etbkenn", "kiesel", "moselbaustoff", "postdeep", "johanntrierweiler", "akemi", "maroldt", "hieronimi", "kennerbeton", "bureaucaisse", "sigre", "carlgeisen", "wohlwert", "ibod", "eon", "idealfliesen", "garagelosch", "reifenkruetten", "henrichbaustoff", "buschmannwerbung", "kessler", "lohn"] as BelegSumKind[]
       ).find((k) => word === k);
       if (!detected) {
-        return {
-          ok: false,
-          error: "Belegtyp konnte nicht automatisch erkannt werden – bitte Typ manuell wählen.",
-        };
+        // Unbekannter/nicht klassifizierter Beleg → generischer Fallback,
+        // damit AUCH unbekannte Dokumente ausgelesen und vorgebucht werden.
+        kind = "sonstiges";
+        generic = true;
+      } else {
+        kind = detected;
       }
-      kind = detected;
     } else {
       kind = input.kind;
+      generic = input.kind === "sonstiges";
     }
-    const cfg = SUM_CONFIG[kind];
 
-    const res = await client.messages.create({
-      model: "claude-haiku-4-5",
-      max_tokens: 16000,
-      messages: [{ role: "user", content: [block, { type: "text", text: cfg.prompt + VOLLTEXT_SUFFIX }] }],
-    });
-    const tb = res.content.find((b) => b.type === "text");
-    const raw =
-      tb && tb.type === "text"
-        ? tb.text.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim()
-        : "{}";
-    const parsed = JSON.parse(raw) as {
+    interface ParsedBeleg {
       seiten?: { betrag?: unknown; steuersatz?: unknown; matricule?: unknown; typ?: unknown }[];
       belegdatum?: unknown;
       lieferant?: unknown;
@@ -609,12 +671,44 @@ export async function extractBeleg(input: {
       skonto_eur?: unknown;
       skonto_zahlbetrag?: unknown;
       skonto_zahlungsziel?: unknown;
+      kategorie?: unknown;
       volltext?: unknown;
       drehung?: unknown;
+    }
+
+    // Ein Extraktionslauf mit gegebenem Prompt (inkl. Volltext + Drehung).
+    const runExtraction = async (prompt: string): Promise<ParsedBeleg> => {
+      const res = await client.messages.create({
+        model: "claude-haiku-4-5",
+        max_tokens: 16000,
+        messages: [{ role: "user", content: [block, { type: "text", text: prompt + VOLLTEXT_SUFFIX }] }],
+      });
+      const tb = res.content.find((b) => b.type === "text");
+      const raw =
+        tb && tb.type === "text"
+          ? tb.text.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim()
+          : "{}";
+      return JSON.parse(raw) as ParsedBeleg;
     };
+
+    let cfg = SUM_CONFIG[kind];
+    let parsed = await runExtraction(cfg.prompt);
+    const nonZero = (p: ParsedBeleg) =>
+      (p.seiten ?? []).map((s) => toNum(s?.betrag)).filter((n) => n !== 0);
+    let values = nonZero(parsed);
+
+    // Robustheits-Fallback: Wurde automatisch ein bekannter Typ erkannt, aber
+    // KEIN Betrag ausgelesen (falsche Klassifizierung / anderes Layout), noch
+    // einmal generisch versuchen, statt aufzugeben.
+    if (values.length === 0 && !generic && input.kind === "auto") {
+      generic = true;
+      kind = "sonstiges";
+      cfg = SUM_CONFIG.sonstiges;
+      parsed = await runExtraction(cfg.prompt);
+      values = nonZero(parsed);
+    }
+
     const seiten = parsed.seiten ?? [];
-    // Nicht-Null-Beträge (bei Activité kann ein NK-Guthaben negativ sein).
-    const values = seiten.map((s) => toNum(s?.betrag)).filter((n) => n !== 0);
     if (values.length === 0) {
       return { ok: false, error: `Es wurden keine „${cfg.label}"-Werte erkannt.`, kind, kindLabel: KIND_LABEL[kind] };
     }
@@ -694,6 +788,16 @@ export async function extractBeleg(input: {
       } else {
         accountNumber = "4210";
         accountName = "Miete / Pacht";
+      }
+    } else if (generic) {
+      // Generisch: bekannter Lieferant (falls doch getroffen) hat Vorrang,
+      // sonst das Konto aus der ausgelesenen Kategorie. Trifft nichts zu,
+      // bleibt das Konto leer (User wählt in der Nacherfassung).
+      const kat = String(parsed.kategorie ?? "").toLowerCase().replace(/[^a-z_]/g, "");
+      const acc = accountForSupplier(supplier) ?? GENERIC_ACCOUNTS[kat];
+      if (acc) {
+        accountNumber = acc.number;
+        accountName = acc.name;
       }
     } else if (cfg.account && (!cfg.accountNeedsVehicle || isVehicle)) {
       accountNumber = cfg.account.number;
