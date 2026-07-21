@@ -41,6 +41,37 @@ function formatDate(d: string | null): string {
   return Number.isNaN(dt.getTime()) ? d : dateFormatter.format(dt);
 }
 
+/** Reguläres Zahlungsziel (netto), wenn keins am Beleg hinterlegt ist: Belegdatum + N Tage. */
+const NET_DAYS = 30;
+
+/** Lokales Datum als yyyy-mm-dd (kein UTC-Versatz). */
+const localISO = (d: Date): string =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+/** yyyy-mm-dd + n Tage → yyyy-mm-dd. */
+const addDays = (iso: string, n: number): string => {
+  const d = new Date(`${iso}T00:00:00`);
+  d.setDate(d.getDate() + n);
+  return localISO(d);
+};
+
+/**
+ * Zeilenfarbe nach Zahlstatus (Dark-Theme-lesbar, halbtransparent):
+ *  grün = bezahlt · blau = Skonto noch ziehbar · orange = noch im Zahlungsziel · rot = überfällig.
+ */
+function rowTint(r: BelegRow, todayISO: string): string {
+  if (r.isPaid) return "bg-green-500/30 hover:bg-green-500/40";
+  const skontoOpen =
+    r.skontoPayAmount != null &&
+    r.skontoPayAmount < r.gross &&
+    r.skontoDueDate != null &&
+    r.skontoDueDate >= todayISO;
+  if (skontoOpen) return "bg-blue-500/30 hover:bg-blue-500/40";
+  const due = r.date ? addDays(r.date, NET_DAYS) : null;
+  if (!due || todayISO <= due) return "bg-orange-500/25 hover:bg-orange-500/35";
+  return "bg-red-500/30 hover:bg-red-500/40";
+}
+
 /** Status-Zelle: Bezahlt/Offen + Skonto-Kennzeichnung; „als bezahlt" fragt bei Skonto nach. */
 function PaidCell({ r }: { r: BelegRow }) {
   const router = useRouter();
@@ -251,6 +282,8 @@ export default function ManualBelegeTable({
   };
   // Sichtbare Datenspalten + Auswahlspalte → für colSpan der Leer-Zeile.
   const visibleColSpan = 1 + TOGGLE_COLUMNS.filter((c) => show(c.key)).length;
+  // Heutiges Datum (lokal) für die Fälligkeits-Einfärbung der Zeilen.
+  const todayISO = localISO(new Date());
 
   const setCol = (col: TextCol, value: string) => setText((t) => ({ ...t, [col]: value }));
 
@@ -720,9 +753,7 @@ export default function ManualBelegeTable({
               sorted.map((r) => (
                 <tr
                   key={r.id}
-                  className={`border-t border-gray-100 ${
-                    r.isPaid ? "bg-green-500/30 hover:bg-green-500/40" : "hover:bg-gray-50"
-                  }`}
+                  className={`border-t border-gray-100 ${rowTint(r, todayISO)}`}
                   title="Rechtsklick für Aktionen (Bearbeiten / Löschen)"
                   onContextMenu={(e) => {
                     e.preventDefault();
