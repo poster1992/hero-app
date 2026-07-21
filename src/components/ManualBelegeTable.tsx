@@ -721,7 +721,7 @@ export default function ManualBelegeTable({
                 <tr
                   key={r.id}
                   className={`border-t border-gray-100 ${
-                    r.isPaid ? "bg-emerald-50 hover:bg-emerald-100" : "hover:bg-gray-50"
+                    r.isPaid ? "bg-green-500/30 hover:bg-green-500/40" : "hover:bg-gray-50"
                   }`}
                   title="Rechtsklick für Aktionen (Bearbeiten / Löschen)"
                   onContextMenu={(e) => {
