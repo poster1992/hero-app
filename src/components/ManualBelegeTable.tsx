@@ -152,6 +152,7 @@ function money(x: number | null): string {
 
 /** Textspalten, die per Eingabefeld im Tabellenkopf gefiltert werden. */
 const TEXT_COLS = [
+  "id",
   "datum",
   "lieferant",
   "belegnr",
@@ -186,6 +187,7 @@ export default function ManualBelegeTable({
   periodLabel: string;
 }) {
   const [text, setText] = useState<Record<TextCol, string>>({
+    id: "",
     datum: "",
     lieferant: "",
     belegnr: "",
@@ -210,6 +212,7 @@ export default function ManualBelegeTable({
         rows.map((r) => [
           r.id,
           {
+            id: `#${r.id} ${r.id}`,
             datum: formatDate(r.date),
             lieferant: r.supplier ?? "",
             belegnr: r.invoiceNumber ?? "",
@@ -249,6 +252,7 @@ export default function ManualBelegeTable({
   const anyFilter = status !== "" || beleg !== "" || TEXT_COLS.some((c) => text[c].trim() !== "");
   const reset = () => {
     setText({
+      id: "",
       datum: "",
       lieferant: "",
       belegnr: "",
@@ -300,6 +304,7 @@ export default function ManualBelegeTable({
         <table className="w-full border-collapse text-sm">
           <thead className="bg-gray-50">
             <tr className="text-left text-xs uppercase tracking-wide text-gray-500">
+              <th className="px-3 py-1.5 font-semibold" title="Eindeutige, fortlaufende Beleg-ID (zum Melden von Problemen)">ID</th>
               <th className="px-3 py-1.5 font-semibold">Datum</th>
               <th className="px-3 py-1.5 font-semibold">Lieferant</th>
               <th className="px-3 py-1.5 font-semibold">Beleg-Nr.</th>
@@ -317,6 +322,7 @@ export default function ManualBelegeTable({
             </tr>
             {/* Filterzeile im Tabellenkopf */}
             <tr className="border-t border-gray-200 bg-white align-top">
+              <th className="px-2 py-1.5">{colInput("id")}</th>
               <th className="px-2 py-1.5">{colInput("datum")}</th>
               <th className="px-2 py-1.5">{colInput("lieferant")}</th>
               <th className="px-2 py-1.5">{colInput("belegnr")}</th>
@@ -356,13 +362,16 @@ export default function ManualBelegeTable({
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={14} className="px-5 py-8 text-center text-sm text-gray-500">
+                <td colSpan={15} className="px-5 py-8 text-center text-sm text-gray-500">
                   Keine Belege für die gewählten Spaltenfilter.
                 </td>
               </tr>
             ) : (
               filtered.map((r) => (
                 <tr key={r.id} className="border-t border-gray-100">
+                  <td className="px-3 py-1.5 tabular-nums font-semibold text-gray-500" title="Eindeutige, fortlaufende Beleg-ID">
+                    #{r.id}
+                  </td>
                   <td className="px-3 py-1.5 tabular-nums text-gray-700">{formatDate(r.date)}</td>
                   <td className="px-3 py-1.5 text-gray-900">
                     {r.supplier ?? "—"}
