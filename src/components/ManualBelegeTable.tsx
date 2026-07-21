@@ -2,10 +2,9 @@
 
 import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { setBelegPaidAction } from "@/app/dashboard/belege/manual-actions";
+import { setBelegPaidAction, deleteBelegAction } from "@/app/dashboard/belege/manual-actions";
 import { buildMultilineSepaAction, type SepaItem } from "@/app/dashboard/belege/sepa-actions";
-import BelegEditButton from "@/components/BelegEditButton";
-import DeleteBelegButton from "@/components/DeleteBelegButton";
+import BelegDetailModal from "@/components/BelegDetailModal";
 import type { ProjectOption, SupplierOption } from "@/components/ManualBelegeForm";
 import type { ManualReceipt } from "@/lib/manual-receipts";
 
@@ -441,6 +440,24 @@ export default function ManualBelegeTable({
     setBeleg("");
   };
 
+  // --- Zeilen-Aktionen per Rechtsklick (Kontextmenü) ---
+  const router = useRouter();
+  const [, startDelete] = useTransition();
+  const [menu, setMenu] = useState<{ row: BelegRow; x: number; y: number } | null>(null);
+  const [editRow, setEditRow] = useState<BelegRow | null>(null);
+
+  const doDelete = (row: BelegRow) => {
+    setMenu(null);
+    const label = row.supplier ?? row.description ?? `Beleg ${row.id}`;
+    if (!window.confirm(`Beleg „${label}" (#${row.id}) wirklich löschen?`)) return;
+    const fd = new FormData();
+    fd.set("id", String(row.id));
+    startDelete(async () => {
+      await deleteBelegAction(fd);
+      router.refresh();
+    });
+  };
+
   const colInput = (col: TextCol, align: "left" | "right" = "left") => (
     <input
       value={text[col]}
@@ -451,6 +468,7 @@ export default function ManualBelegeTable({
   );
 
   return (
+    <>
     <div className="overflow-x-auto rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-gray-200 px-5 py-4">
         <h2 className="text-lg font-medium text-gray-900">Erfasste Belege {periodLabel}</h2>
@@ -543,7 +561,6 @@ export default function ManualBelegeTable({
               <th className="px-3 py-1.5 font-semibold">Skonto bis</th>
               <th className="px-3 py-1.5 font-semibold">Status</th>
               <th className="px-3 py-1.5 font-semibold">Beleg</th>
-              <th className="px-3 py-1.5 font-semibold">Aktion</th>
             </tr>
             {/* Filterzeile im Tabellenkopf */}
             <tr className="border-t border-gray-200 bg-white align-top">
@@ -582,19 +599,30 @@ export default function ManualBelegeTable({
                   <option value="without">Ohne</option>
                 </select>
               </th>
-              <th className="px-2 py-1.5" />
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={16} className="px-5 py-8 text-center text-sm text-gray-500">
+                <td colSpan={15} className="px-5 py-8 text-center text-sm text-gray-500">
                   Keine Belege für die gewählten Spaltenfilter.
                 </td>
               </tr>
             ) : (
               filtered.map((r) => (
-                <tr key={r.id} className="border-t border-gray-100">
+                <tr
+                  key={r.id}
+                  className="border-t border-gray-100 hover:bg-gray-50"
+                  title="Rechtsklick für Aktionen (Bearbeiten / Löschen)"
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    setMenu({
+                      row: r,
+                      x: Math.min(e.clientX, window.innerWidth - 180),
+                      y: Math.min(e.clientY, window.innerHeight - 90),
+                    });
+                  }}
+                >
                   <td className="px-3 py-1.5">
                     {!r.isPaid && (
                       <input
@@ -678,12 +706,6 @@ export default function ManualBelegeTable({
                       <span className="text-gray-400">—</span>
                     )}
                   </td>
-                  <td className="px-3 py-1.5">
-                    <div className="flex items-center gap-1.5">
-                      <BelegEditButton accounts={accounts} projects={projects} suppliers={suppliers} receipt={r} hasFile={r.hasFile} />
-                      <DeleteBelegButton id={r.id} label={r.supplier ?? r.description ?? `Beleg ${r.id}`} />
-                    </div>
-                  </td>
                 </tr>
               ))
             )}
@@ -691,5 +713,55 @@ export default function ManualBelegeTable({
         </table>
       )}
     </div>
+
+    {/* Rechtsklick-Kontextmenü mit den Zeilen-Aktionen. */}
+    {menu && (
+      <>
+        <div
+          className="fixed inset-0 z-40"
+          onClick={() => setMenu(null)}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setMenu(null);
+          }}
+        />
+        <div
+          className="fixed z-50 w-44 overflow-hidden rounded-md border border-gray-200 bg-white py-1 shadow-xl"
+          style={{ left: menu.x, top: menu.y }}
+        >
+          <button
+            type="button"
+            onClick={() => {
+              setEditRow(menu.row);
+              setMenu(null);
+            }}
+            className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+          >
+            ✏️ Bearbeiten
+          </button>
+          <button
+            type="button"
+            onClick={() => doDelete(menu.row)}
+            className="block w-full px-3 py-2 text-left text-sm font-medium text-brand-red hover:bg-gray-50"
+          >
+            🗑 Löschen
+          </button>
+        </div>
+      </>
+    )}
+
+    {/* Bearbeiten-Fenster (dasselbe wie zuvor der „Bearbeiten"-Button). */}
+    {editRow && (
+      <BelegDetailModal
+        belegId={editRow.id}
+        receipt={editRow}
+        accounts={accounts}
+        projects={projects}
+        suppliers={suppliers}
+        hasFile={editRow.hasFile}
+        onClose={() => setEditRow(null)}
+      />
+    )}
+    </>
   );
 }
