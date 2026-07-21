@@ -68,8 +68,10 @@ function rowTint(r: BelegRow, todayISO: string): string {
     r.skontoDueDate >= todayISO;
   if (skontoOpen) return "bg-blue-500/30 hover:bg-blue-500/40";
   const due = r.date ? addDays(r.date, NET_DAYS) : null;
-  if (!due || todayISO <= due) return "bg-orange-500/25 hover:bg-orange-500/35";
-  return "bg-red-500/30 hover:bg-red-500/40";
+  // Warme Töne brauchen im dunklen Theme mehr Deckkraft + helleren Grundton,
+  // sonst wirken sie matschig-braun. Orange (Ziel) klar von Rot (überfällig) getrennt.
+  if (!due || todayISO <= due) return "bg-orange-400/60 hover:bg-orange-400/70";
+  return "bg-red-600/55 hover:bg-red-600/65";
 }
 
 /** Status-Zelle: Bezahlt/Offen + Skonto-Kennzeichnung; „als bezahlt" fragt bei Skonto nach. */
