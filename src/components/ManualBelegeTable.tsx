@@ -720,7 +720,9 @@ export default function ManualBelegeTable({
               sorted.map((r) => (
                 <tr
                   key={r.id}
-                  className="border-t border-gray-100 hover:bg-gray-50"
+                  className={`border-t border-gray-100 ${
+                    r.isPaid ? "bg-emerald-50 hover:bg-emerald-100" : "hover:bg-gray-50"
+                  }`}
                   title="Rechtsklick für Aktionen (Bearbeiten / Löschen)"
                   onContextMenu={(e) => {
                     e.preventDefault();
