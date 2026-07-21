@@ -23,6 +23,7 @@ import {
   addTaskNote,
   getTaskById,
   deleteTask,
+  deleteTasksForBeleg,
   listTasksForPerson,
   listTasksCompletedOn,
   taskStatusLabel,
@@ -412,6 +413,9 @@ export async function deleteBelegAndTaskAction(taskId: number): Promise<{ ok: bo
       } catch {
         /* Beleg evtl. schon weg – Aufgabe trotzdem löschen. */
       }
+      // Alle zum Beleg gehörenden Aufgaben mitlöschen (Buchung + Rechnungsprüfung),
+      // nicht nur die angeklickte – sonst bleibt eine Geschwister-Aufgabe zurück.
+      await deleteTasksForBeleg(belegId).catch(() => {});
     }
   }
   try {

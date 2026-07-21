@@ -11,6 +11,7 @@ import {
   getManualReceipt,
 } from "@/lib/manual-receipts";
 import { getBookAccounts, getProjects, getSupplierContacts } from "@/lib/hero-api";
+import { deleteTasksForBeleg } from "@/lib/tasks";
 import type { EditableReceipt, ProjectOption, SupplierOption } from "@/components/ManualBelegeForm";
 import {
   addChecklistItem,
@@ -297,7 +298,11 @@ export async function deleteBelegAction(formData: FormData): Promise<void> {
   const id = Number(formData.get("id"));
   if (!Number.isFinite(id) || id <= 0) return;
   await deleteManualReceipt(id);
+  // Zugehörige Aufgabe(n) mitlöschen, damit keine Aufgabe auf einen nicht mehr
+  // existierenden Beleg verweist (z. B. beim Löschen eines Duplikats).
+  await deleteTasksForBeleg(id).catch(() => {});
   revalidatePath(PATH);
+  revalidatePath("/dashboard/aufgaben");
 }
 
 /** Markiert einen manuellen Beleg als bezahlt/offen. */

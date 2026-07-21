@@ -414,6 +414,25 @@ export async function deleteTask(id: number): Promise<void> {
   await pool.query("DELETE FROM tasks WHERE id = ?", [id]);
 }
 
+/**
+ * Löscht alle Aufgaben, die über den Marker [BELEGPRUEF:<belegId>] zu einem
+ * manuellen Beleg gehören – die Buchungs- UND die verkettete Rechnungsprüfungs-
+ * Aufgabe. Wird beim Löschen eines Belegs (z. B. Duplikat) aufgerufen, damit
+ * keine Aufgabe auf einen nicht mehr existierenden Beleg verweist. Gibt die
+ * Anzahl gelöschter Aufgaben zurück.
+ */
+export async function deleteTasksForBeleg(belegId: number): Promise<number> {
+  if (!Number.isFinite(belegId) || belegId <= 0) return 0;
+  // In MySQL LIKE sind nur % und _ Platzhalter – die eckigen Klammern des
+  // Markers matchen wörtlich; die schließende ] verhindert 266→2660-Kollisionen.
+  const [rows] = await getPool().query<RowDataPacket[]>(
+    "SELECT id FROM tasks WHERE description LIKE ?",
+    [`%[BELEGPRUEF:${belegId}]%`]
+  );
+  for (const r of rows) await deleteTask(r.id as number);
+  return rows.length;
+}
+
 /** Completes open review tasks for a receipt once it was decided. */
 export async function completeReviewTasks(heroReceiptId: string, byUserId: number): Promise<void> {
   const marker = reviewMarker(heroReceiptId);
