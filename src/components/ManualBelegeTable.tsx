@@ -201,6 +201,11 @@ export default function ManualBelegeTable({
     skontobis: "",
   });
   const [status, setStatus] = useState<"" | "open" | "paid">("");
+  // Sortierung nach ID oder Datum. Standard beim Öffnen: Datum, neueste zuerst.
+  const [sort, setSort] = useState<{ col: "id" | "datum"; dir: "asc" | "desc" }>({ col: "datum", dir: "desc" });
+  const toggleSort = (col: "id" | "datum") =>
+    setSort((s) => (s?.col === col ? { col, dir: s.dir === "asc" ? "desc" : "asc" } : { col, dir: "desc" }));
+  const sortArrow = (col: "id" | "datum") => (sort?.col === col ? (sort.dir === "asc" ? " ▲" : " ▼") : "");
 
   const setCol = (col: TextCol, value: string) => setText((t) => ({ ...t, [col]: value }));
 
@@ -245,6 +250,26 @@ export default function ManualBelegeTable({
     });
   }, [rows, text, status, searchValues]);
 
+  // Sortierte Anzeige (Datum als ISO yyyy-mm-dd → lexikografisch = chronologisch;
+  // leere Daten ans Ende). Bei gleichem Datum als Zweitschlüssel die ID.
+  const sorted = useMemo(() => {
+    const arr = [...filtered];
+    arr.sort((a, b) => {
+      if (sort.col === "id") {
+        return sort.dir === "asc" ? a.id - b.id : b.id - a.id;
+      }
+      // Datum: leere Daten IMMER ans Ende (unabhängig von der Richtung).
+      const da = a.date ?? "";
+      const db = b.date ?? "";
+      if (!da && !db) return a.id - b.id;
+      if (!da) return 1;
+      if (!db) return -1;
+      const cmp = da.localeCompare(db) || a.id - b.id;
+      return sort.dir === "asc" ? cmp : -cmp;
+    });
+    return arr;
+  }, [filtered, sort]);
+
   const total = filtered.reduce((s, r) => s + r.gross, 0);
   const anyFilter = status !== "" || TEXT_COLS.some((c) => text[c].trim() !== "");
 
@@ -262,7 +287,7 @@ export default function ManualBelegeTable({
   };
 
   const exportPdfs = async () => {
-    const withFile = filtered.filter((r) => r.hasFile);
+    const withFile = sorted.filter((r) => r.hasFile);
     if (withFile.length === 0) return;
     setZipping(`0 / ${withFile.length}`);
     try {
@@ -324,7 +349,7 @@ export default function ManualBelegeTable({
       "Status",
       "Beleg vorhanden",
     ];
-    const lines = filtered.map((r) =>
+    const lines = sorted.map((r) =>
       [
         `#${r.id}`,
         formatDate(r.date),
@@ -543,8 +568,24 @@ export default function ManualBelegeTable({
                   title="Alle offenen Belege der Anzeige auswählen"
                 />
               </th>
-              <th className="px-3 py-1.5 font-semibold" title="Eindeutige, fortlaufende Beleg-ID (zum Melden von Problemen)">ID</th>
-              <th className="px-3 py-1.5 font-semibold">Datum</th>
+              <th className="px-3 py-1.5 font-semibold" title="Eindeutige, fortlaufende Beleg-ID (zum Melden von Problemen). Klicken zum Sortieren.">
+                <button
+                  type="button"
+                  onClick={() => toggleSort("id")}
+                  className="uppercase tracking-wide hover:text-gray-800"
+                >
+                  ID{sortArrow("id")}
+                </button>
+              </th>
+              <th className="px-3 py-1.5 font-semibold" title="Nach Datum sortieren">
+                <button
+                  type="button"
+                  onClick={() => toggleSort("datum")}
+                  className="uppercase tracking-wide hover:text-gray-800"
+                >
+                  Datum{sortArrow("datum")}
+                </button>
+              </th>
               <th className="px-3 py-1.5 font-semibold">Lieferant</th>
               <th className="px-3 py-1.5 font-semibold">Beleg-Nr.</th>
               <th className="px-3 py-1.5 font-semibold">Konto</th>
@@ -593,7 +634,7 @@ export default function ManualBelegeTable({
                 </td>
               </tr>
             ) : (
-              filtered.map((r) => (
+              sorted.map((r) => (
                 <tr
                   key={r.id}
                   className="border-t border-gray-100 hover:bg-gray-50"
