@@ -2177,18 +2177,24 @@ function sumDraft(
   }
   if (node && typeof node === "object") {
     const obj = node as Record<string, unknown>;
+    const isService = obj.atType === "SupplyService";
+    // Eigenmenge der Dienstleistungsposition, multipliziert mit der geerbten
+    // Menge einer umschließenden Dienstleistung. time_minutes UND wage_base sind
+    // je Einheit angegeben und müssen – wie das Material – mit der Menge
+    // hochgerechnet werden; sonst sind Soll-Stunden/Soll-Lohn zu niedrig.
+    const ownQty = isService ? toNumber(obj.quantity) || 1 : 1;
     if (obj.type === "product" && typeof obj.time_minutes === "number") {
-      acc.minutes += obj.time_minutes;
+      acc.minutes += obj.time_minutes * ownQty * serviceQty;
     }
     if (obj.atType === "SupplyProduct") {
       acc.material += toNumber(obj.base_price) * toNumber(obj.quantity) * serviceQty;
     }
-    // SupplyService.wage_base = planned labor cost (Kostenlohn) of that line.
-    if (obj.atType === "SupplyService") {
-      acc.laborCost += toNumber(obj.wage_base);
+    // SupplyService.wage_base = geplanter Kostenlohn je Einheit dieser Position.
+    if (isService) {
+      acc.laborCost += toNumber(obj.wage_base) * ownQty * serviceQty;
     }
     // In eine SupplyService-Position wird deren Menge als Multiplikator vererbt.
-    const childQty = obj.atType === "SupplyService" ? toNumber(obj.quantity) || 1 : serviceQty;
+    const childQty = isService ? ownQty : serviceQty;
     for (const v of Object.values(obj)) sumDraft(v, acc, childQty);
   }
 }
@@ -2327,8 +2333,11 @@ function collectDraft(
   }
   if (node && typeof node === "object") {
     const obj = node as Record<string, unknown>;
+    const isService = obj.atType === "SupplyService";
+    // Zeit/Lohn sind je Einheit → mit der (geerbten) Menge hochrechnen, s. sumDraft.
+    const ownQty = isService ? toNumber(obj.quantity) || 1 : 1;
     if (obj.type === "product" && typeof obj.time_minutes === "number") {
-      acc.minutes += obj.time_minutes;
+      acc.minutes += obj.time_minutes * ownQty * serviceQty;
     }
     if (obj.atType === "SupplyProduct") {
       // Effektive Menge = Menge je Positionseinheit × Positionsmenge (SupplyService).
@@ -2344,10 +2353,10 @@ function collectDraft(
         articleNr: obj.nr != null ? String(obj.nr) : obj.itemNumber != null ? String(obj.itemNumber) : null,
       });
     }
-    if (obj.atType === "SupplyService") {
-      acc.laborCost += toNumber(obj.wage_base);
+    if (isService) {
+      acc.laborCost += toNumber(obj.wage_base) * ownQty * serviceQty;
     }
-    const childQty = obj.atType === "SupplyService" ? toNumber(obj.quantity) || 1 : serviceQty;
+    const childQty = isService ? ownQty : serviceQty;
     for (const v of Object.values(obj)) collectDraft(v, acc, childQty);
   }
 }
