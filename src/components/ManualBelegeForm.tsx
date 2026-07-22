@@ -188,6 +188,9 @@ export function ManualBelegeFormFields({
   const skontoPayInputRef = useRef<HTMLInputElement>(null);
   const skontoDueInputRef = useRef<HTMLInputElement>(null);
   const [belegTyp, setBelegTyp] = useState<SumTyp>("auto");
+  // Gutschrift = negativer Beleg. Betrag wird immer positiv eingegeben; das
+  // Vorzeichen setzt die Server-Action. Beim Bearbeiten aus dem Vorzeichen ableiten.
+  const [isCredit, setIsCredit] = useState<boolean>(receipt ? receipt.gross < 0 : false);
   const [sumBusy, startSum] = useTransition();
   const [sumMsg, setSumMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const isSumType = belegTyp !== "";
@@ -333,7 +336,7 @@ export function ManualBelegeFormFields({
   const inputClass =
     "w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-brand-red/60";
 
-  const grossDefault = receipt ? String(receipt.gross).replace(".", ",") : "";
+  const grossDefault = receipt ? String(Math.abs(receipt.gross)).replace(".", ",") : "";
   const vatDefault = receipt?.vatRate != null ? String(receipt.vatRate) : "";
   const invoiceDefault = receipt?.invoiceNumber ?? "";
   const skontoDefault = receipt?.skontoAmount != null ? String(receipt.skontoAmount).replace(".", ",") : "";
@@ -513,8 +516,27 @@ export function ManualBelegeFormFields({
                   </span>
                 </label>
               </div>
+              <div className="lg:col-span-3">
+                <label className="flex items-start gap-2 rounded-md border border-sky-400/40 bg-sky-50 px-3 py-2 text-sm text-gray-700">
+                  <input
+                    type="checkbox"
+                    name="isCredit"
+                    value="1"
+                    checked={isCredit}
+                    onChange={(e) => setIsCredit(e.target.checked)}
+                    className="mt-0.5 accent-brand-red"
+                  />
+                  <span>
+                    <strong>Gutschrift</strong> – dieser Beleg wird als{" "}
+                    <strong>negativer Betrag</strong> gebucht (zieht von den Ausgaben ab). Betrag unten
+                    trotzdem positiv eingeben.
+                  </span>
+                </label>
+              </div>
               <div>
-                <label className="mb-1 block text-sm text-gray-600">Betrag (brutto) *</label>
+                <label className="mb-1 block text-sm text-gray-600">
+                  Betrag (brutto) *{isCredit && <span className="ml-1 text-sky-700">– Gutschrift (wird abgezogen)</span>}
+                </label>
                 <input
                   ref={grossInputRef}
                   name="gross"

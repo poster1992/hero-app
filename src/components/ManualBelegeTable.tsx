@@ -60,6 +60,9 @@ const addDays = (iso: string, n: number): string => {
  *  grün = bezahlt · blau = Skonto noch ziehbar · orange = noch im Zahlungsziel · rot = überfällig.
  */
 function rowTint(r: BelegRow, todayISO: string): string {
+  // Gutschriften (negativer Betrag) sind keine offene Zahlung → neutral einfärben,
+  // nicht nach Fälligkeit (sonst würden sie rot/„überfällig" erscheinen).
+  if (r.gross < 0) return "bg-sky-500/20 hover:bg-sky-500/30";
   if (r.isPaid) return "bg-green-500/30 hover:bg-green-500/40";
   const skontoOpen =
     r.skontoPayAmount != null &&
@@ -467,7 +470,8 @@ export default function ManualBelegeTable({
   const [sepaError, setSepaError] = useState<string | null>(null);
   const [sepaMissing, setSepaMissing] = useState<{ name: string }[] | null>(null);
 
-  const selectable = filtered.filter((r) => !r.isPaid);
+  // Nur offene, positive Belege sind per SEPA überweisbar – Gutschriften (negativ) nicht.
+  const selectable = filtered.filter((r) => !r.isPaid && r.gross > 0);
   const selectedRows = selectable.filter((r) => selected.has(r.id));
   const allSelectableSelected = selectable.length > 0 && selectable.every((r) => selected.has(r.id));
   const toggleRow = (id: number) =>
@@ -767,7 +771,7 @@ export default function ManualBelegeTable({
                   }}
                 >
                   <td className="px-3 py-1.5">
-                    {!r.isPaid && (
+                    {!r.isPaid && r.gross > 0 && (
                       <input
                         type="checkbox"
                         checked={selected.has(r.id)}
@@ -800,6 +804,14 @@ export default function ManualBelegeTable({
                           className="ml-1.5 whitespace-nowrap rounded-full bg-amber-400/20 px-2 py-0.5 text-[10px] font-semibold text-amber-800 ring-1 ring-amber-500/40"
                         >
                           ⚠ Dublette
+                        </span>
+                      )}
+                      {r.gross < 0 && (
+                        <span
+                          title="Gutschrift – negativer Beleg, zieht von den Ausgaben ab"
+                          className="ml-1.5 whitespace-nowrap rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-700 ring-1 ring-sky-500/40"
+                        >
+                          ↩ Gutschrift
                         </span>
                       )}
                     </td>

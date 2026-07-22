@@ -6,6 +6,7 @@ import { getUserByUsername } from "@/lib/users";
 import { listTasksAssignedTo, listAllOverdueTasks } from "@/lib/tasks";
 import { taskStatusLabel, isOverdue, type TaskStatus } from "@/lib/task-types";
 import { getProjectPipeline } from "@/lib/hero-api";
+import { listBaustellen } from "@/lib/baustellen-docs";
 import ProjectPipelines from "@/components/ProjectPipelines";
 
 function formatDate(d: string | null): string {
@@ -34,6 +35,22 @@ export default async function DashboardPage() {
 
   const { role } = await getEffectiveRole();
   const allowedModules = await getAllowedModules(role);
+
+  // Reine Foto-Benutzer (Baustellen-Zugriff, aber kein Dashboard-Recht – z. B. die
+  // Rolle „bauleiter"/Projekt Fotos) sollen nicht auf dem für sie leeren Dashboard
+  // landen, sondern direkt in ihrer ersten Baustellen-Galerie.
+  // Hinweis: redirect() wirft NEXT_REDIRECT – NICHT in try/catch aufrufen.
+  if (!allowedModules.includes("dashboard") && allowedModules.includes("baustellen")) {
+    let firstBaustelleId: number | null = null;
+    try {
+      const baustellen = await listBaustellen();
+      firstBaustelleId = baustellen[0]?.id ?? null;
+    } catch {
+      // Ohne Baustellen-Liste bleibt es beim normalen Dashboard.
+    }
+    if (firstBaustelleId !== null) redirect(`/dashboard/baustellen/${firstBaustelleId}`);
+  }
+
   const canSeeOverdue = allowedModules.includes("ueberfaellige_aufgaben");
   let tasks: Awaited<ReturnType<typeof listTasksAssignedTo>> = [];
   let overdueAll: Awaited<ReturnType<typeof listAllOverdueTasks>> = [];

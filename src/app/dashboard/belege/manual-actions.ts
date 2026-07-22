@@ -44,6 +44,8 @@ export async function uploadBelegAction(
   const vatRateRaw = String(formData.get("vatRate") ?? "").trim().replace(",", ".");
   const vatRate = vatRateRaw ? Number(vatRateRaw) : null;
   const account = String(formData.get("account") ?? "").trim(); // "number|name"
+  // Gutschrift = Beleg mit negativem Betrag (rechnet in allen Summen gegen).
+  const isCredit = formData.get("isCredit") === "1" || formData.get("isCredit") === "on";
 
   if (!Number.isFinite(gross) || gross <= 0) {
     return { error: "Bitte einen gültigen Betrag (brutto) angeben." };
@@ -52,6 +54,8 @@ export async function uploadBelegAction(
     return { error: "MwSt-Satz muss eine Zahl sein." };
   }
   if (!account) return { error: "Bitte ein Konto auswählen." };
+  // Der Betrag wird stets positiv eingegeben; eine Gutschrift wird negativ gespeichert.
+  const signedGross = isCredit ? -gross : gross;
 
   const sep = account.indexOf("|");
   const accountNumber = sep >= 0 ? account.slice(0, sep) : account;
@@ -72,16 +76,17 @@ export async function uploadBelegAction(
     if (nm) projectName = nm;
   }
 
-  // Belegnummer + Skonto (v. a. Etges & Dächer).
+  // Belegnummer + Skonto (v. a. Etges & Dächer). Bei Gutschriften kein Skonto.
   const invoiceNumber = String(formData.get("invoiceNumber") ?? "").trim() || null;
   const skontoAmountRaw = String(formData.get("skontoAmount") ?? "").trim().replace(",", ".");
   const skontoAmountN = skontoAmountRaw ? Number(skontoAmountRaw) : null;
-  const skontoAmount = skontoAmountN != null && Number.isFinite(skontoAmountN) ? skontoAmountN : null;
+  const skontoAmount =
+    !isCredit && skontoAmountN != null && Number.isFinite(skontoAmountN) ? skontoAmountN : null;
   const skontoPayAmountRaw = String(formData.get("skontoPayAmount") ?? "").trim().replace(",", ".");
   const skontoPayAmountN = skontoPayAmountRaw ? Number(skontoPayAmountRaw) : null;
   const skontoPayAmount =
-    skontoPayAmountN != null && Number.isFinite(skontoPayAmountN) ? skontoPayAmountN : null;
-  const skontoDueDate = String(formData.get("skontoDueDate") ?? "").trim() || null;
+    !isCredit && skontoPayAmountN != null && Number.isFinite(skontoPayAmountN) ? skontoPayAmountN : null;
+  const skontoDueDate = !isCredit ? String(formData.get("skontoDueDate") ?? "").trim() || null : null;
   const confidential = formData.get("confidential") === "1" || formData.get("confidential") === "on";
 
   const upload = formData.get("file");
@@ -101,7 +106,7 @@ export async function uploadBelegAction(
       date,
       supplier,
       description,
-      gross,
+      gross: signedGross,
       vatRate,
       accountNumber,
       accountName,
@@ -142,6 +147,8 @@ export async function updateBelegAction(
   const vatRateRaw = String(formData.get("vatRate") ?? "").trim().replace(",", ".");
   const vatRate = vatRateRaw ? Number(vatRateRaw) : null;
   const account = String(formData.get("account") ?? "").trim(); // "number|name"
+  // Gutschrift = Beleg mit negativem Betrag (rechnet in allen Summen gegen).
+  const isCredit = formData.get("isCredit") === "1" || formData.get("isCredit") === "on";
 
   if (!Number.isFinite(gross) || gross <= 0) {
     return { error: "Bitte einen gültigen Betrag (brutto) angeben." };
@@ -150,6 +157,8 @@ export async function updateBelegAction(
     return { error: "MwSt-Satz muss eine Zahl sein." };
   }
   if (!account) return { error: "Bitte ein Konto auswählen." };
+  // Der Betrag wird stets positiv eingegeben; eine Gutschrift wird negativ gespeichert.
+  const signedGross = isCredit ? -gross : gross;
 
   const sep = account.indexOf("|");
   const accountNumber = sep >= 0 ? account.slice(0, sep) : account;
@@ -170,16 +179,17 @@ export async function updateBelegAction(
     if (nm) projectName = nm;
   }
 
-  // Belegnummer + Skonto (v. a. Etges & Dächer).
+  // Belegnummer + Skonto (v. a. Etges & Dächer). Bei Gutschriften kein Skonto.
   const invoiceNumber = String(formData.get("invoiceNumber") ?? "").trim() || null;
   const skontoAmountRaw = String(formData.get("skontoAmount") ?? "").trim().replace(",", ".");
   const skontoAmountN = skontoAmountRaw ? Number(skontoAmountRaw) : null;
-  const skontoAmount = skontoAmountN != null && Number.isFinite(skontoAmountN) ? skontoAmountN : null;
+  const skontoAmount =
+    !isCredit && skontoAmountN != null && Number.isFinite(skontoAmountN) ? skontoAmountN : null;
   const skontoPayAmountRaw = String(formData.get("skontoPayAmount") ?? "").trim().replace(",", ".");
   const skontoPayAmountN = skontoPayAmountRaw ? Number(skontoPayAmountRaw) : null;
   const skontoPayAmount =
-    skontoPayAmountN != null && Number.isFinite(skontoPayAmountN) ? skontoPayAmountN : null;
-  const skontoDueDate = String(formData.get("skontoDueDate") ?? "").trim() || null;
+    !isCredit && skontoPayAmountN != null && Number.isFinite(skontoPayAmountN) ? skontoPayAmountN : null;
+  const skontoDueDate = !isCredit ? String(formData.get("skontoDueDate") ?? "").trim() || null : null;
   const confidential = formData.get("confidential") === "1" || formData.get("confidential") === "on";
 
   const upload = formData.get("file");
@@ -200,7 +210,7 @@ export async function updateBelegAction(
       date,
       supplier,
       description,
-      gross,
+      gross: signedGross,
       vatRate,
       accountNumber,
       accountName,
