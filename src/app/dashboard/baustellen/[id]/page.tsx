@@ -17,7 +17,7 @@ export default async function BaustelleGalleryPage({
   let photos: ProjectPhoto[] = [];
   let error: string | null = null;
   try {
-    photos = await getProjectPhotos(baustelle.projectMatchId, baustelle.imageCategory);
+    photos = await getProjectPhotos(baustelle.projectMatchId);
   } catch (e) {
     error = e instanceof Error ? e.message : "Fotos konnten nicht geladen werden.";
   }

@@ -2561,11 +2561,18 @@ export async function findProjectByNr(
   return { projectMatchId: match.id, name: match.name ?? "", projectNr: match.project_nr ?? clean };
 }
 
-/** Lädt die Fotos eines Projekts aus der angegebenen Bild-Kategorie (Live aus HERO). */
-export async function getProjectPhotos(
-  projectMatchId: number,
-  imageCategory: string
-): Promise<ProjectPhoto[]> {
+/** True, wenn ein Upload ein Bild ist (per MIME-Typ, mit Dateiendungs-Fallback). */
+function isImageUpload(u: RawFileUpload): boolean {
+  if ((u.type ?? "").startsWith("image/")) return true;
+  return /\.(jpe?g|png|heic|heif|webp|gif|bmp|tiff?)$/i.test(u.filename ?? "");
+}
+
+/**
+ * Lädt ALLE Fotos eines Projekts live aus HERO – unabhängig von der image_category.
+ * Bewusst kategorieunabhängig: Fotos, die direkt in HERO (z. B. mobil) hochgeladen
+ * werden, bekommen keine Kategorie und blieben sonst in der Galerie unsichtbar.
+ */
+export async function getProjectPhotos(projectMatchId: number): Promise<ProjectPhoto[]> {
   const data = await heroGraphQL<{
     project_matches: { file_uploads: RawFileUpload[] | null; histories: RawHistory[] | null }[] | null;
   }>(
@@ -2614,7 +2621,11 @@ export async function getProjectPhotos(
   }
 
   return uploads
-    .filter((u) => (u.image_category ?? "") === imageCategory && u.temporary_url)
+    // Galerie zeigt ALLE Bilder des Projekts – unabhängig von der image_category.
+    // Grund: Fotos, die direkt in HERO (z. B. mobil) hochgeladen werden, bekommen
+    // KEINE Kategorie und blieben sonst unsichtbar. Nicht-Bilder (PDFs etc.) und
+    // Uploads ohne signierte URL bleiben außen vor.
+    .filter((u) => u.temporary_url && isImageUpload(u))
     .map((u) => {
       const thumb = u.thumbnails?.find((t) => t.url)?.url ?? u.temporary_url!;
       return {
