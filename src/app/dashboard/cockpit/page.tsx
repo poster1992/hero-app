@@ -16,6 +16,7 @@ import CustomerMapPanel from "@/components/CustomerMapPanel";
 import MonthlyChart from "@/components/MonthlyChart";
 import DashboardTitle from "@/components/DashboardTitle";
 import YearSelector from "@/components/YearSelector";
+import ConfirmationEvalButton from "@/components/ConfirmationEvalButton";
 import TaxLiabilityTable from "@/components/TaxLiabilityTable";
 import GuvTable from "@/components/GuvTable";
 import ProjectPipelines from "@/components/ProjectPipelines";
@@ -143,7 +144,8 @@ export default async function DashboardPage({
     <div className="mx-auto flex w-full max-w-[1600px] flex-1 flex-col gap-6 px-4 py-8">
       <header className="flex flex-col items-center gap-3 sm:relative sm:flex-row sm:justify-center sm:gap-4">
         <DashboardTitle text="Unternehmensübersicht" />
-        <div className="sm:absolute sm:right-0">
+        <div className="flex flex-wrap items-center gap-2 sm:absolute sm:right-0">
+          <ConfirmationEvalButton defaultYear={year} />
           <YearSelector year={year} basePath="/dashboard/cockpit" />
         </div>
       </header>

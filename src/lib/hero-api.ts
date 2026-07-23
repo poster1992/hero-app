@@ -1898,6 +1898,162 @@ export async function getOfferConfirmationVolume(year: number): Promise<Document
   };
 }
 
+/** Ein Projekt mit AB im gewählten Jahr und seinem bereits verrechneten Anteil. */
+export interface ConfirmationProjectRow {
+  projectId: number;
+  relativeId: number | null;
+  name: string;
+  customerName: string | null;
+  /** Netto-Summe der Auftragsbestätigungen dieses Projekts (im Jahr). */
+  confirmationNet: number;
+  /** Netto bereits verrechnet (Rechnungen − Gutschriften − Stornos, projektbezogen). */
+  invoicedNet: number;
+  /** confirmationNet − invoicedNet (kann leicht negativ sein, wenn mehr fakturiert wurde). */
+  openNet: number;
+}
+
+export interface ConfirmationInvoicedReport {
+  year: number;
+  projectCount: number;
+  /** Netto-Summe aller Auftragsbestätigungen mit Datum im Jahr. */
+  confirmationsNet: number;
+  /** Davon netto bereits verrechnet. */
+  invoicedNet: number;
+  /** confirmationsNet − invoicedNet. */
+  openNet: number;
+  fullyInvoiced: number;
+  partiallyInvoiced: number;
+  notInvoiced: number;
+  /** Projekte mit noch offenem AB-Betrag, absteigend nach offenem Betrag. */
+  openProjects: ConfirmationProjectRow[];
+}
+
+/**
+ * Verrechnungsstand der Auftragsbestätigungen EINES Jahres – projektbezogen verknüpft:
+ * Für alle Projekte mit einer AB (Datum im Jahr) wird gegengerechnet, wie viel für
+ * dieselben Projekte bereits fakturiert wurde (Rechnungen − Gutschriften − Stornos,
+ * über alle Zeiten). Anders als `getOfferConfirmationVolume`, das AB- und Rechnungs-
+ * summen unabhängig je Jahr zählt.
+ */
+export async function getConfirmationInvoicedReport(year: number): Promise<ConfirmationInvoicedReport> {
+  const pageSize = HERO_PAGE_SIZE;
+  const maxPages = HERO_MAX_PAGES;
+
+  interface RawDoc {
+    document_type_id: number | null;
+    value: number | null;
+    status_code: number | null;
+    date: string | null;
+    project_match: {
+      id: number;
+      relative_id: number | null;
+      name: string | null;
+      customer: { company_name: string | null; full_name: string | null } | null;
+    } | null;
+  }
+  const docs: RawDoc[] = [];
+  for (let guard = 0, offset = 0; guard < maxPages; guard++) {
+    const data = await heroGraphQL<{ customer_documents: RawDoc[] | null }>(
+      `query ConfInvoiced($ids: [Int], $first: Int, $offset: Int) {
+        customer_documents(document_type_ids: $ids, orderBy: "id", first: $first, offset: $offset) {
+          document_type_id
+          value
+          status_code
+          date
+          project_match {
+            id
+            relative_id
+            name
+            customer { company_name full_name }
+          }
+        }
+      }`,
+      {
+        ids: [
+          CONFIRMATION_DOCUMENT_TYPE_ID,
+          RECHNUNG_DOCUMENT_TYPE_ID,
+          GUTSCHRIFT_DOCUMENT_TYPE_ID,
+          STORNO_DOCUMENT_TYPE_ID,
+        ],
+        first: pageSize,
+        offset,
+      }
+    );
+    const page = data.customer_documents ?? [];
+    docs.push(...page);
+    if (page.length === 0) break;
+    offset += page.length;
+  }
+
+  // 1) Projekte mit AB im Jahr + AB-Netto je Projekt.
+  const rows = new Map<number, ConfirmationProjectRow>();
+  for (const d of docs) {
+    if (d.status_code === 1000 || !d.date) continue;
+    if (d.document_type_id !== CONFIRMATION_DOCUMENT_TYPE_ID) continue;
+    if (new Date(d.date).getUTCFullYear() !== year) continue;
+    const p = d.project_match;
+    if (!p) continue;
+    const row =
+      rows.get(p.id) ??
+      {
+        projectId: p.id,
+        relativeId: p.relative_id,
+        name: p.name ?? `Projekt #${p.id}`,
+        customerName: p.customer?.company_name || p.customer?.full_name || null,
+        confirmationNet: 0,
+        invoicedNet: 0,
+        openNet: 0,
+      };
+    row.confirmationNet += d.value ?? 0;
+    rows.set(p.id, row);
+  }
+
+  // 2) Verrechnet je Projekt (nur für Projekte mit 2026er-AB), über alle Zeiten.
+  for (const d of docs) {
+    if (d.status_code === 1000) continue;
+    const p = d.project_match;
+    if (!p) continue;
+    const row = rows.get(p.id);
+    if (!row) continue;
+    if (d.document_type_id === RECHNUNG_DOCUMENT_TYPE_ID) row.invoicedNet += d.value ?? 0;
+    else if (d.document_type_id === GUTSCHRIFT_DOCUMENT_TYPE_ID || d.document_type_id === STORNO_DOCUMENT_TYPE_ID)
+      row.invoicedNet -= Math.abs(d.value ?? 0);
+  }
+
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  let confirmationsNet = 0;
+  let invoicedNet = 0;
+  let fullyInvoiced = 0;
+  let partiallyInvoiced = 0;
+  let notInvoiced = 0;
+  for (const row of rows.values()) {
+    row.confirmationNet = round2(row.confirmationNet);
+    row.invoicedNet = round2(row.invoicedNet);
+    row.openNet = round2(row.confirmationNet - row.invoicedNet);
+    confirmationsNet += row.confirmationNet;
+    invoicedNet += row.invoicedNet;
+    if (row.invoicedNet <= 0.01) notInvoiced++;
+    else if (row.invoicedNet + 0.01 >= row.confirmationNet) fullyInvoiced++;
+    else partiallyInvoiced++;
+  }
+
+  const openProjects = [...rows.values()]
+    .filter((r) => r.openNet > 0.01)
+    .sort((a, b) => b.openNet - a.openNet);
+
+  return {
+    year,
+    projectCount: rows.size,
+    confirmationsNet: round2(confirmationsNet),
+    invoicedNet: round2(invoicedNet),
+    openNet: round2(confirmationsNet - invoicedNet),
+    fullyInvoiced,
+    partiallyInvoiced,
+    notInvoiced,
+    openProjects,
+  };
+}
+
 /** Anzahl + Netto-Summe je Belegart für EINEN Tag (für den Tagesbericht). */
 export interface DayDocumentVolume {
   offers: { count: number; net: number };
