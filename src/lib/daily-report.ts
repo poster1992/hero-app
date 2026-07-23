@@ -111,7 +111,7 @@ export interface DailyActivity {
 }
 
 export interface AnomalyReport {
-  /** Betrachteter Tag für tagesscharfe Auffälligkeiten (Vortag). */
+  /** Betrachteter Tag für tagesscharfe Auffälligkeiten (der aktuelle Tag). */
   dayIso: string;
   generatedAtIso: string;
   sections: {
@@ -125,7 +125,7 @@ export interface AnomalyReport {
   documents: DayDocumentVolume;
   /** Einzelne Dokumente des heutigen Tages (für die Liste). */
   documentList: DayDocument[];
-  /** Arbeitszeiten aller Mitarbeiter am Vortag (rot: nichts eingereicht). */
+  /** Arbeitszeiten aller Mitarbeiter am aktuellen Tag (rot: nichts eingereicht). */
   workHours: EmployeeDay[];
   sourceErrors: string[];
   totalCount: number;
@@ -377,14 +377,17 @@ function sevRank(s: Severity): number {
 // ---------------------------------------------------------------------------
 
 /**
- * Sammelt alle Auffälligkeiten (tagesscharfe für den Vortag) fehlertolerant.
+ * Sammelt alle Auffälligkeiten (tagesscharf für den AKTUELLEN Tag) fehlertolerant.
  * `todayOverride` (YYYY-MM-DD) erlaubt das Erzeugen des Berichts für einen
  * bestimmten Tag (zum Nach-Testen); ohne Angabe wird der heutige Tag genutzt.
  */
 export async function collectAnomalies(todayOverride?: string): Promise<AnomalyReport> {
   const cfg = await getDailyReportConfig();
   const today = todayOverride ?? localDateIso();
-  const dayIso = previousDayIso(today);
+  // Der Bericht (17-Uhr-Versand) bezieht sich auf den AKTUELLEN Tag – konsistent zu
+  // Aktivität, Dokumenten und Arbeitszeiten, die ebenfalls „heute" nutzen. (Früher
+  // liefen die Auffälligkeiten auf den Vortag, was zu einem gemischten Bericht führte.)
+  const dayIso = today;
   const sourceErrors: string[] = [];
 
   const sections: AnomalyReport["sections"] = {
@@ -855,7 +858,7 @@ function buildDailyReportHtml(
       </table>`;
   }
 
-  // Arbeitszeiten aller Mitarbeiter am Vortag (rot: nichts eingereicht, nicht abwesend).
+  // Arbeitszeiten aller Mitarbeiter am aktuellen Tag (rot: nichts eingereicht, nicht abwesend).
   let workHoursHtml: string;
   if (report.workHours.length === 0) {
     workHoursHtml = `<p style="margin:0;color:#8a929c;">Keine Arbeitszeitdaten.</p>`;
