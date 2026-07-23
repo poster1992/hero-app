@@ -35,6 +35,24 @@ export interface TaskHistoryEntry {
   at: string | null;
 }
 
+/** Eine an einem bestimmten Tag erstellte („gestellte") Aufgabe (Tagesansicht/Bericht). */
+export interface CreatedTaskEntry {
+  taskId: number;
+  title: string;
+  projectName: string | null;
+  projectRelativeId: number | null;
+  /** Wer die Aufgabe gestellt hat. */
+  createdByName: string | null;
+  /** Zeitpunkt der Erstellung (ISO/DB-String). */
+  createdAt: string | null;
+  /** Fälligkeitsdatum (yyyy-mm-dd) oder null. */
+  dueDate: string | null;
+  /** Aktueller Status (kann am selben Tag schon erledigt sein). */
+  status: TaskStatus;
+  /** Zugewiesene Mitarbeiter (Namen). */
+  assigneeNames: string[];
+}
+
 /** Eine an einem bestimmten Tag als „erledigt" markierte Aufgabe (Admin-Tagesansicht). */
 export interface CompletedTaskEntry {
   taskId: number;

@@ -5,6 +5,7 @@ import {
   TASK_STATUSES,
   taskStatusLabel,
   type CompletedTaskEntry,
+  type CreatedTaskEntry,
   type Task,
   type TaskAssignee,
   type TaskHistoryEntry,
@@ -13,7 +14,7 @@ import {
 
 // Re-export the client-safe symbols so existing server-side imports keep working.
 export { TASK_STATUSES, taskStatusLabel };
-export type { CompletedTaskEntry, Task, TaskAssignee, TaskHistoryEntry, TaskStatus };
+export type { CompletedTaskEntry, CreatedTaskEntry, Task, TaskAssignee, TaskHistoryEntry, TaskStatus };
 
 interface TaskRow extends RowDataPacket {
   id: number;
@@ -241,6 +242,53 @@ export async function listTasksCompletedOn(date: string): Promise<CompletedTaskE
   }
 
   return entries.map((e) => ({ ...e, assigneeNames: namesByTask.get(e.taskId) ?? [] }));
+}
+
+/**
+ * Alle Aufgaben, die an einem bestimmten Tag (yyyy-mm-dd) erstellt („gestellt")
+ * wurden – für die Tagesansicht/den Tagesbericht. Inklusive der zugewiesenen
+ * Mitarbeiter und des aktuellen Status (kann am selben Tag schon erledigt sein).
+ */
+export async function listTasksCreatedOn(date: string): Promise<CreatedTaskEntry[]> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return [];
+  const pool = getPool();
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT t.id, t.title, t.status, t.due_date, t.created_at,
+            t.project_name, t.project_relative_id,
+            COALESCE(NULLIF(cu.display_name, ''), cu.username) AS created_by_name
+     FROM tasks t JOIN users cu ON cu.id = t.created_by
+     WHERE DATE(t.created_at) = ?
+     ORDER BY t.created_at DESC, t.id DESC`,
+    [date]
+  );
+  if (rows.length === 0) return [];
+
+  const ids = rows.map((r) => r.id as number);
+  const [assigneeRows] = await pool.query<AssigneeRow[]>(
+    `SELECT ta.task_id, u.id, COALESCE(NULLIF(u.display_name, ''), u.username) AS name
+     FROM task_assignees ta JOIN users u ON u.id = ta.user_id
+     WHERE ta.task_id IN (?)
+     ORDER BY name`,
+    [ids]
+  );
+  const namesByTask = new Map<number, string[]>();
+  for (const a of assigneeRows) {
+    const list = namesByTask.get(a.task_id) ?? [];
+    list.push(a.name);
+    namesByTask.set(a.task_id, list);
+  }
+
+  return rows.map((r) => ({
+    taskId: r.id as number,
+    title: (r.title as string) ?? "",
+    projectName: (r.project_name as string | null) ?? null,
+    projectRelativeId: (r.project_relative_id as number | null) ?? null,
+    createdByName: (r.created_by_name as string | null) ?? null,
+    createdAt: r.created_at ? String(r.created_at) : null,
+    dueDate: r.due_date ? String(r.due_date).slice(0, 10) : null,
+    status: ((r.status as TaskStatus) ?? "offen"),
+    assigneeNames: namesByTask.get(r.id as number) ?? [],
+  }));
 }
 
 /** All not-yet-completed tasks (administrator overview). */

@@ -18,6 +18,8 @@ import {
 import { getGlobalLogbookSystem } from "./logbook-core";
 import { sendMailWithAttachments, type MailAttachment } from "./mailer";
 import { listAdminUserIds, getUsersForNotification } from "./users";
+import { listTasksCreatedOn, listTasksCompletedOn } from "./tasks";
+import type { CreatedTaskEntry, CompletedTaskEntry } from "./task-types";
 import { listLohnEmployees } from "./lohn-employees";
 import {
   getSetting,
@@ -127,6 +129,10 @@ export interface AnomalyReport {
   documentList: DayDocument[];
   /** Arbeitszeiten aller Mitarbeiter am aktuellen Tag (rot: nichts eingereicht). */
   workHours: EmployeeDay[];
+  /** Heute gestellte (erstellte) Aufgaben. */
+  tasksCreated: CreatedTaskEntry[];
+  /** Heute erledigte Aufgaben. */
+  tasksCompleted: CompletedTaskEntry[];
   sourceErrors: string[];
   totalCount: number;
   /** Freitext-Zusatzanweisung an die KI (aus der Konfiguration). */
@@ -173,7 +179,15 @@ const PROBLEM_RE =
 const SYSTEM_TITLE_RE =
   /hochgeladen|eingetragen|zugewiesen|erstellt|geändert|geaendert|^status:|eingegangen|gelöscht|geloescht|verschoben|storniert|abgeschlossen/i;
 
-const MAX_PHOTOS = 30;
+// Logbuch-Titel, die einen Datei-/Foto-Upload kennzeichnen (z. B. „Bild hochgeladen",
+// „Bilder hochgeladen", „Allgemein hochgeladen") – zum Erkennen der Projekte mit
+// heutigem Upload (deren Notizen + Fotos sollen im Bericht erscheinen).
+const UPLOAD_TITLE_RE = /hochgeladen/i;
+
+const MAX_PHOTOS = 48;
+/** Höchstzahl eingebetteter Fotos je Projekt, damit ein Projekt mit vielen Uploads
+ *  nicht das gesamte Foto-Budget aufbraucht (die restlichen stehen in der App). */
+const MAX_PHOTOS_PER_PROJECT = 6;
 
 // ---------------------------------------------------------------------------
 // Sammler
@@ -456,6 +470,18 @@ export async function collectAnomalies(todayOverride?: string): Promise<AnomalyR
     return [];
   });
 
+  // Heute gestellte und heute erledigte Aufgaben.
+  const [tasksCreated, tasksCompleted] = await Promise.all([
+    listTasksCreatedOn(today).catch((): CreatedTaskEntry[] => {
+      sourceErrors.push("Aufgaben (gestellt)");
+      return [];
+    }),
+    listTasksCompletedOn(today).catch((): CompletedTaskEntry[] => {
+      sourceErrors.push("Aufgaben (erledigt)");
+      return [];
+    }),
+  ]);
+
   const totalCount =
     sections.projekt.length +
     sections.logbuch.length +
@@ -470,6 +496,8 @@ export async function collectAnomalies(todayOverride?: string): Promise<AnomalyR
     documents,
     documentList,
     workHours,
+    tasksCreated,
+    tasksCompleted,
     sourceErrors,
     totalCount,
     kiInstructions: cfg.instructions,
@@ -485,10 +513,11 @@ export async function collectDailyActivity(todayIso: string): Promise<DailyActiv
 
   // Nach Projekt gruppieren (nur echte Notizen von heute, mit Projektbezug).
   const byProject = new Map<number, ActivityProject>();
-  for (const e of log) {
-    if (!e.date || e.date.slice(0, 10) !== todayIso) continue;
-    if (SYSTEM_TITLE_RE.test(e.title)) continue;
-    if (e.projectId == null) continue;
+  const ensureProject = (e: {
+    projectId: number;
+    projectRelativeId: number | null;
+    projectName: string | null;
+  }): ActivityProject => {
     const existing =
       byProject.get(e.projectId) ??
       ({
@@ -498,27 +527,41 @@ export async function collectDailyActivity(todayIso: string): Promise<DailyActiv
         entries: [],
         photos: [],
       } as ActivityProject);
-    existing.entries.push({ author: e.author, text: e.text });
     byProject.set(e.projectId, existing);
+    return existing;
+  };
+
+  for (const e of log) {
+    if (!e.date || e.date.slice(0, 10) !== todayIso) continue;
+    if (e.projectId == null) continue;
+    // Notizen (keine System-Zeilen) sammeln.
+    if (!SYSTEM_TITLE_RE.test(e.title)) {
+      ensureProject({ projectId: e.projectId, projectRelativeId: e.projectRelativeId, projectName: e.projectName }).entries.push({
+        author: e.author,
+        text: e.text,
+      });
+      continue;
+    }
+    // Projekte mit heutigem Foto-/Datei-Upload aufnehmen (ihre Notizen + Fotos
+    // sollen erscheinen, auch wenn keine eigene Notiz geschrieben wurde). Die
+    // System-„hochgeladen"-Zeile selbst wird NICHT als Text angezeigt.
+    if (UPLOAD_TITLE_RE.test(e.title)) {
+      ensureProject({ projectId: e.projectId, projectRelativeId: e.projectRelativeId, projectName: e.projectName });
+    }
   }
 
   const projects = [...byProject.values()];
 
-  // Fotos je Projekt laden (heute hochgeladen), mit Gesamt-Limit.
+  // Fotos je Projekt laden (heute hochgeladen), mit Pro-Projekt- und Gesamt-Limit.
   let budget = MAX_PHOTOS;
   let omitted = 0;
   for (const p of projects) {
-    if (budget <= 0) break;
     try {
-      const photos = await getProjectPhotosUploadedOn(p.id, todayIso);
-      if (photos.length > budget) {
-        omitted += photos.length - budget;
-        p.photos = photos.slice(0, budget);
-        budget = 0;
-      } else {
-        p.photos = photos;
-        budget -= photos.length;
-      }
+      const all = await getProjectPhotosUploadedOn(p.id, todayIso);
+      const take = Math.min(all.length, MAX_PHOTOS_PER_PROJECT, Math.max(budget, 0));
+      p.photos = all.slice(0, take);
+      omitted += all.length - take;
+      budget -= take;
     } catch {
       // Fotos sind optional – Projekt bleibt in der Liste, nur ohne Bilder.
     }
@@ -898,6 +941,41 @@ function buildDailyReportHtml(
       </table>`;
   }
 
+  // Aufgaben heute: gestellt / abgearbeitet.
+  const projLabel = (name: string | null, rel: number | null): string =>
+    name ? `${rel ? `#${rel} ` : ""}${esc(name)}` : "";
+  const ddmmyyyy = (iso: string): string => iso.split("-").reverse().join(".");
+  const taskUl = `margin:0 0 12px;padding-left:18px;font-size:14px;line-height:1.5;color:#3f4650;`;
+  const createdHtml =
+    report.tasksCreated.length === 0
+      ? `<p style="margin:0 0 12px;font-size:13px;color:#8a929c;">Heute keine Aufgabe gestellt.</p>`
+      : `<ul style="${taskUl}">${report.tasksCreated
+          .map((t) => {
+            const to = t.assigneeNames.length ? ` → ${esc(t.assigneeNames.join(", "))}` : "";
+            const by = t.createdByName ? ` · von ${esc(t.createdByName)}` : "";
+            const proj = t.projectName ? ` · ${projLabel(t.projectName, t.projectRelativeId)}` : "";
+            const due = t.dueDate ? ` · fällig ${ddmmyyyy(t.dueDate)}` : "";
+            const done = t.status === "erledigt" ? ` <span style="color:#16a34a;font-weight:700;">✓ erledigt</span>` : "";
+            return `<li style="margin:0 0 4px;"><strong>${esc(t.title)}</strong>${done}<br><span style="font-size:12px;color:#8a929c;">${by}${to}${proj}${due}</span></li>`;
+          })
+          .join("")}</ul>`;
+  const completedHtml =
+    report.tasksCompleted.length === 0
+      ? `<p style="margin:0;font-size:13px;color:#8a929c;">Heute keine Aufgabe erledigt.</p>`
+      : `<ul style="${taskUl}margin-bottom:0;">${report.tasksCompleted
+          .map((t) => {
+            const by = t.completedByName ? ` · ${esc(t.completedByName)}` : "";
+            const proj = t.projectName ? ` · ${projLabel(t.projectName, t.projectRelativeId)}` : "";
+            const note = t.note ? `<br><span style="font-size:12px;color:#8a929c;">${esc(t.note)}</span>` : "";
+            return `<li style="margin:0 0 4px;"><strong>${esc(t.title)}</strong><span style="font-size:12px;color:#8a929c;">${by}${proj}</span>${note}</li>`;
+          })
+          .join("")}</ul>`;
+  const tasksHtml = `
+    <h3 style="margin:0 0 8px;font-size:15px;color:#111417;">Gestellt (${report.tasksCreated.length})</h3>
+    ${createdHtml}
+    <h3 style="margin:0 0 8px;font-size:15px;color:#111417;">Abgearbeitet (${report.tasksCompleted.length})</h3>
+    ${completedHtml}`;
+
   return `<!doctype html>
 <html lang="de"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
 <meta name="color-scheme" content="light only"/><title>FLOORTEC Tagesbericht</title></head>
@@ -920,6 +998,11 @@ function buildDailyReportHtml(
           <h2 style="margin:0 0 14px;font-size:18px;color:#111417;">Angebote, Aufträge &amp; Rechnungen (heute)</h2>
           ${docsHtml}
           ${docListHtml}
+        </td></tr>
+        <tr><td style="padding:18px 32px 8px;">
+          <div style="height:1px;background:#eceef1;margin:0 0 18px;"></div>
+          <h2 style="margin:0 0 14px;font-size:18px;color:#111417;">Aufgaben (heute)</h2>
+          ${tasksHtml}
         </td></tr>
         <tr><td style="padding:18px 32px 8px;">
           <div style="height:1px;background:#eceef1;margin:0 0 18px;"></div>
@@ -966,6 +1049,20 @@ function buildDailyReportText(report: AnomalyReport): string {
     const proj = doc.projectName ? `${doc.projectRelativeId ? `#${doc.projectRelativeId} ` : ""}${doc.projectName}` : "–";
     const net = doc.kind === "gutschrift" || doc.kind === "storno" ? -Math.abs(doc.net) : doc.net;
     lines.push(`  - ${DOC_LABEL[doc.kind]} · ${doc.customerName ?? "–"} · ${proj} · ${eur(net)}`);
+  }
+  lines.push("");
+  lines.push(`Aufgaben gestellt (heute): ${report.tasksCreated.length}`);
+  for (const t of report.tasksCreated) {
+    const to = t.assigneeNames.length ? ` → ${t.assigneeNames.join(", ")}` : "";
+    const proj = t.projectName ? ` · ${t.projectRelativeId ? `#${t.projectRelativeId} ` : ""}${t.projectName}` : "";
+    const done = t.status === "erledigt" ? " [erledigt]" : "";
+    lines.push(`  - ${t.title}${done}${t.createdByName ? ` · von ${t.createdByName}` : ""}${to}${proj}`);
+  }
+  lines.push("");
+  lines.push(`Aufgaben abgearbeitet (heute): ${report.tasksCompleted.length}`);
+  for (const t of report.tasksCompleted) {
+    const proj = t.projectName ? ` · ${t.projectRelativeId ? `#${t.projectRelativeId} ` : ""}${t.projectName}` : "";
+    lines.push(`  - ${t.title}${t.completedByName ? ` · ${t.completedByName}` : ""}${proj}${t.note ? ` – ${t.note}` : ""}`);
   }
   lines.push("");
   lines.push(`Arbeitszeiten – ${fmtDay(report.activity.dayIso)}:`);
