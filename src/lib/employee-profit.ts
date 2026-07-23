@@ -6,6 +6,7 @@ import {
   getProjects,
 } from "./hero-api";
 import { getCostNetByProject } from "./invoices";
+import { getBookedStockTotalsByProject } from "./materials";
 
 export interface EmployeeProjectContribution {
   projectId: number;
@@ -53,13 +54,14 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
  * Stunden. Ist-Lohn = Ist-Stunden × Satz (Satz = Soll-Lohn / Kalk.-Stunden).
  */
 export async function getEmployeeProfit(year: number): Promise<EmployeeProfitData> {
-  const [invoiceNet, costNet, calc, hours, completed, projects] = await Promise.all([
+  const [invoiceNet, costNet, calc, hours, completed, projects, stock] = await Promise.all([
     getInvoiceNetByProject(),
     getCostNetByProject(),
     getCalculatedByProject(),
     getHoursByProjectAndEmployee(),
     getEvaluableProjectIds(year),
     getProjects(),
+    getBookedStockTotalsByProject().catch(() => new Map<number, number>()),
   ]);
 
   const projectMeta = new Map(projects.map((p) => [p.id, p]));
@@ -80,7 +82,10 @@ export async function getEmployeeProfit(year: number): Promise<EmployeeProfitDat
 
   for (const pid of projectIds) {
     const rev = invoiceNet.get(pid) ?? 0;
-    const cost = costNet.get(pid) ?? 0;
+    const meta = projectMeta.get(pid);
+    // Ist-Material = Belege (match-id) + gebuchte Lagerware (relative_id).
+    const stockVal = meta?.relativeId != null ? stock.get(meta.relativeId) ?? 0 : 0;
+    const cost = (costNet.get(pid) ?? 0) + stockVal;
     const c = calc.get(pid);
     const rate = c && c.hours > 0 ? c.laborCost / c.hours : 0;
 
@@ -94,7 +99,6 @@ export async function getEmployeeProfit(year: number): Promise<EmployeeProfitDat
       continue;
     }
     allocatedProfit += profit;
-    const meta = projectMeta.get(pid);
     for (const [empId, h] of emps) {
       const share = h / projHours;
       const cur = acc.get(empId) ?? { hours: 0, profit: 0, revenue: 0, projects: [] };
