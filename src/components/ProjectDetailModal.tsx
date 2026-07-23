@@ -608,8 +608,8 @@ export default function ProjectDetailModal({
                 ? ([
                     ["Ø Lohnsatz", rate > 0 ? `${euro.format(rate)}/h` : "—"],
                     ["Kalk. Material", euro.format(p.calcMaterial)],
-                    ["Ist Material", euro.format(p.costNet)],
-                    ["Ist Lagerware", euro.format(p.stockNet)],
+                    ["Ist Material", euro.format(istMaterialTotal)],
+                    ["davon Lagerware", euro.format(p.stockNet)],
                   ] as [string, string][])
                 : []),
               ["Kalk. Stunden", `${hours.format(p.calcHours)} h`],
@@ -697,7 +697,7 @@ export default function ProjectDetailModal({
               {canFinance && (
                 <Calc
                   label="Rest Material"
-                  formula={`Kalk. ${euro.format(p.calcMaterial)} − Ist ${euro.format(p.costNet)} − Lager ${euro.format(p.stockNet)}`}
+                  formula={`Kalk. ${euro.format(p.calcMaterial)} − Ist-Material ${euro.format(istMaterialTotal)} (Belege ${euro.format(p.costNet)} + Lager ${euro.format(p.stockNet)})`}
                   result={euro.format(restMaterial)}
                   tone={restMaterial < 0 ? "neg" : "pos"}
                 />
@@ -730,9 +730,9 @@ export default function ProjectDetailModal({
                   />
                   <Calc
                     label="Ist Ertrag"
-                    formula={`Rechnungen ${euro.format(p.invoiceNet)} − Ist Material ${euro.format(
-                      p.costNet
-                    )} − Lager ${euro.format(p.stockNet)} − Ist-Lohn ${euro.format(istLabor)}`}
+                    formula={`Rechnungen ${euro.format(p.invoiceNet)} − Ist-Material ${euro.format(
+                      istMaterialTotal
+                    )} (Belege ${euro.format(p.costNet)} + Lager ${euro.format(p.stockNet)}) − Ist-Lohn ${euro.format(istLabor)}`}
                     result={euro.format(istErtrag)}
                     tone={istErtrag < 0 ? "neg" : "pos"}
                   />
