@@ -1910,6 +1910,12 @@ export interface ConfirmationProjectRow {
   invoicedNet: number;
   /** confirmationNet − invoicedNet (kann leicht negativ sein, wenn mehr fakturiert wurde). */
   openNet: number;
+  /** Kalkulierte (Soll-)Stunden aus den AB-Entwürfen. */
+  plannedHours: number;
+  /** Bereits abgearbeitete (Ist-)Stunden aus der Zeiterfassung. */
+  workedHours: number;
+  /** Verbleibende Soll-Stunden = max(Soll − Ist, 0). Mehr gearbeitet ⇒ nur Soll abgezogen. */
+  remainingHours: number;
 }
 
 export interface ConfirmationInvoicedReport {
@@ -1924,6 +1930,12 @@ export interface ConfirmationInvoicedReport {
   fullyInvoiced: number;
   partiallyInvoiced: number;
   notInvoiced: number;
+  /** Summe der kalkulierten (Soll-)Stunden aller AB-Projekte des Jahres. */
+  plannedHoursTotal: number;
+  /** Summe der abgearbeiteten (Ist-)Stunden dieser Projekte. */
+  workedHoursTotal: number;
+  /** Summe der verbleibenden Soll-Stunden = Σ max(Soll − Ist, 0). */
+  remainingHoursTotal: number;
   /** Projekte mit noch offenem AB-Betrag, absteigend nach offenem Betrag. */
   openProjects: ConfirmationProjectRow[];
 }
@@ -1938,6 +1950,13 @@ export interface ConfirmationInvoicedReport {
 export async function getConfirmationInvoicedReport(year: number): Promise<ConfirmationInvoicedReport> {
   const pageSize = HERO_PAGE_SIZE;
   const maxPages = HERO_MAX_PAGES;
+
+  // Soll-Stunden (kalkuliert) und Ist-Stunden (abgearbeitet) je Projekt – bestehende
+  // Berechnungen. Parallel laden; bei Fehler bleiben die Stunden 0.
+  const [calcByProject, workedByProject] = await Promise.all([
+    getCalculatedByProject().catch(() => new Map<number, ProjectCalculation>()),
+    getHoursByProject().catch(() => new Map<number, number>()),
+  ]);
 
   interface RawDoc {
     document_type_id: number | null;
@@ -2003,6 +2022,9 @@ export async function getConfirmationInvoicedReport(year: number): Promise<Confi
         confirmationNet: 0,
         invoicedNet: 0,
         openNet: 0,
+        plannedHours: 0,
+        workedHours: 0,
+        remainingHours: 0,
       };
     row.confirmationNet += d.value ?? 0;
     rows.set(p.id, row);
@@ -2026,12 +2048,22 @@ export async function getConfirmationInvoicedReport(year: number): Promise<Confi
   let fullyInvoiced = 0;
   let partiallyInvoiced = 0;
   let notInvoiced = 0;
+  let plannedHoursTotal = 0;
+  let workedHoursTotal = 0;
+  let remainingHoursTotal = 0;
   for (const row of rows.values()) {
     row.confirmationNet = round2(row.confirmationNet);
     row.invoicedNet = round2(row.invoicedNet);
     row.openNet = round2(row.confirmationNet - row.invoicedNet);
+    // Soll-/Ist-Stunden je Projekt; verbleibend = max(Soll − Ist, 0).
+    row.plannedHours = round2(calcByProject.get(row.projectId)?.hours ?? 0);
+    row.workedHours = round2(workedByProject.get(row.projectId) ?? 0);
+    row.remainingHours = round2(Math.max(row.plannedHours - row.workedHours, 0));
     confirmationsNet += row.confirmationNet;
     invoicedNet += row.invoicedNet;
+    plannedHoursTotal += row.plannedHours;
+    workedHoursTotal += row.workedHours;
+    remainingHoursTotal += row.remainingHours;
     if (row.invoicedNet <= 0.01) notInvoiced++;
     else if (row.invoicedNet + 0.01 >= row.confirmationNet) fullyInvoiced++;
     else partiallyInvoiced++;
@@ -2050,6 +2082,9 @@ export async function getConfirmationInvoicedReport(year: number): Promise<Confi
     fullyInvoiced,
     partiallyInvoiced,
     notInvoiced,
+    plannedHoursTotal: round2(plannedHoursTotal),
+    workedHoursTotal: round2(workedHoursTotal),
+    remainingHoursTotal: round2(remainingHoursTotal),
     openProjects,
   };
 }

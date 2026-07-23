@@ -7,6 +7,8 @@ import {
 } from "@/app/dashboard/cockpit/actions";
 
 const eur = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
+const hrs = (n: number) =>
+  `${n.toLocaleString("de-DE", { maximumFractionDigits: 1 })} h`;
 
 export default function ConfirmationEvalButton({ defaultYear }: { defaultYear: number }) {
   const [open, setOpen] = useState(false);
@@ -43,7 +45,7 @@ export default function ConfirmationEvalButton({ defaultYear }: { defaultYear: n
           onClick={() => setOpen(false)}
         >
           <div
-            className="w-full max-w-3xl rounded-xl border border-gray-300 bg-white p-6 shadow-2xl"
+            className="w-full max-w-5xl rounded-xl border border-gray-300 bg-white p-6 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-4 flex items-center justify-between">
@@ -124,12 +126,31 @@ export default function ConfirmationEvalButton({ defaultYear }: { defaultYear: n
                   <strong className="text-gray-700">{report.notInvoiced}</strong>
                 </p>
 
+                {/* Stunden: kalkuliert (Soll) − abgearbeitet (Ist) = verbleibend (max 0). */}
+                <div className="mt-4 grid grid-cols-1 gap-3 rounded-md border border-gray-200 bg-gray-50 p-3 text-sm sm:grid-cols-3">
+                  <div>
+                    <div className="text-xs text-gray-500">Kalkulierte Stunden (Soll)</div>
+                    <div className="font-semibold tabular-nums text-gray-900">{hrs(report.plannedHoursTotal)}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-gray-500">Abgearbeitet (Ist)</div>
+                    <div className="font-semibold tabular-nums text-gray-900">{hrs(report.workedHoursTotal)}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-gray-500">Verbleibende Soll-Stunden</div>
+                    <div className="font-semibold tabular-nums text-brand-red">{hrs(report.remainingHoursTotal)}</div>
+                  </div>
+                </div>
+                <p className="mt-1 text-xs text-gray-400">
+                  Verbleibend = Soll − Ist, mindestens 0 (mehr gearbeitet als geplant ⇒ nur die Soll-Stunden abgezogen).
+                </p>
+
                 {report.openProjects.length > 0 && (
                   <div className="mt-5">
                     <h3 className="mb-2 text-sm font-semibold text-gray-900">
                       Noch nicht (voll) verrechnete Aufträge
                     </h3>
-                    <div className="max-h-72 overflow-y-auto rounded-md border border-gray-200">
+                    <div className="max-h-72 overflow-auto rounded-md border border-gray-200">
                       <table className="w-full border-collapse text-sm">
                         <thead className="sticky top-0 bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
                           <tr>
@@ -138,6 +159,9 @@ export default function ConfirmationEvalButton({ defaultYear }: { defaultYear: n
                             <th className="px-3 py-1.5 text-right font-semibold">AB</th>
                             <th className="px-3 py-1.5 text-right font-semibold">Verrechnet</th>
                             <th className="px-3 py-1.5 text-right font-semibold">Offen</th>
+                            <th className="px-3 py-1.5 text-right font-semibold" title="Kalkulierte Stunden">Soll h</th>
+                            <th className="px-3 py-1.5 text-right font-semibold" title="Abgearbeitete Stunden">Ist h</th>
+                            <th className="px-3 py-1.5 text-right font-semibold" title="Verbleibende Soll-Stunden = max(Soll − Ist, 0)">Rest h</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -153,6 +177,9 @@ export default function ConfirmationEvalButton({ defaultYear }: { defaultYear: n
                               <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">{eur.format(p.confirmationNet)}</td>
                               <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">{eur.format(p.invoicedNet)}</td>
                               <td className="px-3 py-1.5 text-right font-medium tabular-nums text-gray-900">{eur.format(p.openNet)}</td>
+                              <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">{hrs(p.plannedHours)}</td>
+                              <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">{hrs(p.workedHours)}</td>
+                              <td className="px-3 py-1.5 text-right font-medium tabular-nums text-gray-900">{hrs(p.remainingHours)}</td>
                             </tr>
                           ))}
                         </tbody>
