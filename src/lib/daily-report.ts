@@ -279,13 +279,15 @@ async function collectLogbookProblems(dayIso: string, keywords: string[]): Promi
 
 /** (d) Mitarbeiter, die sich am Tag nicht erfasst haben (ohne Urlauber/Kranke). */
 async function collectMissingTimeEntries(dayIso: string): Promise<Anomaly[]> {
-  const [workdays, absences] = await Promise.all([
+  const [workdays, absences, inactive] = await Promise.all([
     getWorkdays(dayIso, dayIso),
     getAbsences(dayIso, dayIso),
+    inactiveEmployeeNames(),
   ]);
   const absentIds = new Set(absences.map((a) => a.partnerId));
   const out: Anomaly[] = [];
   for (const w of workdays) {
+    if (inactive.has(normName(w.partnerName))) continue; // inaktive MA nicht melden
     if (w.targetHours > 0 && w.workedHours === 0 && !absentIds.has(w.partnerId)) {
       out.push({
         kind: "nicht_erfasst",
@@ -302,18 +304,36 @@ async function collectMissingTimeEntries(dayIso: string): Promise<Anomaly[]> {
 const normName = (s: string): string => s.trim().toLowerCase().replace(/\s+/g, " ");
 
 /**
+ * Namen der als INAKTIV markierten Lohn-Mitarbeiter (normalisiert). Diese sollen im
+ * Bericht nirgends auftauchen – weder in der Arbeitszeiten-Liste noch über den HERO-
+ * Arbeitstag-Umweg oder die „keine Zeiterfassung"-Prüfung.
+ */
+async function inactiveEmployeeNames(): Promise<Set<string>> {
+  try {
+    const all = await listLohnEmployees(true);
+    return new Set(all.filter((e) => !e.active).map((e) => normName(e.name)));
+  } catch {
+    return new Set<string>();
+  }
+}
+
+/**
  * Alle aktiven Mitarbeiter mit ihren Arbeitszeiten am Tag. Roster kommt aus der
  * Lohn-Mitarbeiterliste (nicht aus HERO – dort gibt es für Nicht-Stempler keinen
  * Datensatz), verknüpft per Name mit den HERO-Zeiten/Abwesenheiten. Rot = nichts
  * eingereicht und nicht abwesend.
  */
 async function collectWorkHours(dayIso: string): Promise<EmployeeDay[]> {
-  const [employees, workdays, absences, times] = await Promise.all([
-    listLohnEmployees(false), // nur aktive
+  const [allEmployees, workdays, absences, times] = await Promise.all([
+    listLohnEmployees(true), // aktive + inaktive (inaktive nur zum Ausschließen)
     getWorkdays(dayIso, dayIso),
     getAbsences(dayIso, dayIso),
     getTrackingTimes(dayIso, dayIso), // Zeiteinträge des Tages (end ist inklusive)
   ]);
+  const employees = allEmployees.filter((e) => e.active); // Roster: nur aktive
+  // Inaktive MA (z. B. ausgeschieden) nie anzeigen – auch nicht, wenn HERO noch
+  // einen Arbeitstag für sie liefert.
+  const inactiveNames = new Set(allEmployees.filter((e) => !e.active).map((e) => normName(e.name)));
   const wdByName = new Map<string, (typeof workdays)[number]>();
   for (const w of workdays) if (!wdByName.has(normName(w.partnerName))) wdByName.set(normName(w.partnerName), w);
   const absByName = new Map<string, string>();
@@ -369,8 +389,12 @@ async function collectWorkHours(dayIso: string): Promise<EmployeeDay[]> {
     const wd = wdByName.get(normName(emp.name));
     add(emp.name, wd, wd?.partnerId ?? emp.id);
   }
-  // 2) HERO-Stempler, die (noch) nicht in der Lohn-Liste stehen, ergänzen.
-  for (const w of workdays) add(w.partnerName, w, w.partnerId);
+  // 2) HERO-Stempler, die (noch) nicht in der Lohn-Liste stehen, ergänzen –
+  //    aber als inaktiv markierte Mitarbeiter überspringen.
+  for (const w of workdays) {
+    if (inactiveNames.has(normName(w.partnerName))) continue;
+    add(w.partnerName, w, w.partnerId);
+  }
 
   // Fehlende Erfassung (rot) zuerst, dann alphabetisch.
   list.sort((a, b) => {
