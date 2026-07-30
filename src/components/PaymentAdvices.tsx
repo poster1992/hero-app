@@ -17,9 +17,6 @@ function fmtDate(iso: string | null): string {
   return Number.isNaN(d.getTime()) ? "" : dateFmt.format(d);
 }
 
-const inputClass =
-  "w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-brand-red/60";
-
 /**
  * Kopfzeilen-Button „Zahlungsavis" (neben Checkliste/Posteingang) – öffnet ein
  * Upload-Fenster. Reine Speicherung je Monat; Export läuft über den Belege-PDF-ZIP.
@@ -92,14 +89,6 @@ export function PaymentAdviceButton({
                   className="w-full text-sm text-gray-700 file:mr-3 file:rounded-md file:border-0 file:bg-brand-red file:px-3 file:py-2 file:text-sm file:font-medium file:text-white hover:file:opacity-90"
                 />
               </div>
-              <div>
-                <label className="mb-1 block text-sm text-gray-600">Lieferant (optional)</label>
-                <input name="supplier" type="text" className={inputClass} placeholder="z. B. Mosel Baustoff" />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm text-gray-600">Notiz (optional)</label>
-                <input name="note" type="text" className={inputClass} placeholder="z. B. Avis KW 30" />
-              </div>
               <div className="mt-1 flex items-center gap-3">
                 <button
                   type="submit"
@@ -170,8 +159,6 @@ export default function PaymentAdvices({
           <thead className="bg-gray-50">
             <tr className="text-left text-xs uppercase tracking-wide text-gray-500">
               <th className="px-5 py-2 font-semibold">Datei</th>
-              <th className="px-3 py-2 font-semibold">Lieferant</th>
-              <th className="px-3 py-2 font-semibold">Notiz</th>
               <th className="px-3 py-2 font-semibold">Hochgeladen</th>
               <th className="px-3 py-2" />
             </tr>
@@ -193,8 +180,6 @@ export default function PaymentAdvices({
                     a.fileName ?? `Avis ${a.id}`
                   )}
                 </td>
-                <td className="px-3 py-2 text-gray-700">{a.supplier ?? "—"}</td>
-                <td className="px-3 py-2 text-gray-700">{a.note ?? "—"}</td>
                 <td className="px-3 py-2 tabular-nums text-gray-500">{fmtDate(a.created)}</td>
                 <td className="px-3 py-2 text-right">
                   <button

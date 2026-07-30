@@ -26,8 +26,9 @@ export async function uploadAvisAction(
   if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
     return { error: "Ungültiger Zeitraum." };
   }
-  const supplier = String(formData.get("supplier") ?? "").trim() || null;
-  const note = String(formData.get("note") ?? "").trim() || null;
+  // Reine Ablage – Lieferant/Notiz werden bewusst nicht mehr erfasst.
+  const supplier = null;
+  const note = null;
 
   const upload = formData.get("file");
   if (!upload || typeof upload !== "object" || !("arrayBuffer" in upload) || (upload as File).size === 0) {
