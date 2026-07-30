@@ -27,35 +27,35 @@ export async function uploadAvisAction(
     return { error: "Ungültiger Zeitraum." };
   }
   // Reine Ablage – Lieferant/Notiz werden bewusst nicht mehr erfasst.
-  const supplier = null;
-  const note = null;
+  const files = formData
+    .getAll("file")
+    .filter((u): u is File => typeof u === "object" && u !== null && "arrayBuffer" in u && (u as File).size > 0);
+  if (files.length === 0) return { error: "Bitte mindestens eine Datei auswählen." };
+  if (files.some((f) => f.size > 15 * 1024 * 1024)) return { error: "Mindestens eine Datei ist zu groß (max. 15 MB)." };
 
-  const upload = formData.get("file");
-  if (!upload || typeof upload !== "object" || !("arrayBuffer" in upload) || (upload as File).size === 0) {
-    return { error: "Bitte eine Datei auswählen." };
-  }
-  const f = upload as File;
-  if (f.size > 15 * 1024 * 1024) return { error: "Datei zu groß (max. 15 MB)." };
-
+  let saved = 0;
   try {
-    await createPaymentAdvice({
-      year: Math.trunc(year),
-      month: Math.trunc(month),
-      supplier,
-      note,
-      file: {
-        buffer: Buffer.from(await f.arrayBuffer()),
-        originalName: f.name,
-        mime: f.type || "application/octet-stream",
-      },
-      uploadedBy: me?.id ?? null,
-    });
+    for (const f of files) {
+      await createPaymentAdvice({
+        year: Math.trunc(year),
+        month: Math.trunc(month),
+        supplier: null,
+        note: null,
+        file: {
+          buffer: Buffer.from(await f.arrayBuffer()),
+          originalName: f.name,
+          mime: f.type || "application/octet-stream",
+        },
+        uploadedBy: me?.id ?? null,
+      });
+      saved++;
+    }
   } catch {
-    return { error: "Avis konnte nicht gespeichert werden." };
+    if (saved === 0) return { error: "Avis konnte nicht gespeichert werden." };
   }
 
   revalidatePath(PATH);
-  return { success: "Zahlungsavis gespeichert." };
+  return { success: `${saved} ${saved === 1 ? "Zahlungsavis" : "Zahlungsavise"} gespeichert.` };
 }
 
 /** Löscht ein Zahlungsavis (inkl. Datei). */

@@ -80,11 +80,12 @@ export function PaymentAdviceButton({
               <input type="hidden" name="year" value={year} />
               <input type="hidden" name="month" value={month} />
               <div>
-                <label className="mb-1 block text-sm text-gray-600">Datei (PDF/Bild) *</label>
+                <label className="mb-1 block text-sm text-gray-600">Dateien (PDF/Bild) * – mehrere möglich</label>
                 <input
                   name="file"
                   type="file"
                   accept=".pdf,image/*"
+                  multiple
                   required
                   className="w-full text-sm text-gray-700 file:mr-3 file:rounded-md file:border-0 file:bg-brand-red file:px-3 file:py-2 file:text-sm file:font-medium file:text-white hover:file:opacity-90"
                 />
