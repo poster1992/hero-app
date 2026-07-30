@@ -237,6 +237,7 @@ export default function ManualBelegeTable({
   suppliers,
   periodLabel,
   hiddenColumns = [],
+  paymentAdvices = [],
 }: {
   rows: BelegRow[];
   accounts: AccountOption[];
@@ -245,6 +246,8 @@ export default function ManualBelegeTable({
   periodLabel: string;
   /** Pro-User ausgeblendete Spalten-Keys (aus der gespeicherten Konfiguration). */
   hiddenColumns?: string[];
+  /** Zahlungsavise des Zeitraums – werden dem PDF-ZIP-Export beigelegt. */
+  paymentAdvices?: { id: number; filename: string | null }[];
 }) {
   const [text, setText] = useState<Record<TextCol, string>>({
     id: "",
@@ -371,8 +374,9 @@ export default function ManualBelegeTable({
 
   const exportPdfs = async () => {
     const withFile = sorted.filter((r) => r.hasFile);
-    if (withFile.length === 0) return;
-    setZipping(`0 / ${withFile.length}`);
+    if (withFile.length === 0 && paymentAdvices.length === 0) return;
+    const total = withFile.length + paymentAdvices.length;
+    setZipping(`0 / ${total}`);
     try {
       const JSZip = (await import("jszip")).default;
       const zip = new JSZip();
@@ -396,7 +400,30 @@ export default function ManualBelegeTable({
           // einzelnes Dokument überspringen
         }
         done++;
-        setZipping(`${done} / ${withFile.length}`);
+        setZipping(`${done} / ${total}`);
+      }
+      // Zahlungsavise in einen eigenen Unterordner legen.
+      const usedAvis = new Set<string>();
+      for (const a of paymentAdvices) {
+        try {
+          const res = await fetch(`/api/payment-advice?id=${a.id}`);
+          if (res.ok) {
+            const blob = await res.blob();
+            const raw = (a.filename || `Zahlungsavis-${a.id}`).replace(/[^\wäöüÄÖÜß .()-]/g, "_").trim();
+            let name = raw || `Zahlungsavis-${a.id}`;
+            let i = 2;
+            const dot = name.lastIndexOf(".");
+            const base = dot > 0 ? name.slice(0, dot) : name;
+            const ext = dot > 0 ? name.slice(dot) : "";
+            while (usedAvis.has(name)) name = `${base} (${i++})${ext}`;
+            usedAvis.add(name);
+            zip.file(`Zahlungsavise/${name}`, blob);
+          }
+        } catch {
+          // einzelnes Avis überspringen
+        }
+        done++;
+        setZipping(`${done} / ${total}`);
       }
       const out = await zip.generateAsync({ type: "blob" });
       const url = URL.createObjectURL(out);
@@ -603,11 +630,13 @@ export default function ManualBelegeTable({
           <button
             type="button"
             onClick={exportPdfs}
-            disabled={zipping !== null || withFileCount === 0}
-            title="Alle Beleg-Dateien der Anzeige als ZIP (für den Steuerberater)"
+            disabled={zipping !== null || (withFileCount === 0 && paymentAdvices.length === 0)}
+            title="Alle Beleg-Dateien der Anzeige als ZIP (für den Steuerberater) – inkl. Zahlungsavise des Monats"
             className="rounded-md border border-gray-300 px-2.5 py-1 text-sm font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900 disabled:opacity-50"
           >
-            {zipping ? `Belege … ${zipping}` : `⬇ Belege (PDF-ZIP) (${withFileCount})`}
+            {zipping
+              ? `Belege … ${zipping}`
+              : `⬇ Belege (PDF-ZIP) (${withFileCount}${paymentAdvices.length > 0 ? ` +${paymentAdvices.length} Avis` : ""})`}
           </button>
           <div className="relative">
             <button

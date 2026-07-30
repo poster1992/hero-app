@@ -8,6 +8,8 @@ import { getHiddenBelegColumns } from "@/lib/belege-column-prefs";
 import ManualBelegeForm from "@/components/ManualBelegeForm";
 import ManualBelegeTable from "@/components/ManualBelegeTable";
 import BelegeChecklist from "@/components/BelegeChecklist";
+import PaymentAdvices from "@/components/PaymentAdvices";
+import { listPaymentAdvices } from "@/lib/payment-advices";
 import { receiptDupKey } from "@/lib/receipt-duplicates";
 
 const MONTH_LABELS = [
@@ -46,6 +48,14 @@ export default async function ManualBelege({
     ]);
   } catch (e) {
     error = e instanceof Error ? e.message : "Manuelle Belege konnten nicht geladen werden.";
+  }
+
+  // Zahlungsavise des Monats (reine Speicherung + Export mit den Belegen).
+  let advices: Awaited<ReturnType<typeof listPaymentAdvices>> = [];
+  try {
+    advices = await listPaymentAdvices(year, month);
+  } catch {
+    // Optional – ohne Avise bleibt der Bereich einfach leer.
   }
 
   // Pro-User ausgeblendete Spalten laden (individuelle Tabellen-Konfiguration).
@@ -142,7 +152,17 @@ export default async function ManualBelege({
         </div>
       )}
 
-      <ManualBelegeTable rows={rows} accounts={accounts} projects={projects} suppliers={suppliers} periodLabel={periodLabel} hiddenColumns={hiddenColumns} />
+      <ManualBelegeTable
+        rows={rows}
+        accounts={accounts}
+        projects={projects}
+        suppliers={suppliers}
+        periodLabel={periodLabel}
+        hiddenColumns={hiddenColumns}
+        paymentAdvices={advices.map((a) => ({ id: a.id, filename: a.fileName }))}
+      />
+
+      <PaymentAdvices year={year} month={month} monthLabel={monthLabel} advices={advices} />
     </div>
   );
 }
