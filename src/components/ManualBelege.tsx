@@ -8,7 +8,7 @@ import { getHiddenBelegColumns } from "@/lib/belege-column-prefs";
 import ManualBelegeForm from "@/components/ManualBelegeForm";
 import ManualBelegeTable from "@/components/ManualBelegeTable";
 import BelegeChecklist from "@/components/BelegeChecklist";
-import PaymentAdvices from "@/components/PaymentAdvices";
+import PaymentAdvices, { PaymentAdviceButton } from "@/components/PaymentAdvices";
 import { listPaymentAdvices } from "@/lib/payment-advices";
 import { receiptDupKey } from "@/lib/receipt-duplicates";
 
@@ -136,6 +136,7 @@ export default async function ManualBelege({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <BelegeChecklist items={checklist} year={year} month={month} periodLabel={monthLabel} />
+          <PaymentAdviceButton year={year} month={month} monthLabel={monthLabel} />
           <Link
             href="/dashboard/belege/posteingang"
             className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900"
@@ -162,7 +163,7 @@ export default async function ManualBelege({
         paymentAdvices={advices.map((a) => ({ id: a.id, filename: a.fileName }))}
       />
 
-      <PaymentAdvices year={year} month={month} monthLabel={monthLabel} advices={advices} />
+      <PaymentAdvices monthLabel={monthLabel} advices={advices} />
     </div>
   );
 }
