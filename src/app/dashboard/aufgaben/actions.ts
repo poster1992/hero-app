@@ -229,10 +229,11 @@ export async function setStatusAction(formData: FormData): Promise<void> {
   if (!Number.isFinite(id)) return;
   if (!TASK_STATUSES.some((s) => s.key === status)) return;
 
-  // Nur Ersteller oder eine zugewiesene Person dürfen den Status ändern.
+  // Ersteller, eine zugewiesene Person ODER ein Administrator dürfen den Status ändern.
   const task = await getTaskById(id);
   if (!task) return;
-  const mayChange = task.createdById === meId || task.assignees.some((a) => a.id === meId);
+  const mayChange =
+    me.role === "administrator" || task.createdById === meId || task.assignees.some((a) => a.id === meId);
   if (!mayChange) return;
 
   await setTaskStatus(id, status, meId, note ? note.slice(0, 2000) : null);
@@ -266,10 +267,11 @@ export async function addNoteAction(formData: FormData): Promise<void> {
   const note = String(formData.get("note") ?? "").trim();
   if (!Number.isFinite(id) || !note) return;
 
-  // Nur Ersteller oder eine zugewiesene Person dürfen eine Notiz hinzufügen.
+  // Ersteller, eine zugewiesene Person ODER ein Administrator dürfen eine Notiz hinzufügen.
   const task = await getTaskById(id);
   if (!task) return;
-  const mayNote = task.createdById === meId || task.assignees.some((a) => a.id === meId);
+  const mayNote =
+    me.role === "administrator" || task.createdById === meId || task.assignees.some((a) => a.id === meId);
   if (!mayNote) return;
 
   await addTaskNote(id, meId, note.slice(0, 2000));
@@ -294,10 +296,11 @@ export async function forwardAction(formData: FormData): Promise<void> {
   const toUserId = Number(formData.get("toUserId"));
   if (!Number.isFinite(id) || !Number.isFinite(toUserId) || toUserId <= 0) return;
 
-  // Nur Ersteller oder eine zugewiesene Person dürfen weiterleiten.
+  // Ersteller, eine zugewiesene Person ODER ein Administrator dürfen weiterleiten.
   const task = await getTaskById(id);
   if (!task) return;
-  const mayForward = task.createdById === meId || task.assignees.some((a) => a.id === meId);
+  const mayForward =
+    me.role === "administrator" || task.createdById === meId || task.assignees.some((a) => a.id === meId);
   if (!mayForward) return;
 
   await forwardTask(id, meId, toUserId);
@@ -372,7 +375,8 @@ export async function taskButtonAction(formData: FormData): Promise<void> {
   if (!task) return;
   // Nur vordefinierte Buttons dieser Aufgabe zulassen.
   if (!task.actionButtons.includes(label)) return;
-  const may = task.createdById === me.id || task.assignees.some((a) => a.id === me.id);
+  const may =
+    me.role === "administrator" || task.createdById === me.id || task.assignees.some((a) => a.id === me.id);
   if (!may) return;
 
   await setTaskStatus(id, "erledigt", me.id, `Antwort: ${label}`);
@@ -401,7 +405,8 @@ export async function deleteBelegAndTaskAction(taskId: number): Promise<{ ok: bo
 
   const task = await getTaskById(taskId);
   if (!task) return { ok: false, error: "Aufgabe nicht gefunden." };
-  const may = task.createdById === me.id || task.assignees.some((a) => a.id === me.id);
+  const may =
+    me.role === "administrator" || task.createdById === me.id || task.assignees.some((a) => a.id === me.id);
   if (!may) return { ok: false, error: "Kein Zugriff." };
 
   const m = task.description?.match(/\[BELEGPRUEF:(\d+)\]/);
