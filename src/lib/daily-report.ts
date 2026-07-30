@@ -11,10 +11,12 @@ import {
   getProjectPhotosUploadedOn,
   getDocumentsForDay,
   aggregateDayDocuments,
+  getCustomerInvoices,
   type DailyPhoto,
   type DayDocumentVolume,
   type DayDocument,
 } from "./hero-api";
+import { listManualReceiptsPaidOn, type PaidManualReceipt } from "./manual-receipts";
 import { getGlobalLogbookSystem } from "./logbook-core";
 import { sendMailWithAttachments, type MailAttachment } from "./mailer";
 import { listAdminUserIds, getUsersForNotification } from "./users";
@@ -112,6 +114,14 @@ export interface DailyActivity {
   photosOmitted: number;
 }
 
+/** Eine heute bezahlte Ausgangsrechnung (HERO). */
+export interface PaidInvoiceEntry {
+  number: string;
+  customerName: string | null;
+  /** Bruttobetrag der Rechnung. */
+  gross: number;
+}
+
 export interface AnomalyReport {
   /** Betrachteter Tag für tagesscharfe Auffälligkeiten (der aktuelle Tag). */
   dayIso: string;
@@ -133,6 +143,10 @@ export interface AnomalyReport {
   tasksCreated: CreatedTaskEntry[];
   /** Heute erledigte Aufgaben. */
   tasksCompleted: CompletedTaskEntry[];
+  /** Heute als bezahlt markierte manuelle Belege (Eingang). */
+  paidManual: PaidManualReceipt[];
+  /** Heute (laut HERO) bezahlte Ausgangsrechnungen. */
+  paidInvoices: PaidInvoiceEntry[];
   sourceErrors: string[];
   totalCount: number;
   /** Freitext-Zusatzanweisung an die KI (aus der Konfiguration). */
@@ -506,6 +520,21 @@ export async function collectAnomalies(todayOverride?: string): Promise<AnomalyR
     }),
   ]);
 
+  // Heute bezahlt: manuelle Belege (paid_date heute) + HERO-Ausgangsrechnungen (paidDate heute).
+  const [paidManual, invoicesAll] = await Promise.all([
+    listManualReceiptsPaidOn(today).catch((): PaidManualReceipt[] => {
+      sourceErrors.push("Bezahlte Belege");
+      return [];
+    }),
+    getCustomerInvoices().catch(() => {
+      sourceErrors.push("Bezahlte Rechnungen");
+      return [] as Awaited<ReturnType<typeof getCustomerInvoices>>;
+    }),
+  ]);
+  const paidInvoices: PaidInvoiceEntry[] = invoicesAll
+    .filter((inv) => (inv.paidDate ?? "").slice(0, 10) === today)
+    .map((inv) => ({ number: inv.number, customerName: inv.customerName, gross: inv.gross }));
+
   const totalCount =
     sections.projekt.length +
     sections.logbuch.length +
@@ -522,6 +551,8 @@ export async function collectAnomalies(todayOverride?: string): Promise<AnomalyR
     workHours,
     tasksCreated,
     tasksCompleted,
+    paidManual,
+    paidInvoices,
     sourceErrors,
     totalCount,
     kiInstructions: cfg.instructions,
@@ -1000,6 +1031,35 @@ function buildDailyReportHtml(
     <h3 style="margin:0 0 8px;font-size:15px;color:#111417;">Abgearbeitet (${report.tasksCompleted.length})</h3>
     ${completedHtml}`;
 
+  // Heute bezahlt: manuelle Belege (Eingang) + HERO-Ausgangsrechnungen.
+  const manualPaidSum = report.paidManual.reduce((s, r) => s + r.paidAmount, 0);
+  const invoicePaidSum = report.paidInvoices.reduce((s, r) => s + r.gross, 0);
+  const manualPaidHtml =
+    report.paidManual.length === 0
+      ? `<p style="margin:0 0 12px;font-size:13px;color:#8a929c;">Heute kein Beleg als bezahlt markiert.</p>`
+      : `<ul style="${taskUl}">${report.paidManual
+          .map((r) => {
+            const name = esc(r.supplier || r.invoiceNumber || `Beleg ${r.id}`);
+            const nr = r.invoiceNumber ? ` <span style="color:#8a929c;">${esc(r.invoiceNumber)}</span>` : "";
+            const skonto = r.withSkonto ? ` <span style="color:#2563eb;">(Skonto)</span>` : "";
+            return `<li style="margin:0 0 4px;"><strong>${name}</strong> · ${eur(r.paidAmount)}${skonto}${nr}</li>`;
+          })
+          .join("")}</ul>`;
+  const invoicesPaidHtml =
+    report.paidInvoices.length === 0
+      ? `<p style="margin:0;font-size:13px;color:#8a929c;">Heute keine Ausgangsrechnung als bezahlt verbucht.</p>`
+      : `<ul style="${taskUl}margin-bottom:0;">${report.paidInvoices
+          .map(
+            (r) =>
+              `<li style="margin:0 0 4px;"><strong>${esc(r.customerName || r.number)}</strong> · ${eur(r.gross)} <span style="color:#8a929c;">${esc(r.number)}</span></li>`
+          )
+          .join("")}</ul>`;
+  const paidHtml = `
+    <h3 style="margin:0 0 8px;font-size:15px;color:#111417;">Eingangsbelege (${report.paidManual.length} · ${eur(manualPaidSum)})</h3>
+    ${manualPaidHtml}
+    <h3 style="margin:0 0 8px;font-size:15px;color:#111417;">Ausgangsrechnungen (${report.paidInvoices.length} · ${eur(invoicePaidSum)})</h3>
+    ${invoicesPaidHtml}`;
+
   return `<!doctype html>
 <html lang="de"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
 <meta name="color-scheme" content="light only"/><title>FLOORTEC Tagesbericht</title></head>
@@ -1027,6 +1087,11 @@ function buildDailyReportHtml(
           <div style="height:1px;background:#eceef1;margin:0 0 18px;"></div>
           <h2 style="margin:0 0 14px;font-size:18px;color:#111417;">Aufgaben (heute)</h2>
           ${tasksHtml}
+        </td></tr>
+        <tr><td style="padding:18px 32px 8px;">
+          <div style="height:1px;background:#eceef1;margin:0 0 18px;"></div>
+          <h2 style="margin:0 0 14px;font-size:18px;color:#111417;">Heute bezahlt</h2>
+          ${paidHtml}
         </td></tr>
         <tr><td style="padding:18px 32px 8px;">
           <div style="height:1px;background:#eceef1;margin:0 0 18px;"></div>
@@ -1087,6 +1152,17 @@ function buildDailyReportText(report: AnomalyReport): string {
   for (const t of report.tasksCompleted) {
     const proj = t.projectName ? ` · ${t.projectRelativeId ? `#${t.projectRelativeId} ` : ""}${t.projectName}` : "";
     lines.push(`  - ${t.title}${t.completedByName ? ` · ${t.completedByName}` : ""}${proj}${t.note ? ` – ${t.note}` : ""}`);
+  }
+  lines.push("");
+  const manualPaidSumT = report.paidManual.reduce((s, r) => s + r.paidAmount, 0);
+  const invoicePaidSumT = report.paidInvoices.reduce((s, r) => s + r.gross, 0);
+  lines.push(`Heute bezahlt – Eingangsbelege (${report.paidManual.length} · ${eur(manualPaidSumT)}):`);
+  for (const r of report.paidManual) {
+    lines.push(`  - ${r.supplier || r.invoiceNumber || `Beleg ${r.id}`} · ${eur(r.paidAmount)}${r.withSkonto ? " (Skonto)" : ""}`);
+  }
+  lines.push(`Heute bezahlt – Ausgangsrechnungen (${report.paidInvoices.length} · ${eur(invoicePaidSumT)}):`);
+  for (const r of report.paidInvoices) {
+    lines.push(`  - ${r.customerName || r.number} · ${eur(r.gross)} · ${r.number}`);
   }
   lines.push("");
   lines.push(`Arbeitszeiten – ${fmtDay(report.activity.dayIso)}:`);

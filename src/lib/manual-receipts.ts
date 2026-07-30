@@ -134,6 +134,43 @@ export async function setManualReceiptPaid(id: number, paid: boolean, withSkonto
   );
 }
 
+/** Ein manueller Beleg, der an einem bestimmten Tag als bezahlt markiert wurde. */
+export interface PaidManualReceipt {
+  id: number;
+  supplier: string | null;
+  invoiceNumber: string | null;
+  /** Bruttobetrag des Belegs. */
+  gross: number;
+  /** Tatsächlich gezahlt (Skontozahlbetrag, falls mit Skonto bezahlt, sonst brutto). */
+  paidAmount: number;
+  withSkonto: boolean;
+}
+
+/** Manuelle Belege, die an `date` (yyyy-mm-dd) als bezahlt markiert wurden (für den Tagesbericht). */
+export async function listManualReceiptsPaidOn(date: string): Promise<PaidManualReceipt[]> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return [];
+  const [rows] = await getPool().query<ReceiptRow[]>(
+    `SELECT id, supplier, invoice_number, gross, paid_with_skonto, skonto_pay_amount
+       FROM manual_receipts
+      WHERE is_paid = 1 AND DATE(paid_date) = ?
+      ORDER BY id DESC`,
+    [date]
+  );
+  return rows.map((r) => {
+    const gross = num(r.gross);
+    const withSkonto = r.paid_with_skonto === 1;
+    const pay = r.skonto_pay_amount == null ? null : num(r.skonto_pay_amount);
+    return {
+      id: r.id,
+      supplier: r.supplier,
+      invoiceNumber: r.invoice_number,
+      gross,
+      paidAmount: withSkonto && pay != null ? pay : gross,
+      withSkonto,
+    };
+  });
+}
+
 /** Minimal-Form für die „effektive Ausgabe"-Berechnung. */
 export interface SkontoPaidLike {
   gross: number;
