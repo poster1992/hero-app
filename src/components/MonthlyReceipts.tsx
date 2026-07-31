@@ -298,32 +298,39 @@ export default async function MonthlyReceipts({
       )}
 
       {monthly && !hideHeroOutput && (
-        <div className="rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-5 py-4">
-            <h2 className="text-lg font-medium text-gray-900">{heading}</h2>
-            <p className="text-sm text-gray-600">
+        // HERO-Belege stehen jetzt (gekennzeichnet) in der gemeinsamen Liste unten.
+        // Diese eingeklappte Ansicht behält die vollen HERO-Funktionen (Rechnungs-
+        // prüfung, SEPA, Zahlstatus, OCR), bis sie in die gemeinsame Liste umgezogen sind.
+        <details className="rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
+          <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-2 px-5 py-4">
+            <span className="text-lg font-medium text-gray-900">
+              HERO-Belege · {heading}{" "}
+              <span className="text-sm font-normal text-gray-500">– Prüfung / SEPA / Zahlstatus</span>
+            </span>
+            <span className="text-sm text-gray-600">
               {receipts.length} Belege · {currencyFormatter.format(summary.grossTotal)}
-            </p>
+            </span>
+          </summary>
+          <div className="border-t border-gray-200">
+            {receipts.length === 0 ? (
+              <p className="px-5 py-8 text-center text-sm text-gray-500">{emptyText}</p>
+            ) : (
+              <ReceiptsTable
+                receipts={receipts}
+                partyLabel={partyLabel}
+                reviews={reviews}
+                reviewers={reviewers}
+                canReview={canReview}
+                enableSepa={type === "output"}
+                enablePaidStatus={type === "output"}
+                paymentOverrides={paymentOverrides}
+                ocrMap={ocrMap}
+                showOcr={type === "output"}
+                duplicateKeys={duplicateKeys}
+              />
+            )}
           </div>
-
-          {receipts.length === 0 ? (
-            <p className="px-5 py-8 text-center text-sm text-gray-500">{emptyText}</p>
-          ) : (
-            <ReceiptsTable
-              receipts={receipts}
-              partyLabel={partyLabel}
-              reviews={reviews}
-              reviewers={reviewers}
-              canReview={canReview}
-              enableSepa={type === "output"}
-              enablePaidStatus={type === "output"}
-              paymentOverrides={paymentOverrides}
-              ocrMap={ocrMap}
-              showOcr={type === "output"}
-              duplicateKeys={duplicateKeys}
-            />
-          )}
-        </div>
+        </details>
       )}
     </div>
   );

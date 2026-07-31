@@ -141,7 +141,16 @@ export default async function BelegePage({
         restricted={restricted}
       />
       {!restricted && (
-        <ManualBelege year={year} month={month} view={view} duplicateKeys={duplicateKeys} q={q} />
+        <ManualBelege
+          year={year}
+          month={month}
+          view={view}
+          duplicateKeys={duplicateKeys}
+          q={q}
+          receiptsByMonth={receiptsByMonth}
+          paymentOverrides={paymentOverrides}
+          searchIds={searchIds}
+        />
       )}
     </>
   );

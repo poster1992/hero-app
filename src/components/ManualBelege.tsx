@@ -9,8 +9,11 @@ import ManualBelegeForm from "@/components/ManualBelegeForm";
 import ManualBelegeTable from "@/components/ManualBelegeTable";
 import BelegeChecklist from "@/components/BelegeChecklist";
 import PaymentAdvices, { PaymentAdviceButton } from "@/components/PaymentAdvices";
+import type { HeroBelegRow } from "@/components/ManualBelegeTable";
 import { listPaymentAdvices } from "@/lib/payment-advices";
 import { receiptDupKey } from "@/lib/receipt-duplicates";
+import { getCustomerName, getDocumentUrl, effectiveReceiptStatus } from "@/lib/invoices";
+import type { Receipt } from "@/lib/hero-api";
 
 const MONTH_LABELS = [
   "Januar", "Februar", "März", "April", "Mai", "Juni",
@@ -23,6 +26,9 @@ export default async function ManualBelege({
   view,
   duplicateKeys,
   q = "",
+  receiptsByMonth = null,
+  paymentOverrides,
+  searchIds = null,
 }: {
   year: number;
   month: number;
@@ -31,6 +37,12 @@ export default async function ManualBelege({
   duplicateKeys?: Set<string>;
   /** Suchbegriff (Volltextsuche über die manuellen Belege). */
   q?: string;
+  /** HERO-Belege des Jahres (nach Monat) – für die gemeinsame Liste. */
+  receiptsByMonth?: Receipt[][] | null;
+  /** Lokale Zahlstatus-Overrides je HERO-Beleg-ID. */
+  paymentOverrides?: ReadonlyMap<string, { status: "bezahlt" | "offen" }>;
+  /** HERO-Beleg-IDs, die zur Volltextsuche passen (nur bei aktiver Suche). */
+  searchIds?: Set<string> | null;
 }) {
   let receipts: Awaited<ReturnType<typeof listManualReceipts>> = [];
   let accounts: Awaited<ReturnType<typeof getBookAccounts>> = [];
@@ -131,6 +143,43 @@ export default async function ManualBelege({
     return { ...r, duplicate: dk != null && (duplicateKeys?.has(dk) ?? false) };
   });
 
+  // HERO-Belege für dieselbe Ansicht/Suche aufbereiten (gekennzeichnete Zeilen in der Liste).
+  const heroAll = receiptsByMonth ? receiptsByMonth.flat() : [];
+  const now = new Date();
+  const heroView: Receipt[] = searchActive
+    ? searchIds
+      ? heroAll.filter((r) => searchIds.has(r.id))
+      : []
+    : view === "all"
+      ? heroAll
+      : view === "open"
+        ? heroAll.filter((r) => r.openAmount > 0.005)
+        : view === "due"
+          ? heroAll.filter((r) => r.openAmount > 0.005 && r.dueDate && new Date(r.dueDate) <= now)
+          : view === "unreviewed"
+            ? []
+            : receiptsByMonth?.[month - 1] ?? [];
+  const heroRows: HeroBelegRow[] = heroView.map((r) => {
+    const ov = paymentOverrides?.get(r.id)?.status ?? null;
+    const st = effectiveReceiptStatus(r, ov);
+    const supplier = getCustomerName(r);
+    const dateIso = r.receiptDate ? r.receiptDate.slice(0, 10) : null;
+    const dk = receiptDupKey(supplier, r.value, dateIso);
+    return {
+      id: r.id,
+      number: r.number,
+      date: dateIso,
+      supplier,
+      net: r.netValue,
+      vat: Math.round((r.value - r.netValue) * 100) / 100,
+      gross: r.value,
+      statusLabel: st.label,
+      isPaid: st.tone === "paid",
+      docUrl: r.fileUpload?.src ? getDocumentUrl(r.fileUpload.src) : null,
+      duplicate: dk != null && (duplicateKeys?.has(dk) ?? false),
+    };
+  });
+
   return (
     <div className="flex w-full max-w-none flex-col gap-6 px-6 pb-10">
       <header className="flex items-start justify-between gap-4">
@@ -167,6 +216,7 @@ export default async function ManualBelege({
         periodLabel={periodLabel}
         hiddenColumns={hiddenColumns}
         paymentAdvices={advices.map((a) => ({ id: a.id, filename: a.fileName }))}
+        heroRows={heroRows}
       />
 
       <PaymentAdvices monthLabel={monthLabel} advices={advices} />

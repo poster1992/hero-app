@@ -32,6 +32,25 @@ const TOGGLE_COLUMNS: { key: string; label: string }[] = [
 type AccountOption = { number: string; name: string };
 export type BelegRow = ManualReceipt & { duplicate: boolean };
 
+/**
+ * HERO-Beleg als Zeile in der gemeinsamen Liste. Schritt 1: reine Anzeige + PDF-
+ * Ansicht; Rechnungsprüfung/SEPA/Zahlstatus laufen weiter über die (einklappbare)
+ * HERO-Ansicht. Die vollständigen Funktionen wandern in den nächsten Schritten hierher.
+ */
+export interface HeroBelegRow {
+  id: string;
+  number: string;
+  date: string | null;
+  supplier: string | null;
+  net: number;
+  vat: number;
+  gross: number;
+  statusLabel: string;
+  isPaid: boolean;
+  docUrl: string | null;
+  duplicate: boolean;
+}
+
 const currencyFormatter = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
 const dateFormatter = new Intl.DateTimeFormat("de-DE");
 
@@ -238,6 +257,7 @@ export default function ManualBelegeTable({
   periodLabel,
   hiddenColumns = [],
   paymentAdvices = [],
+  heroRows = [],
 }: {
   rows: BelegRow[];
   accounts: AccountOption[];
@@ -248,6 +268,8 @@ export default function ManualBelegeTable({
   hiddenColumns?: string[];
   /** Zahlungsavise des Zeitraums – werden dem PDF-ZIP-Export beigelegt. */
   paymentAdvices?: { id: number; filename: string | null }[];
+  /** HERO-Belege (gefiltert nach View/Suche) – als gekennzeichnete Zeilen in derselben Liste. */
+  heroRows?: HeroBelegRow[];
 }) {
   const [text, setText] = useState<Record<TextCol, string>>({
     id: "",
@@ -358,6 +380,34 @@ export default function ManualBelegeTable({
 
   const total = filtered.reduce((s, r) => s + r.gross, 0);
   const anyFilter = status !== "" || TEXT_COLS.some((c) => text[c].trim() !== "");
+
+  // HERO-Belege mit denselben Kopf-Filtern (nur die Spalten, die HERO hat) + Datum absteigend.
+  const heroFiltered = useMemo(() => {
+    const active = TEXT_COLS.filter((c) => text[c].trim()).map(
+      (c) => [c, text[c].trim().toLowerCase()] as const
+    );
+    const money = (n: number) => currencyFormatter.format(n).toLowerCase();
+    const arr = heroRows.filter((h) => {
+      if (status === "open" && h.isPaid) return false;
+      if (status === "paid" && !h.isPaid) return false;
+      for (const [col, q] of active) {
+        let hay: string;
+        switch (col) {
+          case "belegnr": hay = h.number; break;
+          case "datum": hay = formatDate(h.date); break;
+          case "lieferant": hay = h.supplier ?? ""; break;
+          case "netto": hay = money(h.net); break;
+          case "mwst": hay = money(h.vat); break;
+          case "brutto": hay = money(h.gross); break;
+          // Spalten, die HERO-Zeilen nicht haben (ID/Konto/Projekt/Skonto…): bei aktivem Filter ausschließen.
+          default: return false;
+        }
+        if (!hay.toLowerCase().includes(q)) return false;
+      }
+      return true;
+    });
+    return [...arr].sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""));
+  }, [heroRows, text, status]);
 
   // --- Steuerberater-Export (alle angezeigten Belege) ---
   const withFileCount = filtered.filter((r) => r.hasFile).length;
@@ -607,6 +657,9 @@ export default function ManualBelegeTable({
         <div className="flex flex-wrap items-center gap-3">
           <p className="text-sm text-gray-600">
             {filtered.length} {filtered.length === 1 ? "Beleg" : "Belege"} · {currencyFormatter.format(total)}
+            {heroFiltered.length > 0 && (
+              <span className="text-gray-500"> · +{heroFiltered.length} HERO</span>
+            )}
           </p>
           {sepaError && <span className="text-sm text-rose-600">{sepaError}</span>}
           <button
@@ -778,14 +831,15 @@ export default function ManualBelegeTable({
             </tr>
           </thead>
           <tbody>
-            {filtered.length === 0 ? (
+            {filtered.length === 0 && heroFiltered.length === 0 ? (
               <tr>
                 <td colSpan={visibleColSpan} className="px-5 py-8 text-center text-sm text-gray-500">
                   Keine Belege für die gewählten Spaltenfilter.
                 </td>
               </tr>
             ) : (
-              sorted.map((r) => (
+              <>
+              {sorted.map((r) => (
                 <tr
                   key={r.id}
                   className={`border-t border-gray-100 ${rowTint(r, todayISO)}`}
@@ -893,7 +947,81 @@ export default function ManualBelegeTable({
                     </td>
                   )}
                 </tr>
-              ))
+              ))}
+              {/* HERO-Belege: gekennzeichnete Zeilen in derselben Liste (Schritt 1: Anzeige + PDF). */}
+              {heroFiltered.map((h) => (
+                <tr
+                  key={`h-${h.id}`}
+                  className="border-t border-gray-100 bg-indigo-50/50 hover:bg-indigo-50"
+                  title={h.docUrl ? "Rechtsklick: Beleg-PDF öffnen" : undefined}
+                  onContextMenu={(e) => {
+                    if (!h.docUrl) return;
+                    e.preventDefault();
+                    window.open(h.docUrl, "_blank", "noopener,noreferrer");
+                  }}
+                >
+                  <td className="px-3 py-1.5" />
+                  {show("id") && (
+                    <td className="px-3 py-1.5">
+                      <span
+                        title="HERO-Beleg (aus HERO Software) – Prüfung/SEPA über die HERO-Ansicht unten"
+                        className="whitespace-nowrap rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-semibold text-indigo-700 ring-1 ring-indigo-500/40"
+                      >
+                        HERO
+                      </span>
+                    </td>
+                  )}
+                  {show("datum") && <td className="px-3 py-1.5 tabular-nums text-gray-700">{formatDate(h.date)}</td>}
+                  {show("lieferant") && (
+                    <td className="px-3 py-1.5 text-gray-900">
+                      {h.supplier ?? "—"}
+                      {h.duplicate && (
+                        <span
+                          title="Mögliche Dublette: gleicher Lieferant, Betrag und Datum wie ein anderer Beleg"
+                          className="ml-1.5 whitespace-nowrap rounded-full bg-amber-400/20 px-2 py-0.5 text-[10px] font-semibold text-amber-800 ring-1 ring-amber-500/40"
+                        >
+                          ⚠ Dublette
+                        </span>
+                      )}
+                    </td>
+                  )}
+                  {show("belegnr") && (
+                    <td className="px-3 py-1.5 tabular-nums text-gray-700">
+                      {h.docUrl ? (
+                        <a href={h.docUrl} target="_blank" rel="noopener noreferrer" className="text-brand-red hover:underline" title="Beleg-PDF öffnen">
+                          {h.number || "—"}
+                        </a>
+                      ) : (
+                        h.number || "—"
+                      )}
+                    </td>
+                  )}
+                  {show("konto") && <td className="px-3 py-1.5 text-gray-400">—</td>}
+                  {show("projekt") && <td className="px-3 py-1.5 text-gray-400">—</td>}
+                  {show("netto") && <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">{currencyFormatter.format(h.net)}</td>}
+                  {show("mwst") && <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">{currencyFormatter.format(h.vat)}</td>}
+                  {show("brutto") && (
+                    <td className="px-3 py-1.5 text-right font-medium tabular-nums text-gray-900">
+                      {currencyFormatter.format(h.gross)}
+                    </td>
+                  )}
+                  {show("skonto") && <td className="px-3 py-1.5 text-right text-gray-400">—</td>}
+                  {show("skontozahl") && <td className="px-3 py-1.5 text-right text-gray-400">—</td>}
+                  {show("skontobis") && <td className="px-3 py-1.5 text-gray-400">—</td>}
+                  {show("status") && (
+                    <td className="px-3 py-1.5">
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                          h.isPaid ? "bg-emerald-100 text-emerald-700" : "bg-gray-200 text-gray-600"
+                        }`}
+                      >
+                        {h.statusLabel}
+                      </span>
+                    </td>
+                  )}
+                </tr>
+              ))}
+              </>
             )}
           </tbody>
         </table>
