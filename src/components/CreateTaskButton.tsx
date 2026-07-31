@@ -66,7 +66,7 @@ export default function CreateTaskButton({
       onClick={() => setOpen(false)}
     >
       <div
-        className="w-full max-w-lg rounded-xl border border-gray-300 bg-white p-6 shadow-2xl"
+        className="max-h-[85vh] w-[80vw] max-w-5xl overflow-y-auto rounded-xl border border-gray-300 bg-white p-6 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-1 flex items-center justify-between">
@@ -107,7 +107,7 @@ export default function CreateTaskButton({
             ) : users.length === 0 ? (
               <p className="text-sm text-gray-400">Keine Mitarbeiter verfügbar.</p>
             ) : (
-              <div className="grid max-h-40 grid-cols-2 gap-1 overflow-y-auto rounded-md border border-gray-200 p-2">
+              <div className="grid max-h-56 grid-cols-2 gap-1 overflow-y-auto rounded-md border border-gray-200 p-2 sm:grid-cols-3 lg:grid-cols-4">
                 {users.map((u) => (
                   <label key={u.id} className="flex items-center gap-2 text-sm text-gray-700">
                     <input type="checkbox" name="assignedTo" value={u.id} className="accent-brand-red" />
