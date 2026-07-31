@@ -477,13 +477,20 @@ export async function getManualOcrStatus(): Promise<{ total: number; done: numbe
   return { total: Number(r?.total ?? 0), done: Number(r?.done ?? 0) };
 }
 
-/** Volltextsuche über die manuellen Belege → Menge passender Beleg-IDs. */
+/**
+ * Volltextsuche über die manuellen Belege → Menge passender Beleg-IDs.
+ * WORTWEISE (UND): jedes Suchwort muss im OCR-Text vorkommen – Reihenfolge und
+ * Zeilenumbrüche egal. So findet z. B. „mosel baustoff 520" den Beleg auch, wenn
+ * die Wörter im OCR getrennt/anders angeordnet stehen (bisher nur exakter Teilstring).
+ */
 export async function searchManualOcrIds(query: string): Promise<Set<number>> {
-  const q = query.trim();
-  if (!q) return new Set();
+  const words = query.trim().toLowerCase().split(/\s+/).filter((w) => w.length >= 2);
+  if (words.length === 0) return new Set();
+  const where = words.map(() => "ocr_text LIKE ?").join(" AND ");
+  const params = words.map((w) => `%${w}%`);
   const [rows] = await getPool().query<RowDataPacket[]>(
-    "SELECT id FROM manual_receipts WHERE confidential = 0 AND ocr_text LIKE ? LIMIT 5000",
-    [`%${q}%`]
+    `SELECT id FROM manual_receipts WHERE confidential = 0 AND ${where} LIMIT 5000`,
+    params
   );
   return new Set((rows as { id: number }[]).map((r) => r.id));
 }

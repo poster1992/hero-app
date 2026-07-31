@@ -76,6 +76,9 @@ export default async function ManualBelege({
   // Konto, Projekt, Datum, Betrag) – über das ganze Jahr, unabhängig vom Monat.
   const ql = q.trim().toLowerCase();
   const searchActive = ql.length > 0;
+  // Wortweise Suche (UND): jedes Wort muss in den strukturierten Feldern vorkommen –
+  // egal in welcher Reihenfolge. So findet „mosel 520" auch „Mosel Baustoff … 520,65".
+  const qWords = ql.split(/\s+/).filter(Boolean);
   const matchesQ = (r: (typeof receipts)[number]): boolean => {
     const hay = [
       r.supplier,
@@ -91,8 +94,9 @@ export default async function ManualBelege({
       .filter(Boolean)
       .join(" ")
       .toLowerCase();
-    // Treffer über die strukturierten Felder ODER den OCR-Volltext des Belegs.
-    return hay.includes(ql) || ocrMatchIds.has(r.id);
+    // Treffer, wenn ALLE Wörter in den Feldern stehen ODER der OCR-Volltext passt
+    // (searchManualOcrIds prüft ebenfalls wortweise über den Belegtext).
+    return qWords.every((w) => hay.includes(w)) || ocrMatchIds.has(r.id);
   };
 
   // Ansicht wie bei den HERO-Belegen oben (Monatlich/Alle/Offen/Fällig): dieselben
