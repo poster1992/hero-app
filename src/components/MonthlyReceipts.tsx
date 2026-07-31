@@ -120,9 +120,10 @@ export default async function MonthlyReceipts({
     heading = `${MONTH_LABELS[month - 1]} ${year}`;
   }
 
-  // Schlagwortsuche (Volltext im Beleg-Dokument): auf Treffer einschränken.
+  // Schlagwortsuche (Volltext im Beleg-Dokument): über das GANZE Jahr (alle Monate)
+  // suchen, nicht nur die aktuelle Monats-/View-Auswahl.
   if (searchIds) {
-    receipts = receipts.filter((r) => searchIds.has(r.id));
+    receipts = allReceipts.filter((r) => searchIds.has(r.id));
     heading = `Suche „${q}" (${receipts.length})`;
   }
 
@@ -153,8 +154,11 @@ export default async function MonthlyReceipts({
   // die HERO-Belege-Box wird für diese Zeiträume fortlaufend ausgeblendet.
   // (Nur Belege/„output"; für die Jahres-Ansicht 2026 bleibt sie sichtbar, da
   // Jan–Jun noch HERO-Belege enthält.)
+  // Bei aktiver Suche NICHT ausblenden – sonst würden HERO-Treffer (z. B. ältere
+  // Eingangsbelege) trotz Fundstelle nicht angezeigt.
   const hideHeroOutput =
     type === "output" &&
+    !searchIds &&
     (year > 2026 || (year === 2026 && view === "month" && month >= 7));
 
   const emptyText =
@@ -289,7 +293,7 @@ export default async function MonthlyReceipts({
       {hideHeroOutput && (
         <div className="rounded-xl border border-gray-200 bg-gray-50 px-5 py-4 text-sm text-gray-600">
           Ab Juli 2026 werden Belege nur noch über den Posteingang erfasst – siehe Abschnitt
-          „Manuelle Belege" unten.
+          „Manuelle Belege“ unten.
         </div>
       )}
 
