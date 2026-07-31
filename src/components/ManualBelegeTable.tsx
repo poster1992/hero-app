@@ -975,8 +975,8 @@ export default function ManualBelegeTable({
         </div>
       )}
 
-      {rows.length === 0 ? (
-        <p className="px-5 py-8 text-center text-sm text-gray-500">Keine manuellen Belege in diesem Zeitraum.</p>
+      {rows.length === 0 && heroRows.length === 0 ? (
+        <p className="px-5 py-8 text-center text-sm text-gray-500">Keine Belege in diesem Zeitraum.</p>
       ) : (
         <table className="w-full border-collapse text-sm">
           <thead className="bg-gray-50">

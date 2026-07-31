@@ -42,12 +42,14 @@ export async function getOcrHeroIds(): Promise<Set<string>> {
 
 /** Volltext-Schlagwortsuche → Menge passender HERO-Beleg-IDs. */
 export async function searchOcrHeroIds(query: string): Promise<Set<string>> {
-  const q = query.trim();
-  if (!q) return new Set();
-  // LIKE-Suche (robust für Teilwörter); FULLTEXT-Index beschleunigt zusätzlich.
+  // WORTWEISE (UND): jedes Suchwort muss im OCR-Text vorkommen (Reihenfolge/Zeilen egal).
+  const words = query.trim().toLowerCase().split(/\s+/).filter((w) => w.length >= 2);
+  if (words.length === 0) return new Set();
+  const where = words.map(() => "full_text LIKE ?").join(" AND ");
+  const params = words.map((w) => `%${w}%`);
   const [rows] = await getPool().query<RowDataPacket[]>(
-    "SELECT hero_id FROM receipt_ocr WHERE full_text LIKE ? LIMIT 5000",
-    [`%${q}%`]
+    `SELECT hero_id FROM receipt_ocr WHERE ${where} LIMIT 5000`,
+    params
   );
   return new Set(rows.map((r) => String((r as { hero_id: string }).hero_id)));
 }
