@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getSession } from "@/lib/session";
-import { getUserByUsername, getUsersForNotification, type AppUser } from "@/lib/users";
+import { getUserByUsername, getUsersForNotification, listUsers, type AppUser } from "@/lib/users";
 import { sendMail } from "@/lib/mailer";
 import { sendPushToUsers } from "@/lib/push";
 import { getGoogleReviewUrl } from "@/lib/settings";
@@ -136,6 +136,18 @@ async function notifyCreator(
     message: `„${task.title}": ${opts.eventLine}${opts.note ? ` – Notiz: ${opts.note}` : ""}`,
     byName: opts.fromName,
   });
+}
+
+/** Aktive Benutzer (für die Zuweisung beim Erstellen einer Aufgabe, z. B. im Projekt-Popup). */
+export async function listTaskUsersAction(): Promise<{ id: number; name: string }[]> {
+  const me = await currentUser();
+  if (!me) return [];
+  try {
+    const users = await listUsers();
+    return users.filter((u) => u.isActive).map((u) => ({ id: u.id, name: u.displayName || u.username }));
+  } catch {
+    return [];
+  }
 }
 
 export async function createTaskAction(

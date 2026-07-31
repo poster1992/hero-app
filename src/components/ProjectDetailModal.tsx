@@ -25,6 +25,7 @@ import {
 import ProjectPhotosButton from "@/components/ProjectPhotosButton";
 import ProjectDocumentsButton from "@/components/ProjectDocumentsButton";
 import LogbookButton from "@/components/LogbookButton";
+import CreateTaskButton from "@/components/CreateTaskButton";
 import {
   getProjectBelegArticles,
   getProjectMaterialMappings,
@@ -571,6 +572,11 @@ export default function ProjectDetailModal({
               projectName={p.name}
               projectRelativeId={p.relativeId}
               compact={false}
+            />
+            <CreateTaskButton
+              projectId={p.id}
+              projectRelativeId={p.relativeId}
+              projectName={p.name}
             />
             <button
               type="button"
