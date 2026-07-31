@@ -161,6 +161,11 @@ export default async function MonthlyReceipts({
     !searchIds &&
     (year > 2026 || (year === 2026 && view === "month" && month >= 7));
 
+  // HERO-Belege stehen jetzt (gekennzeichnet) in der gemeinsamen Liste unten.
+  // Die separate HERO-Panel-Ansicht + der Juli-Hinweis werden ausgeblendet (Code
+  // bleibt erhalten – bei Bedarf hier wieder auf true setzen).
+  const SHOW_LEGACY_HERO_PANEL = false;
+
   const emptyText =
     view === "open"
       ? "Keine offenen Belege in diesem Jahr."
@@ -290,14 +295,14 @@ export default async function MonthlyReceipts({
         </div>
       )}
 
-      {hideHeroOutput && (
+      {SHOW_LEGACY_HERO_PANEL && hideHeroOutput && (
         <div className="rounded-xl border border-gray-200 bg-gray-50 px-5 py-4 text-sm text-gray-600">
           Ab Juli 2026 werden Belege nur noch über den Posteingang erfasst – siehe Abschnitt
           „Manuelle Belege“ unten.
         </div>
       )}
 
-      {monthly && !hideHeroOutput && (
+      {SHOW_LEGACY_HERO_PANEL && monthly && !hideHeroOutput && (
         // HERO-Belege stehen jetzt (gekennzeichnet) in der gemeinsamen Liste unten.
         // Diese eingeklappte Ansicht behält die vollen HERO-Funktionen (Rechnungs-
         // prüfung, SEPA, Zahlstatus, OCR), bis sie in die gemeinsame Liste umgezogen sind.

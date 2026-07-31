@@ -166,7 +166,10 @@ export default async function ManualBelege({
         : view === "due"
           ? heroAll.filter((r) => r.openAmount > 0.005 && r.dueDate && new Date(r.dueDate) <= now)
           : view === "unreviewed"
-            ? []
+            ? heroAll.filter((r) => {
+                const st = reviews?.get(r.id)?.status;
+                return st !== "freigegeben" && st !== "abgelehnt";
+              })
             : receiptsByMonth?.[month - 1] ?? [];
   const heroRows: HeroBelegRow[] = heroView.map((r) => {
     const ov = paymentOverrides?.get(r.id)?.status ?? null;

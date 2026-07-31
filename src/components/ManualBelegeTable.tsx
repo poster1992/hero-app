@@ -563,6 +563,7 @@ export default function ManualBelegeTable({
 
   // --- Steuerberater-Export (alle angezeigten Belege) ---
   const withFileCount = filtered.filter((r) => r.hasFile).length;
+  const heroWithFileCount = heroFiltered.filter((h) => h.docUrl).length;
   const [zipping, setZipping] = useState<string | null>(null);
 
   // Dateiendung aus Originalname bzw. MIME ableiten (Fallback .pdf).
@@ -576,8 +577,9 @@ export default function ManualBelegeTable({
 
   const exportPdfs = async () => {
     const withFile = sorted.filter((r) => r.hasFile);
-    if (withFile.length === 0 && paymentAdvices.length === 0) return;
-    const total = withFile.length + paymentAdvices.length;
+    const heroWithFile = heroFiltered.filter((h) => h.docUrl);
+    if (withFile.length === 0 && paymentAdvices.length === 0 && heroWithFile.length === 0) return;
+    const total = withFile.length + paymentAdvices.length + heroWithFile.length;
     setZipping(`0 / ${total}`);
     try {
       const JSZip = (await import("jszip")).default;
@@ -627,6 +629,26 @@ export default function ManualBelegeTable({
         done++;
         setZipping(`${done} / ${total}`);
       }
+      // HERO-Beleg-PDFs in einen eigenen Unterordner legen.
+      const usedHero = new Set<string>();
+      for (const h of heroWithFile) {
+        try {
+          const res = await fetch(h.docUrl as string);
+          if (res.ok) {
+            const blob = await res.blob();
+            const safeParty = (h.supplier ?? "").replace(/[^\wäöüÄÖÜß .-]/g, "_").slice(0, 40);
+            let name = `${h.number || `HERO-${h.id}`}_${safeParty}.pdf`.replace(/\s+/g, " ").trim();
+            let i = 2;
+            while (usedHero.has(name)) name = name.replace(".pdf", ` (${i++}).pdf`);
+            usedHero.add(name);
+            zip.file(`HERO/${name}`, blob);
+          }
+        } catch {
+          // einzelnes HERO-Dokument überspringen
+        }
+        done++;
+        setZipping(`${done} / ${total}`);
+      }
       const out = await zip.generateAsync({ type: "blob" });
       const url = URL.createObjectURL(out);
       const a = document.createElement("a");
@@ -646,6 +668,7 @@ export default function ManualBelegeTable({
       return /[;"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
     const header = [
+      "Quelle",
       "ID",
       "Datum",
       "Lieferant",
@@ -663,6 +686,7 @@ export default function ManualBelegeTable({
     ];
     const lines = sorted.map((r) =>
       [
+        "Manuell",
         `#${r.id}`,
         formatDate(r.date),
         r.supplier ?? "",
@@ -681,8 +705,29 @@ export default function ManualBelegeTable({
         .map(esc)
         .join(";")
     );
+    const heroLines = heroFiltered.map((h) =>
+      [
+        "HERO",
+        "",
+        formatDate(h.date),
+        h.supplier ?? "",
+        h.number ?? "",
+        "",
+        "",
+        money2(h.net),
+        money2(h.vat),
+        money2(h.gross),
+        "",
+        "",
+        "",
+        h.review ? `${h.statusLabel} · ${h.review.statusLabel}` : h.statusLabel,
+        h.docUrl ? "ja" : "nein",
+      ]
+        .map(esc)
+        .join(";")
+    );
     // BOM, damit Excel Umlaute korrekt liest.
-    const csv = "﻿" + [header.join(";"), ...lines].join("\r\n");
+    const csv = "﻿" + [header.join(";"), ...lines, ...heroLines].join("\r\n");
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
     const a = document.createElement("a");
     a.href = url;
@@ -846,22 +891,22 @@ export default function ManualBelegeTable({
           <button
             type="button"
             onClick={exportCsv}
-            disabled={filtered.length === 0}
-            title="Liste der angezeigten Belege als CSV (für den Steuerberater)"
+            disabled={filtered.length === 0 && heroFiltered.length === 0}
+            title="Liste der angezeigten Belege (manuell + HERO) als CSV (für den Steuerberater)"
             className="rounded-md border border-gray-300 px-2.5 py-1 text-sm font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900 disabled:opacity-50"
           >
-            ⬇ CSV ({filtered.length})
+            ⬇ CSV ({filtered.length + heroFiltered.length})
           </button>
           <button
             type="button"
             onClick={exportPdfs}
-            disabled={zipping !== null || (withFileCount === 0 && paymentAdvices.length === 0)}
-            title="Alle Beleg-Dateien der Anzeige als ZIP (für den Steuerberater) – inkl. Zahlungsavise des Monats"
+            disabled={zipping !== null || (withFileCount === 0 && paymentAdvices.length === 0 && heroWithFileCount === 0)}
+            title="Alle Beleg-Dateien der Anzeige (manuell + HERO) als ZIP (für den Steuerberater) – inkl. Zahlungsavise des Monats"
             className="rounded-md border border-gray-300 px-2.5 py-1 text-sm font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900 disabled:opacity-50"
           >
             {zipping
               ? `Belege … ${zipping}`
-              : `⬇ Belege (PDF-ZIP) (${withFileCount}${paymentAdvices.length > 0 ? ` +${paymentAdvices.length} Avis` : ""})`}
+              : `⬇ Belege (PDF-ZIP) (${withFileCount}${heroWithFileCount > 0 ? ` +${heroWithFileCount} HERO` : ""}${paymentAdvices.length > 0 ? ` +${paymentAdvices.length} Avis` : ""})`}
           </button>
           <div className="relative">
             <button
