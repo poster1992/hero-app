@@ -543,7 +543,7 @@ export default function ProjectDetailModal({
     >
       <div
         id="project-print-area"
-        className="my-6 w-full max-w-4xl rounded-xl border border-gray-300 bg-white shadow-2xl"
+        className="my-6 w-[90vw] max-w-[1700px] rounded-xl border border-gray-300 bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Schriftzug – nur im Druck / PDF sichtbar */}
@@ -603,7 +603,7 @@ export default function ProjectDetailModal({
           </div>
         </div>
 
-        <div className="print-scroll max-h-[75vh] overflow-y-auto px-6 py-5">
+        <div className="print-scroll max-h-[82vh] overflow-y-auto px-6 py-5">
           {/* Kennzahlen */}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {([
