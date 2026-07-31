@@ -14,6 +14,9 @@ import { listPaymentAdvices } from "@/lib/payment-advices";
 import { receiptDupKey } from "@/lib/receipt-duplicates";
 import { getCustomerName, getDocumentUrl, effectiveReceiptStatus } from "@/lib/invoices";
 import type { Receipt } from "@/lib/hero-api";
+import { reviewStatusLabel } from "@/lib/receipt-reviews";
+
+type ReviewLite = { status: "offen" | "freigegeben" | "abgelehnt"; reviewedByName: string | null };
 
 const MONTH_LABELS = [
   "Januar", "Februar", "März", "April", "Mai", "Juni",
@@ -29,6 +32,8 @@ export default async function ManualBelege({
   receiptsByMonth = null,
   paymentOverrides,
   searchIds = null,
+  reviews,
+  canReview = false,
 }: {
   year: number;
   month: number;
@@ -43,6 +48,10 @@ export default async function ManualBelege({
   paymentOverrides?: ReadonlyMap<string, { status: "bezahlt" | "offen" }>;
   /** HERO-Beleg-IDs, die zur Volltextsuche passen (nur bei aktiver Suche). */
   searchIds?: Set<string> | null;
+  /** Rechnungsprüfungs-Status je HERO-Beleg-ID. */
+  reviews?: ReadonlyMap<string, ReviewLite>;
+  /** Darf der Nutzer HERO-Rechnungen freigeben/ablehnen? */
+  canReview?: boolean;
 }) {
   let receipts: Awaited<ReturnType<typeof listManualReceipts>> = [];
   let accounts: Awaited<ReturnType<typeof getBookAccounts>> = [];
@@ -165,6 +174,7 @@ export default async function ManualBelege({
     const supplier = getCustomerName(r);
     const dateIso = r.receiptDate ? r.receiptDate.slice(0, 10) : null;
     const dk = receiptDupKey(supplier, r.value, dateIso);
+    const rv = reviews?.get(r.id) ?? null;
     return {
       id: r.id,
       number: r.number,
@@ -177,6 +187,7 @@ export default async function ManualBelege({
       isPaid: st.tone === "paid",
       docUrl: r.fileUpload?.src ? getDocumentUrl(r.fileUpload.src) : null,
       duplicate: dk != null && (duplicateKeys?.has(dk) ?? false),
+      review: rv ? { status: rv.status, statusLabel: reviewStatusLabel(rv.status), reviewedByName: rv.reviewedByName } : null,
     };
   });
 
@@ -217,6 +228,7 @@ export default async function ManualBelege({
         hiddenColumns={hiddenColumns}
         paymentAdvices={advices.map((a) => ({ id: a.id, filename: a.fileName }))}
         heroRows={heroRows}
+        canReview={canReview}
       />
 
       <PaymentAdvices monthLabel={monthLabel} advices={advices} />

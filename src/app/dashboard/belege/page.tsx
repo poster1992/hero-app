@@ -150,6 +150,8 @@ export default async function BelegePage({
           receiptsByMonth={receiptsByMonth}
           paymentOverrides={paymentOverrides}
           searchIds={searchIds}
+          reviews={reviews}
+          canReview={canReview}
         />
       )}
     </>

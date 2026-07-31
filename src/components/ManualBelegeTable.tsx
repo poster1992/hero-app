@@ -8,6 +8,7 @@ import {
   saveBelegColumnsAction,
 } from "@/app/dashboard/belege/manual-actions";
 import { buildMultilineSepaAction, type SepaItem } from "@/app/dashboard/belege/sepa-actions";
+import { decideReviewAction } from "@/app/dashboard/belege/review-actions";
 import BelegDetailModal from "@/components/BelegDetailModal";
 import type { ProjectOption, SupplierOption } from "@/components/ManualBelegeForm";
 import type { ManualReceipt } from "@/lib/manual-receipts";
@@ -49,6 +50,8 @@ export interface HeroBelegRow {
   isPaid: boolean;
   docUrl: string | null;
   duplicate: boolean;
+  /** Rechnungsprüfungs-Status (falls der Beleg zur Prüfung ansteht/entschieden ist). */
+  review?: { status: "offen" | "freigegeben" | "abgelehnt"; statusLabel: string; reviewedByName: string | null } | null;
 }
 
 const currencyFormatter = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
@@ -220,6 +223,106 @@ function PaidCell({ r }: { r: BelegRow }) {
   );
 }
 
+/** Status-/Prüf-Zelle für HERO-Zeilen: Prüfstatus + Freigeben/Ablehnen (mit Notiz). */
+function HeroReviewCell({ h, canReview }: { h: HeroBelegRow; canReview: boolean }) {
+  const router = useRouter();
+  const [busy, start] = useTransition();
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [note, setNote] = useState("");
+
+  const decide = (decision: "freigegeben" | "abgelehnt") => {
+    const fd = new FormData();
+    fd.set("heroId", h.id);
+    fd.set("decision", decision);
+    fd.set("number", h.number ?? "");
+    fd.set("supplier", h.supplier ?? "");
+    fd.set("gross", String(h.gross));
+    if (h.docUrl) fd.set("docUrl", h.docUrl);
+    if (note.trim()) fd.set("note", note.trim());
+    start(async () => {
+      await decideReviewAction(fd);
+      setNoteOpen(false);
+      setNote("");
+      router.refresh();
+    });
+  };
+
+  const rv = h.review;
+  const badge = (
+    <span
+      className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+        h.isPaid ? "bg-emerald-100 text-emerald-700" : "bg-gray-200 text-gray-600"
+      }`}
+    >
+      {h.statusLabel}
+    </span>
+  );
+
+  // Kein Prüfvorgang → nur Zahlstatus.
+  if (!rv) return badge;
+
+  const reviewBadge = (
+    <span
+      title={rv.reviewedByName ? `von ${rv.reviewedByName}` : undefined}
+      className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+        rv.status === "freigegeben"
+          ? "bg-emerald-100 text-emerald-700"
+          : rv.status === "abgelehnt"
+            ? "bg-rose-100 text-rose-700"
+            : "bg-amber-100 text-amber-800"
+      }`}
+    >
+      {rv.statusLabel}
+    </span>
+  );
+
+  return (
+    <div className="flex flex-col items-start gap-1">
+      <div className="flex flex-wrap items-center gap-1.5">
+        {badge}
+        {reviewBadge}
+      </div>
+      {rv.status === "offen" && canReview && (
+        <div className="flex flex-wrap items-center gap-1">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => decide("freigegeben")}
+            className="rounded-md bg-emerald-600 px-2 py-0.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+          >
+            {busy ? "…" : "Freigeben"}
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => decide("abgelehnt")}
+            className="rounded-md bg-brand-red px-2 py-0.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+          >
+            Ablehnen
+          </button>
+          <button
+            type="button"
+            onClick={() => setNoteOpen((o) => !o)}
+            title="Kommentar zur Entscheidung"
+            className="rounded-md border border-gray-300 px-1.5 py-0.5 text-xs text-gray-600 hover:border-brand-red/50"
+          >
+            💬
+          </button>
+          {noteOpen && (
+            <input
+              type="text"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Kommentar (optional)"
+              className="w-40 rounded border border-gray-300 px-1.5 py-0.5 text-xs text-gray-800 outline-none focus:border-brand-red/60"
+            />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Suchtext für Betragsspalten: formatiert + roh (mit Komma), damit "1234" und "1.234,56" treffen. */
 function money(x: number | null): string {
   if (x == null) return "";
@@ -258,6 +361,7 @@ export default function ManualBelegeTable({
   hiddenColumns = [],
   paymentAdvices = [],
   heroRows = [],
+  canReview = false,
 }: {
   rows: BelegRow[];
   accounts: AccountOption[];
@@ -270,6 +374,8 @@ export default function ManualBelegeTable({
   paymentAdvices?: { id: number; filename: string | null }[];
   /** HERO-Belege (gefiltert nach View/Suche) – als gekennzeichnete Zeilen in derselben Liste. */
   heroRows?: HeroBelegRow[];
+  /** Darf der Nutzer HERO-Rechnungen freigeben/ablehnen (Recht rechnungspruefung)? */
+  canReview?: boolean;
 }) {
   const [text, setText] = useState<Record<TextCol, string>>({
     id: "",
@@ -1010,13 +1116,7 @@ export default function ManualBelegeTable({
                   {show("skontobis") && <td className="px-3 py-1.5 text-gray-400">—</td>}
                   {show("status") && (
                     <td className="px-3 py-1.5">
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                          h.isPaid ? "bg-emerald-100 text-emerald-700" : "bg-gray-200 text-gray-600"
-                        }`}
-                      >
-                        {h.statusLabel}
-                      </span>
+                      <HeroReviewCell h={h} canReview={canReview} />
                     </td>
                   )}
                 </tr>
