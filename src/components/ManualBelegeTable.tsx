@@ -55,6 +55,10 @@ export interface HeroBelegRow {
   review?: { status: "offen" | "freigegeben" | "abgelehnt"; statusLabel: string; reviewedByName: string | null } | null;
   /** Lokaler Zahlstatus-Override (überschreibt HERO); null = HERO-Status gilt. */
   paidOverride?: "bezahlt" | "offen" | null;
+  /** HERO-Kontakt-/Kunden-ID des Lieferanten (für die SEPA-IBAN-Zuordnung). */
+  supplierId?: number | null;
+  /** Offener Betrag (für den SEPA-Zahlbetrag; sonst brutto). */
+  open?: number;
 }
 
 const currencyFormatter = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
@@ -691,6 +695,8 @@ export default function ManualBelegeTable({
   // Nutzt dieselbe Server-Aktion wie die HERO-Belege; die IBAN wird dort über
   // den Lieferantennamen (→ HERO-Kontakt) aufgelöst. Nur OFFENE Belege wählbar.
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  // HERO-Belege werden getrennt (String-ID) ausgewählt, fließen aber in denselben Export.
+  const [heroSelected, setHeroSelected] = useState<Set<string>>(new Set());
   const [sepaBusy, setSepaBusy] = useState(false);
   const [sepaError, setSepaError] = useState<string | null>(null);
   const [sepaMissing, setSepaMissing] = useState<{ name: string }[] | null>(null);
@@ -699,8 +705,18 @@ export default function ManualBelegeTable({
   const selectable = filtered.filter((r) => !r.isPaid && r.gross > 0);
   const selectedRows = selectable.filter((r) => selected.has(r.id));
   const allSelectableSelected = selectable.length > 0 && selectable.every((r) => selected.has(r.id));
+  const heroSelectable = heroFiltered.filter((h) => !h.isPaid && h.gross > 0);
+  const heroSelectedRows = heroSelectable.filter((h) => heroSelected.has(h.id));
+  const sepaCount = selectedRows.length + heroSelectedRows.length;
   const toggleRow = (id: number) =>
     setSelected((prev) => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  const toggleHeroRow = (id: string) =>
+    setHeroSelected((prev) => {
       const n = new Set(prev);
       if (n.has(id)) n.delete(id);
       else n.add(id);
@@ -715,18 +731,26 @@ export default function ManualBelegeTable({
     });
 
   const runSepa = async () => {
-    if (selectedRows.length === 0) return;
+    if (sepaCount === 0) return;
     setSepaBusy(true);
     setSepaError(null);
     setSepaMissing(null);
     try {
-      const items: SepaItem[] = selectedRows.map((r) => ({
+      const manualItems: SepaItem[] = selectedRows.map((r) => ({
         customerId: null, // manueller Beleg → Auflösung über den Lieferantennamen
         name: r.supplier ?? "",
         // Voller Bruttobetrag (Skonto wird hier bewusst nicht automatisch gezogen).
         amount: r.gross,
         reference: r.invoiceNumber || `Beleg ${r.id}`,
       }));
+      const heroItems: SepaItem[] = heroSelectedRows.map((h) => ({
+        customerId: h.supplierId ?? null, // HERO-Kontakt-ID → IBAN; sonst über Namen
+        name: h.supplier ?? "",
+        amount: h.open && h.open > 0 ? h.open : h.gross,
+        reference: h.number || `Beleg ${h.id}`,
+        heroId: h.id,
+      }));
+      const items: SepaItem[] = [...manualItems, ...heroItems];
       const res = await buildMultilineSepaAction(items);
       if (res.error) {
         setSepaError(res.error);
@@ -813,11 +837,11 @@ export default function ManualBelegeTable({
           <button
             type="button"
             onClick={runSepa}
-            disabled={sepaBusy || selectedRows.length === 0}
+            disabled={sepaBusy || sepaCount === 0}
             title="Ausgewählte offene Belege als SEPA-Sammelüberweisung (XML) exportieren – IBAN kommt aus den Lieferanten-IBANs"
             className="rounded-md bg-brand-red px-3 py-1 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
           >
-            {sepaBusy ? "Erzeuge SEPA …" : `Multiline SEPA-Export (${selectedRows.length})`}
+            {sepaBusy ? "Erzeuge SEPA …" : `Multiline SEPA-Export (${sepaCount})`}
           </button>
           <button
             type="button"
@@ -1108,7 +1132,17 @@ export default function ManualBelegeTable({
                     window.open(h.docUrl, "_blank", "noopener,noreferrer");
                   }}
                 >
-                  <td className="px-3 py-1.5" />
+                  <td className="px-3 py-1.5">
+                    {!h.isPaid && h.gross > 0 && (
+                      <input
+                        type="checkbox"
+                        checked={heroSelected.has(h.id)}
+                        onChange={() => toggleHeroRow(h.id)}
+                        className="h-4 w-4 cursor-pointer accent-brand-red"
+                        title="Für SEPA-Sammelüberweisung auswählen"
+                      />
+                    )}
+                  </td>
                   {show("id") && (
                     <td className="px-3 py-1.5">
                       <span

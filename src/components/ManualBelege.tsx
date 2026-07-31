@@ -189,6 +189,8 @@ export default async function ManualBelege({
       duplicate: dk != null && (duplicateKeys?.has(dk) ?? false),
       review: rv ? { status: rv.status, statusLabel: reviewStatusLabel(rv.status), reviewedByName: rv.reviewedByName } : null,
       paidOverride: ov,
+      supplierId: r.customer?.id ?? null,
+      open: r.openAmount,
     };
   });
 
