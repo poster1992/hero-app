@@ -198,9 +198,9 @@ export default async function ManualBelege({
     <div className="flex w-full max-w-none flex-col gap-6 px-6 pb-10">
       <header className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Manuelle Belege</h1>
+          <h1 className="text-2xl font-semibold text-gray-900">Belege</h1>
           <p className="mt-1 text-sm text-gray-600">
-            Dokumente unabhängig von HERO hochladen und einem Konto zubuchen.
+            Manuell erfasste und HERO-Belege in einer Liste (HERO-Belege sind gekennzeichnet).
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
