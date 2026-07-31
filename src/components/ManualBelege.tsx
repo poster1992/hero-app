@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { listManualReceipts, searchManualOcrIds } from "@/lib/manual-receipts";
+import { listManualReceipts, listAllManualReceipts, searchManualOcrIds } from "@/lib/manual-receipts";
 import { listChecklist } from "@/lib/belege-checklist";
 import { getBookAccounts, getProjects, getSupplierContacts } from "@/lib/hero-api";
 import { getSession } from "@/lib/session";
@@ -40,7 +40,9 @@ export default async function ManualBelege({
   let error: string | null = null;
   try {
     [receipts, accounts, checklist, projects, suppliers] = await Promise.all([
-      listManualReceipts(year),
+      // Bei aktiver Suche jahresübergreifend laden (sonst nur das gewählte Jahr) –
+      // sonst würden Belege aus anderen Jahren gar nicht durchsucht.
+      q.trim() ? listAllManualReceipts() : listManualReceipts(year),
       getBookAccounts(),
       listChecklist(year, month),
       getProjects().catch(() => []),
