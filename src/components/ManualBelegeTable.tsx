@@ -9,6 +9,7 @@ import {
 } from "@/app/dashboard/belege/manual-actions";
 import { buildMultilineSepaAction, type SepaItem } from "@/app/dashboard/belege/sepa-actions";
 import { decideReviewAction } from "@/app/dashboard/belege/review-actions";
+import { setReceiptPaymentStatusAction } from "@/app/dashboard/belege/status-actions";
 import BelegDetailModal from "@/components/BelegDetailModal";
 import type { ProjectOption, SupplierOption } from "@/components/ManualBelegeForm";
 import type { ManualReceipt } from "@/lib/manual-receipts";
@@ -52,6 +53,8 @@ export interface HeroBelegRow {
   duplicate: boolean;
   /** Rechnungsprüfungs-Status (falls der Beleg zur Prüfung ansteht/entschieden ist). */
   review?: { status: "offen" | "freigegeben" | "abgelehnt"; statusLabel: string; reviewedByName: string | null } | null;
+  /** Lokaler Zahlstatus-Override (überschreibt HERO); null = HERO-Status gilt. */
+  paidOverride?: "bezahlt" | "offen" | null;
 }
 
 const currencyFormatter = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
@@ -247,6 +250,16 @@ function HeroReviewCell({ h, canReview }: { h: HeroBelegRow; canReview: boolean 
     });
   };
 
+  const setPaid = (status: "bezahlt" | "offen" | "hero") => {
+    const fd = new FormData();
+    fd.set("heroId", h.id);
+    fd.set("status", status);
+    start(async () => {
+      await setReceiptPaymentStatusAction(fd);
+      router.refresh();
+    });
+  };
+
   const rv = h.review;
   const badge = (
     <span
@@ -257,11 +270,7 @@ function HeroReviewCell({ h, canReview }: { h: HeroBelegRow; canReview: boolean 
       {h.statusLabel}
     </span>
   );
-
-  // Kein Prüfvorgang → nur Zahlstatus.
-  if (!rv) return badge;
-
-  const reviewBadge = (
+  const reviewBadge = rv ? (
     <span
       title={rv.reviewedByName ? `von ${rv.reviewedByName}` : undefined}
       className={`rounded-full px-2 py-0.5 text-xs font-medium ${
@@ -274,7 +283,7 @@ function HeroReviewCell({ h, canReview }: { h: HeroBelegRow; canReview: boolean 
     >
       {rv.statusLabel}
     </span>
-  );
+  ) : null;
 
   return (
     <div className="flex flex-col items-start gap-1">
@@ -282,7 +291,40 @@ function HeroReviewCell({ h, canReview }: { h: HeroBelegRow; canReview: boolean 
         {badge}
         {reviewBadge}
       </div>
-      {rv.status === "offen" && canReview && (
+      {/* Zahlstatus umschalten (lokaler Override, überschreibt HERO). */}
+      <div className="flex flex-wrap items-center gap-1">
+        {h.isPaid ? (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => setPaid("offen")}
+            className="rounded-md border border-gray-300 px-2 py-0.5 text-xs font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900 disabled:opacity-50"
+          >
+            auf offen
+          </button>
+        ) : (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => setPaid("bezahlt")}
+            className="rounded-md border border-gray-300 px-2 py-0.5 text-xs font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900 disabled:opacity-50"
+          >
+            als bezahlt
+          </button>
+        )}
+        {h.paidOverride != null && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => setPaid("hero")}
+            title="Lokalen Status entfernen – wieder der HERO-Status"
+            className="rounded-md border border-gray-300 px-1.5 py-0.5 text-xs text-gray-500 transition-colors hover:border-brand-red/50 disabled:opacity-50"
+          >
+            ↺ HERO
+          </button>
+        )}
+      </div>
+      {rv && rv.status === "offen" && canReview && (
         <div className="flex flex-wrap items-center gap-1">
           <button
             type="button"

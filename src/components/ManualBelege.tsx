@@ -188,6 +188,7 @@ export default async function ManualBelege({
       docUrl: r.fileUpload?.src ? getDocumentUrl(r.fileUpload.src) : null,
       duplicate: dk != null && (duplicateKeys?.has(dk) ?? false),
       review: rv ? { status: rv.status, statusLabel: reviewStatusLabel(rv.status), reviewedByName: rv.reviewedByName } : null,
+      paidOverride: ov,
     };
   });
 
