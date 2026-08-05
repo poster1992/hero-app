@@ -126,6 +126,56 @@ export async function listAllManualReceipts(): Promise<ManualReceipt[]> {
   return rows.map(mapRow);
 }
 
+/** Ein Eintrag im Upload-Verlauf (manuelle Belege in Hochlade-Reihenfolge). */
+export interface ManualReceiptUpload {
+  id: number;
+  /** Zeitpunkt des Hochladens (ISO/DB-String). */
+  created: string | null;
+  /** Belegdatum (kann leer sein, wenn OCR keins erkannt hat). */
+  belegDate: string | null;
+  supplier: string | null;
+  invoiceNumber: string | null;
+  gross: number;
+  source: string | null;
+  confidential: boolean;
+  hasFile: boolean;
+  fileName: string | null;
+}
+
+/** Manuelle Belege in Hochlade-Reihenfolge (neueste zuerst) – für den Upload-Verlauf. */
+export async function listManualReceiptUploads(limit = 300): Promise<ManualReceiptUpload[]> {
+  const [rows] = await getPool().query<RowDataPacket[]>(
+    `SELECT id, created, beleg_date, supplier, invoice_number, gross, source, confidential, stored_name, file_name
+       FROM manual_receipts
+       ORDER BY created DESC, id DESC
+       LIMIT ?`,
+    [Math.max(1, Math.min(limit, 2000))]
+  );
+  return (rows as {
+    id: number;
+    created: string | Date | null;
+    beleg_date: string | Date | null;
+    supplier: string | null;
+    invoice_number: string | null;
+    gross: string | number;
+    source: string | null;
+    confidential: number | null;
+    stored_name: string | null;
+    file_name: string | null;
+  }[]).map((r) => ({
+    id: r.id,
+    created: r.created ? String(r.created) : null,
+    belegDate: r.beleg_date ? String(r.beleg_date).slice(0, 10) : null,
+    supplier: r.supplier,
+    invoiceNumber: r.invoice_number,
+    gross: num(r.gross),
+    source: r.source,
+    confidential: r.confidential === 1,
+    hasFile: !!r.stored_name,
+    fileName: r.file_name,
+  }));
+}
+
 /** Loads a single manual receipt by id (or null). */
 export async function getManualReceipt(id: number): Promise<ManualReceipt | null> {
   const [rows] = await getPool().query<ReceiptRow[]>(

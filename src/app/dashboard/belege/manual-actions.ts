@@ -9,6 +9,8 @@ import {
   updateManualReceipt,
   deleteManualReceipt,
   getManualReceipt,
+  listManualReceiptUploads,
+  type ManualReceiptUpload,
 } from "@/lib/manual-receipts";
 import { getBookAccounts, getProjects, getSupplierContacts } from "@/lib/hero-api";
 import { deleteTasksForBeleg } from "@/lib/tasks";
@@ -22,6 +24,16 @@ import {
 import { extractBeleg, type BelegSumKind, type BelegSumResult } from "@/lib/beleg-extract";
 
 const PATH = "/dashboard/belege";
+
+/** Upload-Verlauf: manuelle Belege in Hochlade-Reihenfolge (neueste zuerst). */
+export async function listUploadsAction(): Promise<ManualReceiptUpload[]> {
+  if (!(await getSession())) return [];
+  try {
+    return await listManualReceiptUploads(300);
+  } catch {
+    return [];
+  }
+}
 
 export interface UploadBelegState {
   error?: string;

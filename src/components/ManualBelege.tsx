@@ -9,6 +9,7 @@ import ManualBelegeForm from "@/components/ManualBelegeForm";
 import ManualBelegeTable from "@/components/ManualBelegeTable";
 import BelegeChecklist from "@/components/BelegeChecklist";
 import PaymentAdvices, { PaymentAdviceButton } from "@/components/PaymentAdvices";
+import UploadHistoryButton from "@/components/UploadHistoryButton";
 import type { HeroBelegRow } from "@/components/ManualBelegeTable";
 import { listPaymentAdvices } from "@/lib/payment-advices";
 import { receiptDupKey } from "@/lib/receipt-duplicates";
@@ -208,6 +209,7 @@ export default async function ManualBelege({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <BelegeChecklist items={checklist} year={year} month={month} periodLabel={monthLabel} />
+          <UploadHistoryButton />
           <PaymentAdviceButton year={year} month={month} monthLabel={monthLabel} />
           <Link
             href="/dashboard/belege/posteingang"
