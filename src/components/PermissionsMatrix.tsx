@@ -65,7 +65,12 @@ export default function PermissionsMatrix({
                       </tr>
                     )}
                     <tr className="border-t border-gray-100">
-                      <td className={`px-3 py-2 text-gray-900 ${m.group ? "pl-6" : ""}`}>{m.label}</td>
+                      <td className={`px-3 py-2 text-gray-900 ${m.group ? "pl-6" : ""}`}>
+                        {m.label}
+                        {m.note && (
+                          <span className="mt-0.5 block text-xs font-normal text-gray-500">ℹ {m.note}</span>
+                        )}
+                      </td>
                       {roles.map((r) => (
                         <td key={r.key} className="px-3 py-2 text-center">
                           <input

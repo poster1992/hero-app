@@ -6,6 +6,8 @@ export interface AppModule {
   label: string;
   /** Optional grouping in the permissions matrix (e.g. Cockpit sub-items). */
   group?: string;
+  /** Optionaler Hinweis, der in der Rechteverteilung unter dem Label erscheint. */
+  note?: string;
 }
 
 export const MODULES: AppModule[] = [
@@ -33,8 +35,8 @@ export const MODULES: AppModule[] = [
   { key: "cockpit_lohn", label: "Lohn Abschläge erstellen", group: "Cockpit" },
   { key: "cockpit_benzin", label: "Benzin / Tankkosten", group: "Cockpit" },
   { key: "cockpit_rechnungen", label: "Rechnungen", group: "Cockpit" },
-  { key: "cockpit_arbeitszeiten", label: "Arbeitszeiten", group: "Cockpit" },
-  { key: "cockpit_zeitfreigabe", label: "Arbeitszeit-Freigabe (Tage in HERO bestätigen)", group: "Cockpit" },
+  { key: "cockpit_arbeitszeiten", label: "Arbeitszeiten", group: "Cockpit", note: "Nutzt den allgemeinen HERO-Token (nicht den persönlichen) – Rechte in HERO nicht nötig." },
+  { key: "cockpit_zeitfreigabe", label: "Arbeitszeit-Freigabe (Tage in HERO bestätigen)", group: "Cockpit", note: "Nutzt den allgemeinen HERO-Token (nicht den persönlichen) – Rechte in HERO nicht nötig." },
   { key: "cockpit_abc", label: "ABC-Analyse", group: "Cockpit" },
   { key: "cockpit_preisvergleich", label: "Preisvergleich", group: "Cockpit" },
   { key: "cockpit_artikel", label: "Artikel-Auswertung", group: "Cockpit" },

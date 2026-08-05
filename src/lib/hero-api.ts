@@ -81,9 +81,12 @@ const HERO_MAX_PAGES = 100;
 export async function heroGraphQL<T>(
   query: string,
   variables?: Record<string, unknown>,
-  retries = 3
+  retries = 3,
+  /** true = IMMER den Firmen-Token nutzen (nicht den persönlichen). Für Operationen,
+   *  die firmenweite Rechte brauchen (z. B. Arbeitszeiten/Freigabe aller Mitarbeiter). */
+  useCompanyToken = false
 ): Promise<T> {
-  const token = await currentHeroToken();
+  const token = useCompanyToken ? process.env.HERO_API_TOKEN?.trim() || null : await currentHeroToken();
   if (!token) {
     throw new Error("HERO_API_TOKEN is not configured");
   }
@@ -146,9 +149,12 @@ async function heroInternalGraphQL<T>(
   operationName: string,
   query: string,
   variables?: Record<string, unknown>,
-  retries = 3
+  retries = 3,
+  /** Der interne Endpoint bedient nur Arbeitszeiten/Freigabe (firmenweite Rechte) →
+   *  standardmäßig IMMER der Firmen-Token, nicht der persönliche. */
+  useCompanyToken = true
 ): Promise<T> {
-  const token = await currentHeroToken();
+  const token = useCompanyToken ? process.env.HERO_API_TOKEN?.trim() || null : await currentHeroToken();
   if (!token) throw new Error("HERO_API_TOKEN is not configured");
 
   const url = `${HERO_INTERNAL_ENDPOINT}?op=${encodeURIComponent(operationName)}`;
@@ -1407,7 +1413,9 @@ export async function getTrackingTimes(start: string, end: string): Promise<Trac
           project_match { id relative_id name }
         }
       }`,
-      { start, end, first: pageSize, offset }
+      { start, end, first: pageSize, offset },
+      3,
+      true // firmenweite Arbeitszeiten aller Mitarbeiter → Firmen-Token
     );
     const entries = data.tracking_times ?? [];
     for (const e of entries) {
