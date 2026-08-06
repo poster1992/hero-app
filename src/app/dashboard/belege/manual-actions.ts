@@ -35,6 +35,38 @@ export async function listUploadsAction(): Promise<ManualReceiptUpload[]> {
   }
 }
 
+/** Lädt einen manuellen Beleg als Bearbeiten-Form (für den Upload-Verlauf). */
+export async function loadEditableReceiptAction(
+  id: number
+): Promise<{ receipt: EditableReceipt; hasFile: boolean } | null> {
+  if (!(await getSession())) return null;
+  if (!Number.isFinite(id) || id <= 0) return null;
+  const r = await getManualReceipt(id).catch(() => null);
+  if (!r) return null;
+  return {
+    receipt: {
+      id: r.id,
+      date: r.date,
+      supplier: r.supplier,
+      description: r.description,
+      gross: r.gross,
+      vatRate: r.vatRate,
+      accountNumber: r.accountNumber,
+      accountName: r.accountName,
+      fileName: r.fileName,
+      projectId: r.projectId,
+      projectRelativeId: r.projectRelativeId,
+      projectName: r.projectName,
+      invoiceNumber: r.invoiceNumber,
+      skontoAmount: r.skontoAmount,
+      skontoPayAmount: r.skontoPayAmount,
+      skontoDueDate: r.skontoDueDate,
+      confidential: r.confidential,
+    },
+    hasFile: r.hasFile,
+  };
+}
+
 export interface UploadBelegState {
   error?: string;
   success?: string;

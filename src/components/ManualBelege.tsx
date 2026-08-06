@@ -209,7 +209,7 @@ export default async function ManualBelege({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <BelegeChecklist items={checklist} year={year} month={month} periodLabel={monthLabel} />
-          <UploadHistoryButton />
+          <UploadHistoryButton accounts={accounts} projects={projects} suppliers={suppliers} />
           <PaymentAdviceButton year={year} month={month} monthLabel={monthLabel} />
           <Link
             href="/dashboard/belege/posteingang"
