@@ -132,7 +132,6 @@ export default function UploadHistoryButton({
                   <th className="px-3 py-2 font-semibold">Lieferant</th>
                   <th className="px-3 py-2 font-semibold">Quelle</th>
                   <th className="px-3 py-2 text-right font-semibold">Brutto</th>
-                  <th className="px-3 py-2 font-semibold">Datei</th>
                 </tr>
               </thead>
               <tbody>
@@ -172,20 +171,6 @@ export default function UploadHistoryButton({
                     </td>
                     <td className="px-3 py-2 text-gray-600">{r.source === "inbox" ? "Posteingang" : "Formular"}</td>
                     <td className="px-3 py-2 text-right tabular-nums text-gray-900">{eur.format(r.gross)}</td>
-                    <td className="px-3 py-2">
-                      {r.hasFile ? (
-                        <a
-                          href={`/api/beleg?id=${r.id}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="font-medium text-brand-red hover:underline"
-                        >
-                          👁 Ansehen
-                        </a>
-                      ) : (
-                        <span className="text-gray-400">—</span>
-                      )}
-                    </td>
                   </tr>
                 ))}
               </tbody>
