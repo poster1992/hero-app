@@ -6,7 +6,7 @@ import {
   isRevenueReduction,
 } from "./hero-api";
 import { listManualReceipts, skontoSaving } from "./manual-receipts";
-import { effectiveReceiptStatus, LOCAL_STATUS_FROM, getDocumentUrl } from "./invoices";
+import { effectiveReceiptStatus, getDocumentUrl } from "./invoices";
 import { getPaymentOverrideMap } from "./receipt-payment-status";
 import { accountForSupplier } from "./beleg-extract";
 
@@ -222,17 +222,14 @@ export async function getDashboardData(year: number): Promise<DashboardData> {
     monthly[monthIndex].outputTax += receipt.value - receipt.netValue;
     totalOutput += receipt.netValue;
     countOutput++;
-    // Offener Betrag nach effektivem Status: lokaler Override gewinnt; ab
-    // 01.06.2026 ohne Override = offen (HERO ignoriert). Im lokalen Regime zählt
-    // der Bruttobetrag, davor der HERO-Offenbetrag.
+    // Offener Betrag nach effektivem Status: lokaler Override gewinnt; sonst der
+    // HERO-Zahlstatus. Bezahlt → 0; per Override „offen" gesetzt → voller Betrag;
+    // sonst der HERO-Offenbetrag.
     const ovStatus = paymentOverrides.get(receipt.id)?.status ?? null;
-    const localRegime =
-      ovStatus === "offen" ||
-      (ovStatus === null && (receipt.receiptDate ?? "").slice(0, 10) >= LOCAL_STATUS_FROM);
     const openAmt =
       effectiveReceiptStatus(receipt, ovStatus).tone === "paid"
         ? 0
-        : localRegime
+        : ovStatus === "offen"
           ? receipt.value
           : receipt.openAmount;
     if (openAmt > 0.005) {

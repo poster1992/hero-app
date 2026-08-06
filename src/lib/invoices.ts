@@ -425,8 +425,10 @@ export function getInvoiceStatus(receipt: Receipt): InvoiceStatus {
 export const LOCAL_STATUS_FROM = "2026-06-01";
 
 /**
- * Effektiver Zahlstatus eines Belegs: lokaler Override gewinnt immer; ab
- * LOCAL_STATUS_FROM ohne Override = "Offen" (HERO ignoriert); davor der HERO-Status.
+ * Effektiver Zahlstatus eines HERO-Belegs: ein lokaler Override (unsere DB) gewinnt
+ * immer; sonst gilt der echte HERO-Zahlstatus (bezahlt, wenn offener Betrag 0).
+ * (Früher wurde der HERO-Status ab LOCAL_STATUS_FROM ignoriert – bewusst geändert,
+ * damit in HERO als bezahlt markierte Belege auch in der App als bezahlt erscheinen.)
  */
 export function effectiveReceiptStatus(
   receipt: Receipt,
@@ -436,9 +438,6 @@ export function effectiveReceiptStatus(
     return overrideStatus === "bezahlt"
       ? { label: "Bezahlt", tone: "paid" }
       : { label: "Offen", tone: "open" };
-  }
-  if ((receipt.receiptDate ?? "").slice(0, 10) >= LOCAL_STATUS_FROM) {
-    return { label: "Offen", tone: "open" };
   }
   return getInvoiceStatus(receipt);
 }
