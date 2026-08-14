@@ -323,7 +323,7 @@ export async function createTask(input: {
   projectRelativeId?: number | null;
   projectName?: string | null;
   actionButtons?: string[] | null;
-}): Promise<void> {
+}): Promise<number> {
   const pool = getPool();
   const buttons = (input.actionButtons ?? []).map((s) => String(s).trim()).filter(Boolean);
   const [res] = await pool.query(
@@ -371,6 +371,8 @@ export async function createTask(input: {
       // Logbuch ist optional – Fehler hier darf die Aufgabe nicht scheitern lassen.
     }
   }
+
+  return taskId;
 }
 
 /** Marker embedded in a price-request task's description to tie it to an article. */

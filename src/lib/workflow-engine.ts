@@ -15,11 +15,11 @@ import { getCustomerName, getDocumentUrl, getReceiptProjects } from "./invoices"
 import { listInboxReceipts, getManualReceipt, getManualDuplicateKeys } from "./manual-receipts";
 import { receiptDupKey } from "./receipt-duplicates";
 import { getLagerMinStatus } from "./materials";
-import { createTask, createReviewTask } from "./tasks";
+import { createTask, createReviewTask, addTaskNote } from "./tasks";
 import { assignReviewer, getReceiptReview } from "./receipt-reviews";
 import { sendPushToUsers } from "./push";
 import { createTaskNotification } from "./task-notifications";
-import { getUsersForNotification } from "./users";
+import { getUsersForNotification, listUsers } from "./users";
 import { sendMail } from "./mailer";
 import { getGlobalLogbookSystem, addProjectLogbookEntry, SYSTEM_TITLE_RE } from "./logbook-core";
 import { buildBaustelleFertigEmailHtml, buildBaustelleFertigEmailText } from "./workflow-mail";
@@ -542,10 +542,14 @@ function reviewerForAccount(c: WorkflowConfig, account: string | null | undefine
  * Prüf-Aufgabe angelegt (Prüfer aus der aktiven Rechnungsprüfungs-Regel), inkl.
  * PDF-Vorschau/Bearbeiten (Marker [BELEGPRUEF:id]). Idempotent je Beleg.
  */
-export async function startReviewChainForManualTask(task: {
-  id: number;
-  description: string | null;
-}): Promise<void> {
+export async function startReviewChainForManualTask(
+  task: {
+    id: number;
+    description: string | null;
+  },
+  /** Wer den Buchungs-Schritt erledigt hat (für den Historien-Vermerk am Prüf-Task). */
+  bookedBy?: { id: number; name: string | null } | null
+): Promise<void> {
   const m = task.description?.match(/\[BELEGPRUEF:(\d+)\]/);
   if (!m) return;
   const belegId = Number(m[1]);
@@ -601,7 +605,7 @@ export async function startReviewChainForManualTask(task: {
     .toISOString()
     .slice(0, 10);
 
-  await createTask({
+  const newTaskId = await createTask({
     title,
     description: noteLines.join("\n"),
     createdBy: reviewWf.createdBy ?? assignee,
@@ -609,6 +613,30 @@ export async function startReviewChainForManualTask(task: {
     dueDate,
     actionButtons: reviewWf.config.buttons,
   });
+
+  // Hand-off als Notiz/Historie am neuen Prüf-Task festhalten: woher er kommt
+  // (Buchung erledigt von …) und warum er an diesen Prüfer ging (Konto → Prüfer).
+  try {
+    const users = await listUsers().catch(() => []);
+    const nameById = new Map<number, string>();
+    for (const u of users) nameById.set(u.id, u.displayName || u.username);
+    const reviewerName = nameById.get(assignee) ?? `#${assignee}`;
+    const bookerName = bookedBy?.name?.trim() || (bookedBy?.id ? nameById.get(bookedBy.id) : null) || null;
+    const acc = (beleg?.accountNumber ?? "").trim();
+    const accName = beleg?.accountName?.trim() || null;
+    const routing = acc
+      ? `Konto ${acc}${accName ? ` (${accName})` : ""} → Prüfer ${reviewerName}`
+      : `Prüfer ${reviewerName}`;
+    const noteText =
+      `🔁 Automatisch aus „Rechnungsbuchung“ verkettet.\n` +
+      (bookerName ? `Buchung erledigt von: ${bookerName}\n` : "") +
+      `Weitergeleitet zur Rechnungsprüfung: ${routing}`;
+    // Als System-Historie (Ersteller der Kette) am Prüf-Task hinterlegen.
+    await addTaskNote(newTaskId, reviewWf.createdBy ?? assignee, noteText);
+  } catch {
+    /* Notiz ist optional – Fehler darf die Verkettung nicht scheitern lassen. */
+  }
+
   await notifyAssignee(assignee, title);
   await addWorkflowLog(reviewWf.id, ref, `Rechnungsprüfung (verkettet) gestartet: ${title} → Prüfer #${assignee}`);
 }

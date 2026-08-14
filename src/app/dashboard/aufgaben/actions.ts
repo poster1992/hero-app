@@ -253,7 +253,10 @@ export async function setStatusAction(formData: FormData): Promise<void> {
   // Verkettung: Rechnungsbuchung erledigt → Rechnungsprüfung für denselben Beleg.
   if (status === "erledigt") {
     try {
-      await startReviewChainForManualTask({ id, description: task.description });
+      await startReviewChainForManualTask(
+        { id, description: task.description },
+        { id: meId, name: me.displayName || me.username }
+      );
     } catch {
       /* Verkettung optional – Fehler blockiert das Erledigen nicht. */
     }
@@ -393,7 +396,10 @@ export async function taskButtonAction(formData: FormData): Promise<void> {
 
   await setTaskStatus(id, "erledigt", me.id, `Antwort: ${label}`);
   try {
-    await startReviewChainForManualTask({ id, description: task.description });
+    await startReviewChainForManualTask(
+      { id, description: task.description },
+      { id: me.id, name: me.displayName || me.username }
+    );
   } catch {
     /* Verkettung optional */
   }
