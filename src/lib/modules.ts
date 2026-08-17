@@ -12,6 +12,7 @@ export interface AppModule {
 
 export const MODULES: AppModule[] = [
   { key: "dashboard", label: "Dashboard" },
+  { key: "projektsuche", label: "Projektsuche (Suchfeld oben in der Kopfzeile)" },
   { key: "projekte", label: "Projekte" },
   { key: "projekte_finanzen", label: "Projekt-Finanzen (Kosten/Ertrag/Belege im Projekt-Popup)" },
   { key: "dokumente", label: "Dokumente" },
