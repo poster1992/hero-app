@@ -8,7 +8,8 @@ import { useEffect, useRef, useState } from "react";
  *
  * Für größere Scan-Entfernung:
  *  - hohe Kamera-Auflösung (mehr Pixel pro Barcode),
- *  - Zoom-Regler (optischer/digitaler Zoom, falls das Gerät ihn unterstützt),
+ *  - Auto-Zoom: fährt automatisch heran, bis ein Code erkannt wird, und öffnet
+ *    danach wieder auf (für den nächsten Artikel); optional manuell per Regler,
  *  - Taschenlampe (Torch) für schlechte Lichtverhältnisse,
  *  - kontinuierlicher Autofokus,
  *  - ZXing „TRY_HARDER" (gründlichere, aber langsamere Erkennung).
@@ -26,14 +27,39 @@ export default function CameraScanner({
   const onDetectRef = useRef(onDetect);
   onDetectRef.current = onDetect;
   const trackRef = useRef<MediaStreamTrack | null>(null);
+
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(true);
 
   // Zoom-/Torch-Fähigkeiten des Geräts (nicht überall vorhanden).
   const [zoom, setZoom] = useState<{ min: number; max: number; step: number } | null>(null);
   const [zoomValue, setZoomValue] = useState(1);
+  const [autoZoom, setAutoZoom] = useState(true);
   const [torchSupported, setTorchSupported] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
+
+  // Refs, damit der Auto-Zoom-Timer immer aktuelle Werte sieht (ohne Neustart).
+  const zoomCapsRef = useRef<{ min: number; max: number; step: number } | null>(null);
+  const zoomValueRef = useRef(1);
+  const autoZoomRef = useRef(true);
+  const lastDetectRef = useRef(0);
+  const zoomTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const setZoomState = (v: number) => {
+    zoomValueRef.current = v;
+    setZoomValue(v);
+  };
+
+  async function applyZoom(value: number) {
+    setZoomState(value);
+    const track = trackRef.current;
+    if (!track) return;
+    try {
+      await track.applyConstraints({ advanced: [{ zoom: value }] } as unknown as MediaTrackConstraints);
+    } catch {
+      /* Zoom optional */
+    }
+  }
 
   useEffect(() => {
     let stop: (() => void) | undefined;
@@ -65,6 +91,7 @@ export default function CameraScanner({
             if (!result) return;
             const text = result.getText();
             const now = Date.now();
+            lastDetectRef.current = now;
             // Gleichen Code nicht mehrfach in kurzer Folge übernehmen.
             if (text === last.code && now - last.t < 1500) return;
             last.code = text;
@@ -94,8 +121,27 @@ export default function CameraScanner({
 
           if (caps.zoom && typeof caps.zoom.max === "number" && caps.zoom.max > (caps.zoom.min ?? 1)) {
             const step = caps.zoom.step && caps.zoom.step > 0 ? caps.zoom.step : 0.1;
-            setZoom({ min: caps.zoom.min, max: caps.zoom.max, step });
-            setZoomValue(settings.zoom ?? caps.zoom.min);
+            const capsObj = { min: caps.zoom.min, max: caps.zoom.max, step };
+            zoomCapsRef.current = capsObj;
+            setZoom(capsObj);
+            setZoomState(settings.zoom ?? caps.zoom.min);
+
+            // Auto-Zoom-Schleife: fährt langsam heran, bis etwas erkannt wird,
+            // und öffnet nach einem Treffer wieder auf den kleinsten Zoom.
+            zoomTimerRef.current = setInterval(() => {
+              const c = zoomCapsRef.current;
+              const trk = trackRef.current;
+              if (!c || !trk || !autoZoomRef.current) return;
+              const cur = zoomValueRef.current;
+              const span = c.max - c.min;
+              const ramp = Math.max(c.step, span / 12); // ~12 Schritte von min → max
+              const sinceDetect = Date.now() - lastDetectRef.current;
+              // Gerade erkannt → wieder aufmachen (nächster Artikel evtl. näher).
+              const target = sinceDetect < 1300 ? c.min : Math.min(c.max, cur + ramp);
+              if (Math.abs(target - cur) >= c.step * 0.5) {
+                applyZoom(target);
+              }
+            }, 600);
           }
           if (caps.torch) setTorchSupported(true);
 
@@ -127,19 +173,24 @@ export default function CameraScanner({
     return () => {
       cancelled = true;
       stop?.();
+      if (zoomTimerRef.current) clearInterval(zoomTimerRef.current);
       trackRef.current = null;
     };
   }, []);
 
-  async function applyZoom(value: number) {
-    setZoomValue(value);
-    const track = trackRef.current;
-    if (!track) return;
-    try {
-      await track.applyConstraints({ advanced: [{ zoom: value }] } as unknown as MediaTrackConstraints);
-    } catch {
-      /* Zoom optional */
+  function toggleAutoZoom() {
+    const next = !autoZoom;
+    autoZoomRef.current = next;
+    setAutoZoom(next);
+  }
+
+  function onManualZoom(value: number) {
+    // Manuelles Ziehen schaltet Auto-Zoom aus.
+    if (autoZoomRef.current) {
+      autoZoomRef.current = false;
+      setAutoZoom(false);
     }
+    applyZoom(value);
   }
 
   async function toggleTorch() {
@@ -177,18 +228,27 @@ export default function CameraScanner({
         )}
       </div>
 
-      {/* Zoom-Regler für entfernte Barcodes */}
+      {/* Zoom: automatisch oder manuell */}
       {zoom && (
         <div className="mt-2 flex items-center gap-2 px-1">
-          <span className="text-xs text-white/70">Zoom</span>
+          <button
+            type="button"
+            onClick={toggleAutoZoom}
+            className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold transition-colors ${
+              autoZoom ? "bg-emerald-500 text-white" : "bg-white/15 text-white/80 hover:bg-white/25"
+            }`}
+            title="Automatisch heranzoomen, bis ein Code erkannt wird"
+          >
+            {autoZoom ? "Auto-Zoom ✓" : "Auto-Zoom"}
+          </button>
           <input
             type="range"
             min={zoom.min}
             max={zoom.max}
             step={zoom.step}
             value={zoomValue}
-            onChange={(e) => applyZoom(Number(e.target.value))}
-            className="h-1.5 w-full cursor-pointer accent-emerald-400"
+            onChange={(e) => onManualZoom(Number(e.target.value))}
+            className={`h-1.5 w-full cursor-pointer accent-emerald-400 ${autoZoom ? "opacity-60" : ""}`}
           />
           <span className="w-10 text-right text-xs tabular-nums text-white/70">
             {zoomValue.toFixed(1)}×
