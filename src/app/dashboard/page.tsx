@@ -36,6 +36,13 @@ export default async function DashboardPage() {
   const { role } = await getEffectiveRole();
   const allowedModules = await getAllowedModules(role);
 
+  // Benutzergruppe „Lager" soll direkt in der Lager-Seite landen und gar nicht erst
+  // das (für sie irrelevante) Dashboard sehen.
+  // Hinweis: redirect() wirft NEXT_REDIRECT – NICHT in try/catch aufrufen.
+  if (role === "lager" && allowedModules.includes("lager")) {
+    redirect("/dashboard/lager");
+  }
+
   // Reine Foto-Benutzer (Baustellen-Zugriff, aber kein Dashboard-Recht – z. B. die
   // Rolle „bauleiter"/Projekt Fotos) sollen nicht auf dem für sie leeren Dashboard
   // landen, sondern direkt in ihrer ersten Baustellen-Galerie.
