@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { submitBooking } from "@/app/dashboard/lager/actions";
 import CameraScanner from "@/components/CameraScanner";
@@ -48,9 +48,27 @@ export default function BookingScanModal({
   const [employee, setEmployee] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Kurze Bestätigungs-Einblendung („✓ Artikel hinzugefügt"), damit man den Scan bemerkt.
+  const [addedToast, setAddedToast] = useState<{ name: string; n: number } | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scanRef = useRef<HTMLInputElement>(null);
 
+  // Timer beim Unmount aufräumen.
+  useEffect(() => () => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+  }, []);
+
+  /** Zeigt kurz einen grünen Haken mit dem Artikelnamen. */
+  function flashAdded(name: string) {
+    // n zählt hoch → gleicher Artikel löst die Einblende-Animation erneut aus.
+    setAddedToast((prev) => ({ name, n: (prev?.n ?? 0) + 1 }));
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setAddedToast(null), 1600);
+  }
+
   function close() {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setAddedToast(null);
     setDirection(null);
     setProjectQuery("");
     setProject(null);
@@ -88,6 +106,7 @@ export default function BookingScanModal({
       }
       return [...prev, { article: found, qty: amount }];
     });
+    flashAdded(found.name);
   }
 
   function addByCode(raw: string): ScanArticle | null {
@@ -162,6 +181,24 @@ export default function BookingScanModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4">
+      {/* Kurze Bestätigung nach dem Scannen/Hinzufügen */}
+      {addedToast && (
+        <div className="pointer-events-none fixed inset-x-0 top-6 z-[60] flex justify-center px-4">
+          <div
+            key={addedToast.n}
+            className="flex animate-[bookingAdded_1.6s_ease-out_forwards] items-center gap-2 rounded-full bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-xl shadow-emerald-900/30"
+          >
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white/25 text-base leading-none">
+              ✓
+            </span>
+            <span>
+              Artikel hinzugefügt
+              <span className="ml-1 font-normal text-emerald-50">· {addedToast.name}</span>
+            </span>
+          </div>
+          <style>{`@keyframes bookingAdded{0%{opacity:0;transform:translateY(-8px) scale(.9)}12%{opacity:1;transform:translateY(0) scale(1)}80%{opacity:1;transform:translateY(0) scale(1)}100%{opacity:0;transform:translateY(-6px) scale(.98)}}`}</style>
+        </div>
+      )}
       <div className="my-8 w-full max-w-xl rounded-xl border border-gray-200 bg-white p-5 shadow-2xl">
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-lg font-semibold text-gray-900">Lager-Buchung</h3>
