@@ -1,174 +1,20 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
-import type { StockMovement } from "@/lib/material-types";
+import { useState } from "react";
 import BookingScanModal from "@/components/BookingScanModal";
-import { setMaterialEkAction, setMaterialMinMaxAction } from "@/app/dashboard/lager/actions";
+import type { LagerItem, LagerProjectOption } from "@/lib/material-types";
 
-export interface LagerItem {
-  id: number; // HERO article (stock material) id
-  name: string;
-  itemNumber: string;
-  qrId: string | null;
-  unit: string;
-  category: string | null;
-  quantity: number; // local stock (MySQL)
-  ekPrice: number; // EK price (MySQL), 0 = nicht hinterlegt
-  minStock: number | null; // Lager-Minimum (MySQL)
-  maxStock: number | null; // Lager-Maximum (MySQL)
-}
+export type { LagerItem };
 
-/** Inline EK editor: saves the price via server action. */
-function EkCell({ item }: { item: LagerItem }) {
-  const router = useRouter();
-  const [pending, startTransition] = useTransition();
-  const [value, setValue] = useState(item.ekPrice ? String(item.ekPrice).replace(".", ",") : "");
-
-  const save = () => {
-    const fd = new FormData();
-    fd.set("heroArticleId", String(item.id));
-    fd.set("price", value);
-    startTransition(async () => {
-      await setMaterialEkAction(fd);
-      router.refresh();
-    });
-  };
-
-  return (
-    <div className="flex items-center justify-end gap-1">
-      <input
-        type="text"
-        inputMode="decimal"
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            save();
-          }
-        }}
-        placeholder="0,00"
-        className={`w-20 rounded-md border px-2 py-1 text-right text-sm outline-none focus:border-brand-red/60 ${
-          item.ekPrice > 0 ? "border-gray-300" : "border-brand-red/50 bg-brand-red/5"
-        }`}
-      />
-      <button
-        type="button"
-        onClick={save}
-        disabled={pending}
-        className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 transition-colors hover:border-brand-red/50 disabled:opacity-50"
-      >
-        ✓
-      </button>
-    </div>
-  );
-}
-
-/** Inline-Editor für Lager-Minimum/-Maximum eines Artikels. */
-function MinMaxCell({ item }: { item: LagerItem }) {
-  const router = useRouter();
-  const [pending, startTransition] = useTransition();
-  const fmtVal = (v: number | null) => (v == null ? "" : String(v).replace(".", ","));
-  const [min, setMin] = useState(fmtVal(item.minStock));
-  const [max, setMax] = useState(fmtVal(item.maxStock));
-
-  const dirty = min !== fmtVal(item.minStock) || max !== fmtVal(item.maxStock);
-  const save = () => {
-    const fd = new FormData();
-    fd.set("heroArticleId", String(item.id));
-    fd.set("name", item.name);
-    fd.set("unit", item.unit);
-    fd.set("min", min);
-    fd.set("max", max);
-    startTransition(async () => {
-      await setMaterialMinMaxAction(fd);
-      router.refresh();
-    });
-  };
-  const inputCls =
-    "w-16 rounded-md border border-gray-300 px-2 py-1 text-right text-sm outline-none focus:border-brand-red/60";
-
-  return (
-    <div className="flex items-center justify-end gap-1">
-      <input
-        type="text"
-        inputMode="decimal"
-        value={min}
-        onChange={(e) => setMin(e.target.value)}
-        onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), save())}
-        placeholder="Min"
-        title="Lager-Minimum"
-        className={inputCls}
-      />
-      <span className="text-gray-300">/</span>
-      <input
-        type="text"
-        inputMode="decimal"
-        value={max}
-        onChange={(e) => setMax(e.target.value)}
-        onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), save())}
-        placeholder="Max"
-        title="Lager-Maximum"
-        className={inputCls}
-      />
-      <button
-        type="button"
-        onClick={save}
-        disabled={pending || !dirty}
-        className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 transition-colors hover:border-brand-red/50 disabled:opacity-40"
-      >
-        ✓
-      </button>
-    </div>
-  );
-}
-
-interface ProjectOption {
-  id: number;
-  relativeId: number | null;
-  name: string;
-}
-
-const numberFmt = new Intl.NumberFormat("de-DE", { maximumFractionDigits: 2 });
-
-function formatDateTime(s: string | null): string {
-  if (!s) return "";
-  const d = new Date(s.replace(" ", "T"));
-  if (Number.isNaN(d.getTime())) return s;
-  return d.toLocaleString("de-DE", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
+/** Lager-Startseite: nur Ein-/Ausbuchen (Bestandsliste & Buchungshistorie sind eigene Unterseiten). */
 export default function LagerHero({
   items,
-  movements,
   projects,
-  canSeeEk = false,
 }: {
   items: LagerItem[];
-  movements: StockMovement[];
-  projects: ProjectOption[];
-  canSeeEk?: boolean;
+  projects: LagerProjectOption[];
 }) {
-  const [query, setQuery] = useState("");
   const [bookingOpen, setBookingOpen] = useState(false);
-
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter(
-      (a) =>
-        a.name.toLowerCase().includes(q) ||
-        a.itemNumber.toLowerCase().includes(q) ||
-        (a.category?.toLowerCase().includes(q) ?? false)
-    );
-  }, [query, items]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -180,6 +26,10 @@ export default function LagerHero({
         >
           + Neue Buchung (scannen)
         </button>
+        <p className="mt-3 text-sm text-gray-500">
+          Artikel scannen und ein- oder ausbuchen. Die Artikelbestandsliste und die letzten
+          Buchungen findest du im Menü unter „Lager".
+        </p>
       </div>
 
       <BookingScanModal
@@ -194,125 +44,6 @@ export default function LagerHero({
           unit: a.unit,
         }))}
       />
-
-      <div className="rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 px-4 py-3">
-          <h2 className="text-lg font-semibold text-gray-900">
-            Artikel &amp; Bestand{" "}
-            <span className="text-sm font-normal text-gray-500">({filtered.length})</span>
-          </h2>
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Artikel suchen (Name, Nr., Kategorie) …"
-            className="w-64 rounded-md border border-gray-300 px-3 py-1.5 text-sm outline-none focus:border-brand-red/60"
-          />
-        </div>
-
-        <div className="max-h-[34rem] overflow-auto">
-          <table className="w-full border-collapse text-sm">
-            <thead className="sticky top-0 bg-gray-50">
-              <tr className="text-left text-xs uppercase tracking-wide text-gray-500">
-                <th className="px-4 py-2 font-semibold">Artikel-Nr.</th>
-                <th className="px-4 py-2 font-semibold">Bezeichnung</th>
-                <th className="px-4 py-2 font-semibold">Kategorie</th>
-                <th className="px-4 py-2 text-right font-semibold">Bestand</th>
-                <th className="px-4 py-2 text-right font-semibold">Min / Max</th>
-                {canSeeEk && <th className="px-4 py-2 text-right font-semibold">EK-Preis</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.length === 0 ? (
-                <tr>
-                  <td colSpan={canSeeEk ? 6 : 5} className="px-4 py-4 text-sm text-gray-400">
-                    Keine Artikel gefunden.
-                  </td>
-                </tr>
-              ) : (
-                filtered.map((a) => {
-                  const under = a.minStock != null && a.quantity < a.minStock;
-                  const over = a.maxStock != null && a.quantity > a.maxStock;
-                  return (
-                  <tr key={a.id} className="border-t border-gray-100 align-top">
-                    <td className="px-4 py-2 text-gray-500">{a.itemNumber || "—"}</td>
-                    <td className="px-4 py-2 font-medium text-gray-900">{a.name}</td>
-                    <td className="px-4 py-2 text-gray-500">{a.category ?? "—"}</td>
-                    <td className="px-4 py-2 text-right">
-                      <span
-                        className={`font-semibold ${
-                          a.quantity < 0 || under ? "text-rose-600" : over ? "text-amber-600" : "text-gray-900"
-                        }`}
-                      >
-                        {numberFmt.format(a.quantity)} {a.unit}
-                      </span>
-                      {under && (
-                        <span className="ml-1.5 whitespace-nowrap rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-semibold text-rose-700">
-                          ↓ unter Min
-                        </span>
-                      )}
-                      {over && (
-                        <span className="ml-1.5 whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
-                          ↑ über Max
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-2 text-right">
-                      <MinMaxCell item={a} />
-                    </td>
-                    {canSeeEk && (
-                      <td className="px-4 py-2 text-right">
-                        <EkCell item={a} />
-                      </td>
-                    )}
-                  </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Bewegungs-Historie */}
-      <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
-        <h2 className="mb-3 text-lg font-semibold text-gray-900">Letzte Buchungen</h2>
-        {movements.length === 0 ? (
-          <p className="text-sm text-gray-400">Noch keine Buchungen.</p>
-        ) : (
-          <ul className="divide-y divide-gray-100">
-            {movements.map((mv) => (
-              <li key={mv.id} className="flex items-center justify-between gap-3 py-2 text-sm">
-                <div className="min-w-0">
-                  <span className="font-medium text-gray-900">{mv.materialName}</span>
-                  {mv.projectName ? (
-                    <span className="text-gray-500">
-                      {" · "}
-                      {mv.projectRelativeId != null ? `#${mv.projectRelativeId} ` : ""}
-                      {mv.projectName}
-                    </span>
-                  ) : (
-                    ""
-                  )}
-                  {mv.comment ? <span className="text-gray-500"> · {mv.comment}</span> : ""}
-                  <span className="block text-xs text-gray-400">
-                    {formatDateTime(mv.at)}
-                    {mv.employeeName ? ` · ${mv.employeeName}` : mv.byName ? ` · ${mv.byName}` : ""}
-                  </span>
-                </div>
-                <span
-                  className={`shrink-0 font-semibold ${
-                    mv.delta >= 0 ? "text-emerald-700" : "text-rose-600"
-                  }`}
-                >
-                  {mv.delta >= 0 ? "+" : ""}
-                  {numberFmt.format(mv.delta)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
     </div>
   );
 }

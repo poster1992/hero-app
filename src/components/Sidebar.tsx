@@ -38,7 +38,17 @@ const NAV_ITEMS: NavItem[] = [
       { href: "/dashboard/dokumente/rechnungen", label: "Rechnungen" },
     ],
   },
-  { href: "/dashboard/lager", label: "Lager", icon: "lager", module: "lager" },
+  {
+    href: "/dashboard/lager",
+    label: "Lager",
+    icon: "lager",
+    module: "lager",
+    children: [
+      { href: "/dashboard/lager", label: "Ein-/Ausbuchen" },
+      { href: "/dashboard/lager/bestand", label: "Artikelbestandsliste" },
+      { href: "/dashboard/lager/buchungen", label: "Letzte Buchungen" },
+    ],
+  },
   { href: "/dashboard/kunden", label: "Kunden", icon: "kunden", module: "kunden" },
   { href: "/dashboard/aufgaben", label: "Aufgaben", icon: "aufgaben", module: "aufgaben" },
   {
