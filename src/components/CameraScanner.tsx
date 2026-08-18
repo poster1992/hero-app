@@ -209,7 +209,7 @@ export default function CameraScanner({
     <div className="mt-2 rounded-md border border-gray-300 bg-black/90 p-2">
       <div className="relative overflow-hidden rounded">
         {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-        <video ref={videoRef} className="h-64 w-full rounded bg-black object-cover" muted playsInline autoPlay />
+        <video ref={videoRef} className="h-72 w-full rounded bg-black object-cover sm:h-64" muted playsInline autoPlay />
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <div className="h-24 w-4/5 rounded-lg border-2 border-white/80" />
         </div>

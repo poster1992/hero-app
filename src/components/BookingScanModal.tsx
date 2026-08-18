@@ -26,6 +26,8 @@ interface CartRow {
   qty: number;
 }
 
+const EMPLOYEE_KEY = "lager-employee";
+
 export default function BookingScanModal({
   open,
   onClose,
@@ -41,11 +43,10 @@ export default function BookingScanModal({
   const [direction, setDirection] = useState<"in" | "out" | null>(null);
   const [projectQuery, setProjectQuery] = useState("");
   const [project, setProject] = useState<ProjectOption | null>(null);
-  const [scan, setScan] = useState("");
+  const [search, setSearch] = useState("");
   const [scanError, setScanError] = useState<string | null>(null);
   const [cameraOn, setCameraOn] = useState(false);
   const [camFeedback, setCamFeedback] = useState<{ ok: boolean; text: string } | null>(null);
-  const [manualQuery, setManualQuery] = useState("");
   const [cart, setCart] = useState<CartRow[]>([]);
   const [employee, setEmployee] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -53,12 +54,25 @@ export default function BookingScanModal({
   // Kurze Bestätigungs-Einblendung („✓ Artikel hinzugefügt"), damit man den Scan bemerkt.
   const [addedToast, setAddedToast] = useState<{ name: string; n: number } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const scanRef = useRef<HTMLInputElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   // Timer beim Unmount aufräumen.
   useEffect(() => () => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
   }, []);
+
+  // Zuletzt genutzten Mitarbeiternamen vorbelegen (spart Tippen bei jeder Buchung).
+  useEffect(() => {
+    if (!open) return;
+    setEmployee((cur) => {
+      if (cur) return cur;
+      try {
+        return localStorage.getItem(EMPLOYEE_KEY) ?? "";
+      } catch {
+        return "";
+      }
+    });
+  }, [open]);
 
   /** Zeigt kurz einen grünen Haken mit dem Artikelnamen. */
   function flashAdded(name: string) {
@@ -74,7 +88,7 @@ export default function BookingScanModal({
     setDirection(null);
     setProjectQuery("");
     setProject(null);
-    setScan("");
+    setSearch("");
     setScanError(null);
     setCameraOn(false);
     setCamFeedback(null);
@@ -96,7 +110,7 @@ export default function BookingScanModal({
       .slice(0, 8);
   }, [projectQuery, project, projects]);
 
-  if (!open) return null;
+  const ready = direction != null && project != null;
 
   function addArticle(found: ScanArticle, amount = 1) {
     setCart((prev) => {
@@ -141,8 +155,8 @@ export default function BookingScanModal({
     return found;
   }
 
-  const manualMatches = (() => {
-    const q = manualQuery.trim().toLowerCase();
+  const searchMatches = (() => {
+    const q = search.trim().toLowerCase();
     if (!q) return [];
     return articles
       .filter(
@@ -156,12 +170,19 @@ export default function BookingScanModal({
   function setQty(id: number, qty: number) {
     setCart((prev) => prev.map((r) => (r.article.id === id ? { ...r, qty } : r)));
   }
+  function stepQty(id: number, delta: number) {
+    setCart((prev) =>
+      prev.map((r) =>
+        r.article.id === id ? { ...r, qty: Math.max(0, Math.round((r.qty + delta) * 100) / 100) } : r
+      )
+    );
+  }
   function removeRow(id: number) {
     setCart((prev) => prev.filter((r) => r.article.id !== id));
   }
 
-  const canSubmit =
-    direction != null && project != null && employee.trim() !== "" && cart.length > 0 && !submitting;
+  const totalItems = cart.reduce((s, r) => s + (r.qty > 0 ? 1 : 0), 0);
+  const canSubmit = ready && employee.trim() !== "" && cart.some((r) => r.qty > 0) && !submitting;
 
   async function handleSubmit() {
     if (!direction || !project) return;
@@ -183,6 +204,11 @@ export default function BookingScanModal({
     });
     setSubmitting(false);
     if (res.ok) {
+      try {
+        localStorage.setItem(EMPLOYEE_KEY, employee.trim());
+      } catch {
+        /* localStorage optional */
+      }
       close();
       router.refresh();
     } else {
@@ -190,14 +216,17 @@ export default function BookingScanModal({
     }
   }
 
+  if (!open) return null;
+
+  // 16px-Schrift verhindert das automatische Zoomen von iOS beim Fokussieren.
   const inputClass =
-    "w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-brand-red/60";
+    "w-full rounded-lg border border-gray-300 px-3 py-2.5 text-base text-gray-900 outline-none focus:border-brand-red/60";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4">
+    <div className="fixed inset-0 z-50 flex flex-col bg-white sm:items-start sm:justify-center sm:overflow-y-auto sm:bg-black/50 sm:p-4">
       {/* Kurze Bestätigung nach dem Scannen/Hinzufügen */}
       {addedToast && (
-        <div className="pointer-events-none fixed inset-x-0 top-6 z-[60] flex justify-center px-4">
+        <div className="pointer-events-none fixed inset-x-0 top-3 z-[60] flex justify-center px-4">
           <div
             key={addedToast.n}
             className="flex animate-[bookingAdded_1.6s_ease-out_forwards] items-center gap-2 rounded-full bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-xl shadow-emerald-900/30"
@@ -206,243 +235,296 @@ export default function BookingScanModal({
               ✓
             </span>
             <span>
-              Artikel hinzugefügt
+              Hinzugefügt
               <span className="ml-1 font-normal text-emerald-50">· {addedToast.name}</span>
             </span>
           </div>
           <style>{`@keyframes bookingAdded{0%{opacity:0;transform:translateY(-8px) scale(.9)}12%{opacity:1;transform:translateY(0) scale(1)}80%{opacity:1;transform:translateY(0) scale(1)}100%{opacity:0;transform:translateY(-6px) scale(.98)}}`}</style>
         </div>
       )}
-      <div className="my-8 w-full max-w-xl rounded-xl border border-gray-200 bg-white p-5 shadow-2xl">
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-gray-900">Lager-Buchung</h3>
-          <button onClick={close} className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700" aria-label="Schließen">
+
+      <div className="flex h-full w-full flex-col overflow-hidden bg-white sm:my-8 sm:h-auto sm:max-h-[calc(100vh-4rem)] sm:max-w-xl sm:rounded-xl sm:border sm:border-gray-200 sm:shadow-2xl">
+        {/* Sticky Kopfzeile */}
+        <div
+          className="flex shrink-0 items-center justify-between border-b border-gray-200 px-4 py-3"
+          style={{ paddingTop: "max(env(safe-area-inset-top), 0.75rem)" }}
+        >
+          <h3 className="text-lg font-semibold text-gray-900">
+            Lager-Buchung
+            {direction && (
+              <span
+                className={`ml-2 rounded-full px-2 py-0.5 text-xs font-semibold ${
+                  direction === "in" ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
+                }`}
+              >
+                {direction === "in" ? "Einbuchen" : "Ausbuchen"}
+              </span>
+            )}
+          </h3>
+          <button
+            onClick={close}
+            className="-mr-1 flex h-9 w-9 items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+            aria-label="Schließen"
+          >
             ✕
           </button>
         </div>
 
-        {/* 1. Richtung */}
-        <div className="mb-4">
-          <p className="mb-1 text-sm font-medium text-gray-700">1. Art der Buchung</p>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => setDirection("in")}
-              className={`flex-1 rounded-md border px-3 py-2 text-sm font-medium ${
-                direction === "in"
-                  ? "border-emerald-500 bg-emerald-50 text-emerald-700"
-                  : "border-gray-300 text-gray-700 hover:bg-gray-50"
-              }`}
-            >
-              + Einbuchung
-            </button>
-            <button
-              type="button"
-              onClick={() => setDirection("out")}
-              className={`flex-1 rounded-md border px-3 py-2 text-sm font-medium ${
-                direction === "out"
-                  ? "border-rose-500 bg-rose-50 text-rose-700"
-                  : "border-gray-300 text-gray-700 hover:bg-gray-50"
-              }`}
-            >
-              − Ausbuchung
-            </button>
-          </div>
-        </div>
-
-        {/* 2. Projekt */}
-        <div className="mb-4">
-          <p className="mb-1 text-sm font-medium text-gray-700">2. Projekt</p>
-          {project ? (
-            <div className="flex items-center justify-between rounded-md border border-gray-300 px-3 py-2 text-sm">
-              <span className="text-gray-900">
-                {project.relativeId != null ? `#${project.relativeId} ` : ""}
-                {project.name}
-              </span>
-              <button onClick={() => setProject(null)} className="text-xs text-gray-400 hover:text-gray-700">
-                ✕ ändern
+        {/* Scrollbarer Inhalt */}
+        <div className="flex-1 overflow-y-auto px-4 py-4">
+          {/* 1. Richtung */}
+          <div className="mb-4">
+            <p className="mb-1.5 text-sm font-medium text-gray-700">1. Art der Buchung</p>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setDirection("in")}
+                className={`rounded-lg border py-3 text-sm font-semibold transition-colors ${
+                  direction === "in"
+                    ? "border-emerald-500 bg-emerald-50 text-emerald-700 ring-2 ring-emerald-500/30"
+                    : "border-gray-300 text-gray-700 active:bg-gray-50"
+                }`}
+              >
+                ＋ Einbuchen
+              </button>
+              <button
+                type="button"
+                onClick={() => setDirection("out")}
+                className={`rounded-lg border py-3 text-sm font-semibold transition-colors ${
+                  direction === "out"
+                    ? "border-rose-500 bg-rose-50 text-rose-700 ring-2 ring-rose-500/30"
+                    : "border-gray-300 text-gray-700 active:bg-gray-50"
+                }`}
+              >
+                － Ausbuchen
               </button>
             </div>
-          ) : (
-            <div className="relative">
-              <input
-                type="text"
-                value={projectQuery}
-                onChange={(e) => setProjectQuery(e.target.value)}
-                placeholder="Projekt suchen (Name oder Nummer) …"
-                className={inputClass}
+          </div>
+
+          {/* 2. Projekt */}
+          <div className="mb-4">
+            <p className="mb-1.5 text-sm font-medium text-gray-700">2. Projekt</p>
+            {project ? (
+              <div className="flex items-center justify-between rounded-lg border border-gray-300 bg-gray-50 px-3 py-2.5 text-sm">
+                <span className="min-w-0 truncate font-medium text-gray-900">
+                  {project.relativeId != null ? `#${project.relativeId} ` : ""}
+                  {project.name}
+                </span>
+                <button
+                  onClick={() => setProject(null)}
+                  className="ml-2 shrink-0 rounded-md px-2 py-1 text-xs font-medium text-gray-500 hover:bg-gray-200 hover:text-gray-800"
+                >
+                  ändern
+                </button>
+              </div>
+            ) : (
+              <div className="relative">
+                <input
+                  type="text"
+                  value={projectQuery}
+                  onChange={(e) => setProjectQuery(e.target.value)}
+                  placeholder="Projekt suchen (Name oder Nummer) …"
+                  className={inputClass}
+                />
+                {projectMatches.length > 0 && (
+                  <ul className="absolute z-20 mt-1 max-h-60 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
+                    {projectMatches.map((p) => (
+                      <li key={p.id}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setProject(p);
+                            setProjectQuery("");
+                            setTimeout(() => searchRef.current?.focus(), 50);
+                          }}
+                          className="block w-full px-3 py-2.5 text-left text-sm hover:bg-gray-100"
+                        >
+                          {p.relativeId != null && <span className="text-gray-500">#{p.relativeId} </span>}
+                          {p.name}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* 3. Artikel erfassen */}
+          <div className="mb-4">
+            <p className="mb-1.5 text-sm font-medium text-gray-700">3. Artikel erfassen</p>
+
+            {/* Großer Kamera-Scan als primäre Aktion */}
+            <button
+              type="button"
+              disabled={!ready}
+              onClick={() => {
+                setCamFeedback(null);
+                setCameraOn((v) => !v);
+              }}
+              className={`flex w-full items-center justify-center gap-2 rounded-lg px-3 py-3 text-base font-semibold transition-colors disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400 ${
+                cameraOn
+                  ? "border border-gray-300 bg-white text-gray-700"
+                  : "bg-brand-red text-white hover:opacity-90"
+              }`}
+            >
+              <span aria-hidden className="text-lg">📷</span>
+              {cameraOn ? "Kamera schließen" : "Artikel scannen"}
+            </button>
+            {!ready && (
+              <p className="mt-1 text-center text-xs text-gray-400">Erst Richtung &amp; Projekt wählen</p>
+            )}
+
+            {cameraOn && (
+              <CameraScanner
+                feedback={camFeedback}
+                onClose={() => setCameraOn(false)}
+                onDetect={(code) => {
+                  const found = addByCode(code);
+                  setCamFeedback(
+                    found
+                      ? { ok: true, text: `✓ ${found.name}` }
+                      : { ok: false, text: `Nicht gefunden: ${code}` }
+                  );
+                }}
               />
-              {projectMatches.length > 0 && (
-                <ul className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-md border border-gray-200 bg-white shadow-lg">
-                  {projectMatches.map((p) => (
-                    <li key={p.id}>
+            )}
+
+            {/* Kombiniertes Such-/Code-Feld (manuell oder Hardware-Scanner) */}
+            <div className="relative mt-2">
+              <input
+                ref={searchRef}
+                type="text"
+                value={search}
+                disabled={!ready}
+                onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    const found = addByCode(search);
+                    if (found) setSearch("");
+                  }
+                }}
+                placeholder={ready ? "Artikel suchen oder Nr./Code eingeben" : "Erst Richtung & Projekt wählen"}
+                className={`${inputClass} disabled:bg-gray-100`}
+              />
+              {searchMatches.length > 0 && (
+                <ul className="absolute z-20 mt-1 max-h-60 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
+                  {searchMatches.map((a) => (
+                    <li key={a.id}>
                       <button
                         type="button"
                         onClick={() => {
-                          setProject(p);
-                          setProjectQuery("");
-                          setTimeout(() => scanRef.current?.focus(), 50);
+                          addArticle(a);
+                          setSearch("");
+                          searchRef.current?.focus();
                         }}
-                        className="block w-full px-3 py-2 text-left text-sm hover:bg-gray-100"
+                        className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left text-sm hover:bg-gray-100"
                       >
-                        {p.relativeId != null && <span className="text-gray-500">#{p.relativeId} </span>}
-                        {p.name}
+                        <span className="truncate text-gray-900">{a.name}</span>
+                        <span className="shrink-0 text-xs text-gray-500">{a.itemNumber}</span>
                       </button>
                     </li>
                   ))}
                 </ul>
               )}
             </div>
-          )}
-        </div>
+            {scanError && <p className="mt-1 text-xs text-rose-600">{scanError}</p>}
 
-        {/* 3. Scannen */}
-        <div className="mb-4">
-          <p className="mb-1 text-sm font-medium text-gray-700">3. Artikel scannen</p>
-          <input
-            ref={scanRef}
-            type="text"
-            value={scan}
-            disabled={!direction || !project}
-            onChange={(e) => setScan(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                addByCode(scan);
-                setScan("");
-              }
-            }}
-            placeholder={!direction || !project ? "Erst Richtung & Projekt wählen" : "Barcode/QR scannen oder Artikel-Nr. eingeben + Enter"}
-            className={`${inputClass} disabled:bg-gray-100`}
-          />
-          {scanError && <p className="mt-1 text-xs text-rose-600">{scanError}</p>}
-
-          {/* Kamera-Scan */}
-          <button
-            type="button"
-            disabled={!direction || !project}
-            onClick={() => {
-              setCamFeedback(null);
-              setCameraOn((v) => !v);
-            }}
-            className="mt-2 flex w-full items-center justify-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:border-brand-red/50 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
-          >
-            <span aria-hidden>📷</span>
-            {cameraOn ? "Kamera schließen" : "Mit Kamera scannen"}
-          </button>
-          {cameraOn && (
-            <CameraScanner
-              feedback={camFeedback}
-              onClose={() => setCameraOn(false)}
-              onDetect={(code) => {
-                const found = addByCode(code);
-                setCamFeedback(
-                  found
-                    ? { ok: true, text: `✓ hinzugefügt: ${found.name}` }
-                    : { ok: false, text: `Nicht gefunden: ${code}` }
-                );
-              }}
-            />
-          )}
-
-          {/* Manuell hinzufügen */}
-          <div className="relative mt-2">
-            <input
-              type="text"
-              value={manualQuery}
-              disabled={!direction || !project}
-              onChange={(e) => setManualQuery(e.target.value)}
-              placeholder="… oder Artikel manuell suchen (Name oder Nr.)"
-              className={`${inputClass} disabled:bg-gray-100`}
-            />
-            {manualMatches.length > 0 && (
-              <ul className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-md border border-gray-200 bg-white shadow-lg">
-                {manualMatches.map((a) => (
-                  <li key={a.id}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        addArticle(a);
-                        setManualQuery("");
-                      }}
-                      className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-gray-100"
-                    >
-                      <span className="truncate text-gray-900">{a.name}</span>
-                      <span className="shrink-0 text-xs text-gray-500">{a.itemNumber}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
+            {/* Warenkorb */}
+            {cart.length > 0 && (
+              <div className="mt-3">
+                <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  Erfasste Artikel ({cart.length})
+                </p>
+                <ul className="divide-y divide-gray-100 overflow-hidden rounded-lg border border-gray-200">
+                  {cart.map((r) => (
+                    <li key={r.article.id} className="flex items-center gap-2 px-3 py-2.5">
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-gray-900">{r.article.name}</p>
+                        <p className="truncate text-xs text-gray-500">
+                          {r.article.itemNumber}
+                          {r.article.unit ? ` · ${r.article.unit}` : ""}
+                        </p>
+                      </div>
+                      {/* Mengen-Stepper */}
+                      <div className="flex shrink-0 items-center rounded-lg border border-gray-300">
+                        <button
+                          type="button"
+                          onClick={() => stepQty(r.article.id, -1)}
+                          className="flex h-9 w-9 items-center justify-center text-lg text-gray-600 active:bg-gray-100"
+                          aria-label="weniger"
+                        >
+                          −
+                        </button>
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          min={0}
+                          step="any"
+                          value={r.qty}
+                          onChange={(e) => setQty(r.article.id, Number(e.target.value))}
+                          className="h-9 w-12 border-x border-gray-300 text-center text-base text-gray-900 outline-none focus:bg-brand-red/5"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => stepQty(r.article.id, 1)}
+                          className="flex h-9 w-9 items-center justify-center text-lg text-gray-600 active:bg-gray-100"
+                          aria-label="mehr"
+                        >
+                          ＋
+                        </button>
+                      </div>
+                      <button
+                        onClick={() => removeRow(r.article.id)}
+                        className="flex h-9 w-8 shrink-0 items-center justify-center text-gray-400 hover:text-rose-600"
+                        aria-label="Entfernen"
+                      >
+                        ✕
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
           </div>
 
-          {cart.length > 0 && (
-            <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
-              Erfasste Artikel ({cart.length})
-            </p>
-          )}
-          {cart.length > 0 && (
-            <ul className="mt-1 divide-y divide-gray-100 rounded-md border border-gray-200">
-              {cart.map((r) => (
-                <li key={r.article.id} className="flex items-center gap-2 px-3 py-2">
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-gray-900">{r.article.name}</p>
-                    <p className="truncate text-xs text-gray-500">{r.article.itemNumber}</p>
-                  </div>
-                  <input
-                    type="number"
-                    min={0}
-                    step="any"
-                    value={r.qty}
-                    onChange={(e) => setQty(r.article.id, Number(e.target.value))}
-                    className="w-20 rounded-md border border-gray-300 px-2 py-1 text-right text-sm outline-none focus:border-brand-red/60"
-                  />
-                  <span className="w-8 text-xs text-gray-500">{r.article.unit}</span>
-                  <button
-                    onClick={() => removeRow(r.article.id)}
-                    className="text-xs text-gray-400 hover:text-rose-600"
-                    aria-label="Entfernen"
-                  >
-                    ✕
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
+          {/* 4. Mitarbeiter */}
+          <div className="mb-1">
+            <p className="mb-1.5 text-sm font-medium text-gray-700">4. Name des Mitarbeiters</p>
+            <input
+              type="text"
+              value={employee}
+              onChange={(e) => setEmployee(e.target.value)}
+              placeholder="Vor- und Nachname"
+              className={inputClass}
+            />
+          </div>
         </div>
 
-        {/* 4. Name */}
-        <div className="mb-4">
-          <p className="mb-1 text-sm font-medium text-gray-700">4. Name des Mitarbeiters</p>
-          <input
-            type="text"
-            value={employee}
-            onChange={(e) => setEmployee(e.target.value)}
-            placeholder="Vor- und Nachname"
-            className={inputClass}
-          />
-        </div>
-
-        {error && <p className="mb-3 text-sm text-rose-600">{error}</p>}
-
-        <div className="flex justify-end gap-2">
-          <button
-            onClick={close}
-            className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-          >
-            Abbrechen
-          </button>
-          <button
-            onClick={handleSubmit}
-            disabled={!canSubmit}
-            className="rounded-md bg-brand-red px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-          >
-            {submitting
-              ? "Wird gebucht …"
-              : direction === "out"
-                ? "Auf Projekt ausbuchen"
-                : "Auf Projekt einbuchen"}
-          </button>
+        {/* Sticky Fußzeile mit immer erreichbarem Buchen-Button */}
+        <div
+          className="shrink-0 border-t border-gray-200 bg-white px-4 pt-3"
+          style={{ paddingBottom: "max(env(safe-area-inset-bottom), 0.75rem)" }}
+        >
+          {error && <p className="mb-2 text-sm text-rose-600">{error}</p>}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={close}
+              className="rounded-lg border border-gray-300 px-4 py-3 text-sm font-medium text-gray-700 active:bg-gray-50"
+            >
+              Abbrechen
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={!canSubmit}
+              className="flex-1 rounded-lg bg-brand-red px-4 py-3 text-base font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+            >
+              {submitting
+                ? "Wird gebucht …"
+                : `${direction === "out" ? "Ausbuchen" : "Einbuchen"}${totalItems > 0 ? ` (${totalItems})` : ""}`}
+            </button>
+          </div>
         </div>
       </div>
     </div>

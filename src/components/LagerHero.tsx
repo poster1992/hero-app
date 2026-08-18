@@ -22,9 +22,10 @@ export default function LagerHero({
         <button
           type="button"
           onClick={() => setBookingOpen(true)}
-          className="rounded-md bg-brand-red px-5 py-2.5 text-sm font-semibold text-white shadow transition-opacity hover:opacity-90"
+          className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand-red px-5 py-4 text-base font-semibold text-white shadow transition-opacity hover:opacity-90 sm:w-auto sm:py-3"
         >
-          + Neue Buchung (scannen)
+          <span aria-hidden className="text-lg">📷</span>
+          Neue Buchung (scannen)
         </button>
         <p className="mt-3 text-sm text-gray-500">
           Artikel scannen und ein- oder ausbuchen. Die Artikelbestandsliste und die letzten
