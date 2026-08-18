@@ -230,7 +230,7 @@ export async function createTaskAction(
   return { success: "Aufgabe wurde gesendet." };
 }
 
-export async function setStatusAction(formData: FormData): Promise<void> {
+export async function setStatusAction(formData: FormData): Promise<{ error?: string } | void> {
   const me = await currentUser();
   if (!me) return;
   const meId = me.id;
@@ -240,6 +240,11 @@ export async function setStatusAction(formData: FormData): Promise<void> {
   const note = String(formData.get("note") ?? "").trim();
   if (!Number.isFinite(id)) return;
   if (!TASK_STATUSES.some((s) => s.key === status)) return;
+
+  // Beim Abschließen einer Aufgabe ist eine Notiz Pflicht (Nachvollziehbarkeit).
+  if (status === "erledigt" && !note) {
+    return { error: "Zum Abschließen der Aufgabe ist eine Notiz erforderlich." };
+  }
 
   // Ersteller, eine zugewiesene Person ODER ein Administrator dürfen den Status ändern.
   const task = await getTaskById(id);

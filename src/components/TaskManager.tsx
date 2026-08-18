@@ -136,6 +136,8 @@ function TaskCard({
 }) {
   const [noteOpen, setNoteOpen] = useState(false);
   const [fwdOpen, setFwdOpen] = useState(false);
+  const [completeOpen, setCompleteOpen] = useState(false);
+  const [completeError, setCompleteError] = useState<string | null>(null);
   const [localStatus, setLocalStatus] = useState<TaskStatus | null>(null);
   const [changing, setChanging] = useState(false);
   const [reviewNote, setReviewNote] = useState("");
@@ -151,20 +153,55 @@ function TaskCard({
   // Optimistischer Status: sofort sichtbar, bevor der Server nachzieht.
   const effectiveStatus: TaskStatus = localStatus ?? task.status;
 
-  const changeStatus = async (status: TaskStatus) => {
-    if (status === effectiveStatus || changing) return;
+  // Führt die eigentliche Status-Änderung aus (optional mit Notiz). Gibt true zurück,
+  // wenn erfolgreich. Beim Abschließen ist serverseitig eine Notiz Pflicht.
+  const doSetStatus = async (status: TaskStatus, note?: string): Promise<boolean> => {
+    if (changing) return false;
     setChanging(true);
     setLocalStatus(status); // sofort umschalten
     try {
       const fd = new FormData();
       fd.set("id", String(task.id));
       fd.set("status", status);
-      await setStatusAction(fd);
+      if (note && note.trim()) fd.set("note", note.trim());
+      const res = await setStatusAction(fd);
+      if (res && "error" in res && res.error) {
+        setLocalStatus(null);
+        setCompleteError(res.error);
+        return false;
+      }
       router.refresh();
+      return true;
     } catch {
       setLocalStatus(null); // bei Fehler zurück
+      return false;
     } finally {
       setChanging(false);
+    }
+  };
+
+  const changeStatus = async (status: TaskStatus) => {
+    if (status === effectiveStatus || changing) return;
+    // „Erledigt" nur mit Pflicht-Notiz → erst das Notizfeld öffnen.
+    if (status === "erledigt") {
+      setCompleteError(null);
+      setCompleteOpen(true);
+      return;
+    }
+    await doSetStatus(status);
+  };
+
+  const submitComplete = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const note = String(new FormData(e.currentTarget).get("note") ?? "").trim();
+    if (!note) {
+      setCompleteError("Bitte eine Notiz eingeben.");
+      return;
+    }
+    const ok = await doSetStatus("erledigt", note);
+    if (ok) {
+      setCompleteOpen(false);
+      setCompleteError(null);
     }
   };
 
@@ -568,9 +605,11 @@ function TaskCard({
                 <button
                   type="button"
                   disabled={changing}
-                  onClick={async () => {
-                    await changeStatus("erledigt");
+                  onClick={() => {
+                    // Erst Beleg schließen, dann Pflicht-Notiz zum Abschluss abfragen.
                     closeBeleg();
+                    setCompleteError(null);
+                    setCompleteOpen(true);
                   }}
                   className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
                 >
@@ -643,6 +682,42 @@ function TaskCard({
           </button>
         </div>
       </div>
+
+      {completeOpen && (
+        <form onSubmit={submitComplete} className="mt-2 rounded-md border border-emerald-300 bg-emerald-50/60 p-2">
+          <p className="mb-1 text-xs font-medium text-emerald-800">
+            Notiz zum Abschließen (Pflicht):
+          </p>
+          <textarea
+            name="note"
+            rows={2}
+            required
+            autoFocus
+            placeholder="Was wurde erledigt? … (Pflicht)"
+            className="min-h-[2.5rem] w-full resize-y rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-emerald-500"
+          />
+          {completeError && <p className="mt-1 text-xs text-brand-red">{completeError}</p>}
+          <div className="mt-2 flex items-center gap-2">
+            <button
+              type="submit"
+              disabled={changing}
+              className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+            >
+              {changing ? "…" : "✓ Abschließen"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setCompleteOpen(false);
+                setCompleteError(null);
+              }}
+              className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100"
+            >
+              Abbrechen
+            </button>
+          </div>
+        </form>
+      )}
 
       {fwdOpen && (
         <form onSubmit={submitForward} className="mt-2 flex items-center gap-2">
