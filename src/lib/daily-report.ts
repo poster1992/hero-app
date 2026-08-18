@@ -17,6 +17,8 @@ import {
   type DayDocument,
 } from "./hero-api";
 import { listManualReceiptsPaidOn, type PaidManualReceipt } from "./manual-receipts";
+import { listMovementsOn } from "./materials";
+import type { StockMovement } from "./material-types";
 import { getGlobalLogbookSystem } from "./logbook-core";
 import { sendMailWithAttachments, type MailAttachment } from "./mailer";
 import { listAdminUserIds, getUsersForNotification } from "./users";
@@ -147,6 +149,8 @@ export interface AnomalyReport {
   paidManual: PaidManualReceipt[];
   /** Heute (laut HERO) bezahlte Ausgangsrechnungen. */
   paidInvoices: PaidInvoiceEntry[];
+  /** Heutige Lager-Buchungen (Ein-/Ausbuchungen). */
+  stockMovements: StockMovement[];
   sourceErrors: string[];
   totalCount: number;
   /** Freitext-Zusatzanweisung an die KI (aus der Konfiguration). */
@@ -535,6 +539,12 @@ export async function collectAnomalies(todayOverride?: string): Promise<AnomalyR
     .filter((inv) => (inv.paidDate ?? "").slice(0, 10) === today)
     .map((inv) => ({ number: inv.number, customerName: inv.customerName, gross: inv.gross }));
 
+  // Heutige Lager-Buchungen (Ein-/Ausbuchungen).
+  const stockMovements = await listMovementsOn(today).catch((): StockMovement[] => {
+    sourceErrors.push("Lager-Buchungen");
+    return [];
+  });
+
   const totalCount =
     sections.projekt.length +
     sections.logbuch.length +
@@ -553,6 +563,7 @@ export async function collectAnomalies(todayOverride?: string): Promise<AnomalyR
     tasksCompleted,
     paidManual,
     paidInvoices,
+    stockMovements,
     sourceErrors,
     totalCount,
     kiInstructions: cfg.instructions,
@@ -1060,6 +1071,47 @@ function buildDailyReportHtml(
     <h3 style="margin:0 0 8px;font-size:15px;color:#111417;">Ausgangsrechnungen (${report.paidInvoices.length} · ${eur(invoicePaidSum)})</h3>
     ${invoicesPaidHtml}`;
 
+  // Lager heute: Ein-/Ausbuchungen des Tages.
+  const num2 = (n: number) => n.toLocaleString("de-DE", { maximumFractionDigits: 2 });
+  const hhmm = (at: string | null) => (at ? at.slice(11, 16) : "");
+  const einCount = report.stockMovements.filter((m) => m.delta >= 0).length;
+  const ausCount = report.stockMovements.length - einCount;
+  let lagerHtml: string;
+  if (report.stockMovements.length === 0) {
+    lagerHtml = `<p style="margin:0;font-size:13px;color:#8a929c;">Heute keine Lager-Buchungen.</p>`;
+  } else {
+    const rows = report.stockMovements
+      .map((mv) => {
+        const isIn = mv.delta >= 0;
+        const qtyColor = isIn ? "#16a34a" : "#b91c1c";
+        const qty = `${isIn ? "+" : "−"}${num2(Math.abs(mv.delta))}`;
+        const dir = isIn ? "Ein" : "Aus";
+        const proj = mv.projectName
+          ? `${mv.projectRelativeId ? `#${mv.projectRelativeId} ` : ""}${esc(mv.projectName)}`
+          : "–";
+        const who = esc(mv.employeeName || mv.byName || "–");
+        return `<tr>
+          <td style="${td}color:#8a929c;white-space:nowrap;">${hhmm(mv.at)}</td>
+          <td style="${td}color:${qtyColor};white-space:nowrap;">${dir}</td>
+          <td style="${td}color:#111417;">${esc(mv.materialName)}</td>
+          <td style="${td}color:${qtyColor};text-align:right;white-space:nowrap;font-weight:700;">${qty}</td>
+          <td style="${td}color:#3f4650;">${proj}</td>
+          <td style="${td}color:#3f4650;white-space:nowrap;">${who}</td>
+        </tr>`;
+      })
+      .join("");
+    lagerHtml = `
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+        <tr>
+          <td style="${th}">Zeit</td><td style="${th}">Art</td><td style="${th}">Artikel</td><td style="${th}text-align:right;">Menge</td><td style="${th}">Projekt</td><td style="${th}">Mitarbeiter</td>
+        </tr>
+        ${rows}
+      </table>`;
+  }
+  const lagerCount = `${report.stockMovements.length} ${report.stockMovements.length === 1 ? "Buchung" : "Buchungen"}${
+    report.stockMovements.length ? ` · ${einCount} ein / ${ausCount} aus` : ""
+  }`;
+
   return `<!doctype html>
 <html lang="de"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
 <meta name="color-scheme" content="light only"/><title>FLOORTEC Tagesbericht</title></head>
@@ -1092,6 +1144,12 @@ function buildDailyReportHtml(
           <div style="height:1px;background:#eceef1;margin:0 0 18px;"></div>
           <h2 style="margin:0 0 14px;font-size:18px;color:#111417;">Heute bezahlt</h2>
           ${paidHtml}
+        </td></tr>
+        <tr><td style="padding:18px 32px 8px;">
+          <div style="height:1px;background:#eceef1;margin:0 0 18px;"></div>
+          <h2 style="margin:0 0 4px;font-size:18px;color:#111417;">Lager (heute)</h2>
+          <p style="margin:0 0 14px;font-size:13px;color:#8a929c;">${lagerCount}</p>
+          ${lagerHtml}
         </td></tr>
         <tr><td style="padding:18px 32px 8px;">
           <div style="height:1px;background:#eceef1;margin:0 0 18px;"></div>
@@ -1163,6 +1221,23 @@ function buildDailyReportText(report: AnomalyReport): string {
   lines.push(`Heute bezahlt – Ausgangsrechnungen (${report.paidInvoices.length} · ${eur(invoicePaidSumT)}):`);
   for (const r of report.paidInvoices) {
     lines.push(`  - ${r.customerName || r.number} · ${eur(r.gross)} · ${r.number}`);
+  }
+  lines.push("");
+  const einCountT = report.stockMovements.filter((m) => m.delta >= 0).length;
+  const ausCountT = report.stockMovements.length - einCountT;
+  const num2T = (n: number) => n.toLocaleString("de-DE", { maximumFractionDigits: 2 });
+  lines.push(
+    `Lager (heute): ${report.stockMovements.length} Buchungen` +
+      (report.stockMovements.length ? ` (${einCountT} ein / ${ausCountT} aus)` : "")
+  );
+  for (const mv of report.stockMovements) {
+    const isIn = mv.delta >= 0;
+    const proj = mv.projectName ? ` · ${mv.projectRelativeId ? `#${mv.projectRelativeId} ` : ""}${mv.projectName}` : "";
+    const who = mv.employeeName || mv.byName;
+    const time = mv.at ? mv.at.slice(11, 16) + " " : "";
+    lines.push(
+      `  - ${time}${isIn ? "Ein" : "Aus"} · ${mv.materialName} · ${isIn ? "+" : "−"}${num2T(Math.abs(mv.delta))}${proj}${who ? ` · ${who}` : ""}`
+    );
   }
   lines.push("");
   lines.push(`Arbeitszeiten – ${fmtDay(report.activity.dayIso)}:`);

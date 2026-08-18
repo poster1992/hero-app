@@ -475,3 +475,32 @@ export async function listRecentMovements(limit = 50): Promise<StockMovement[]> 
   }));
 }
 
+/** Lager-Buchungen eines bestimmten Tages (für den Tagesbericht). */
+export async function listMovementsOn(dayIso: string): Promise<StockMovement[]> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dayIso)) return [];
+  const [rows] = await getPool().query<MovementRow[]>(
+    `SELECT mv.id, mv.material_id, mv.delta, mv.comment, mv.created_at,
+            mv.project_name, mv.project_relative_id, mv.employee_name,
+            m.name AS material_name,
+            COALESCE(NULLIF(u.display_name, ''), u.username) AS by_name
+     FROM stock_movements mv
+     JOIN materials m ON m.id = mv.material_id
+     LEFT JOIN users u ON u.id = mv.user_id
+     WHERE DATE(mv.created_at) = ?
+     ORDER BY mv.created_at ASC, mv.id ASC`,
+    [dayIso]
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    materialId: r.material_id,
+    materialName: r.material_name,
+    delta: num(r.delta),
+    comment: r.comment,
+    byName: r.by_name,
+    projectName: r.project_name,
+    projectRelativeId: r.project_relative_id,
+    employeeName: r.employee_name,
+    at: r.created_at ? String(r.created_at) : null,
+  }));
+}
+
