@@ -384,12 +384,18 @@ export async function acknowledgeAllNotificationsAction(): Promise<void> {
 }
 
 /** Antwort-Button an einer Aufgabe: protokolliert die Antwort, erledigt die Aufgabe, meldet dem Ersteller. */
-export async function taskButtonAction(formData: FormData): Promise<void> {
+export async function taskButtonAction(formData: FormData): Promise<{ error?: string } | void> {
   const me = await currentUser();
   if (!me) return;
   const id = Number(formData.get("id"));
   const label = String(formData.get("label") ?? "").trim();
+  const note = String(formData.get("note") ?? "").trim();
   if (!Number.isFinite(id) || !label) return;
+
+  // Auch bei vordefinierten Antworten ist eine Notiz Pflicht.
+  if (!note) {
+    return { error: "Zum Beantworten der Aufgabe ist eine Notiz erforderlich." };
+  }
 
   const task = await getTaskById(id);
   if (!task) return;
@@ -399,7 +405,7 @@ export async function taskButtonAction(formData: FormData): Promise<void> {
     me.role === "administrator" || task.createdById === me.id || task.assignees.some((a) => a.id === me.id);
   if (!may) return;
 
-  await setTaskStatus(id, "erledigt", me.id, `Antwort: ${label}`);
+  await setTaskStatus(id, "erledigt", me.id, `Antwort: ${label} — ${note}`.slice(0, 2000));
   try {
     await startReviewChainForManualTask(
       { id, description: task.description },
@@ -411,6 +417,7 @@ export async function taskButtonAction(formData: FormData): Promise<void> {
   await notifyCreator(task, me.id, {
     subject: "Aufgabe beantwortet",
     eventLine: `Antwort: „${label}" – Aufgabe erledigt.`,
+    note,
     fromName: me.displayName || me.username,
   });
   revalidatePath(PATH);

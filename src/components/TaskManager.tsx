@@ -138,6 +138,8 @@ function TaskCard({
   const [fwdOpen, setFwdOpen] = useState(false);
   const [completeOpen, setCompleteOpen] = useState(false);
   const [completeError, setCompleteError] = useState<string | null>(null);
+  const [pendingAnswer, setPendingAnswer] = useState<string | null>(null);
+  const [answerError, setAnswerError] = useState<string | null>(null);
   const [localStatus, setLocalStatus] = useState<TaskStatus | null>(null);
   const [changing, setChanging] = useState(false);
   const [reviewNote, setReviewNote] = useState("");
@@ -240,13 +242,33 @@ function TaskCard({
     }
   };
 
-  const clickActionButton = async (label: string) => {
+  // Antwort-Button: erst Label merken → Pflicht-Notiz abfragen, dann absenden.
+  const clickActionButton = (label: string) => {
+    setAnswerError(null);
+    setPendingAnswer(label);
+  };
+
+  const submitAnswer = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!pendingAnswer) return;
+    const note = String(new FormData(e.currentTarget).get("note") ?? "").trim();
+    if (!note) {
+      setAnswerError("Bitte eine Notiz eingeben.");
+      return;
+    }
     setBusy(true);
     try {
       const fd = new FormData();
       fd.set("id", String(task.id));
-      fd.set("label", label);
-      await taskButtonAction(fd);
+      fd.set("label", pendingAnswer);
+      fd.set("note", note);
+      const res = await taskButtonAction(fd);
+      if (res && "error" in res && res.error) {
+        setAnswerError(res.error);
+        return;
+      }
+      setPendingAnswer(null);
+      setAnswerError(null);
       router.refresh();
     } finally {
       setBusy(false);
@@ -407,20 +429,62 @@ function TaskCard({
 
       {/* Vordefinierte Antwort-Buttons (z.B. aus einer Workflow-Regel) */}
       {task.actionButtons.length > 0 && effectiveStatus !== "erledigt" && (
-        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-md border border-brand-red/20 bg-brand-red/5 p-2">
-          <span className="text-xs font-medium text-gray-600">Antwort:</span>
-          {task.actionButtons.map((label) => (
-            <button
-              key={label}
-              type="button"
-              disabled={busy}
-              onClick={() => clickActionButton(label)}
-              title="Antwort senden & Aufgabe erledigen"
-              className="rounded-md border border-brand-red/40 bg-white px-3 py-1 text-xs font-semibold text-brand-red transition-colors hover:bg-brand-red hover:text-white disabled:opacity-50"
-            >
-              {label}
-            </button>
-          ))}
+        <div className="mt-3 rounded-md border border-brand-red/20 bg-brand-red/5 p-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-medium text-gray-600">Antwort:</span>
+            {task.actionButtons.map((label) => (
+              <button
+                key={label}
+                type="button"
+                disabled={busy}
+                onClick={() => clickActionButton(label)}
+                title="Antwort wählen & Notiz hinterlegen"
+                className={`rounded-md border px-3 py-1 text-xs font-semibold transition-colors disabled:opacity-50 ${
+                  pendingAnswer === label
+                    ? "border-brand-red bg-brand-red text-white"
+                    : "border-brand-red/40 bg-white text-brand-red hover:bg-brand-red hover:text-white"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {pendingAnswer && (
+            <form onSubmit={submitAnswer} className="mt-2">
+              <p className="mb-1 text-xs font-medium text-gray-600">
+                Notiz zur Antwort „{pendingAnswer}" (Pflicht):
+              </p>
+              <textarea
+                name="note"
+                rows={2}
+                required
+                autoFocus
+                placeholder="Notiz … (Pflicht)"
+                className="min-h-[2.5rem] w-full resize-y rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-brand-red/60"
+              />
+              {answerError && <p className="mt-1 text-xs text-brand-red">{answerError}</p>}
+              <div className="mt-2 flex items-center gap-2">
+                <button
+                  type="submit"
+                  disabled={busy}
+                  className="rounded-md bg-brand-red px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                >
+                  {busy ? "Sendet …" : "Antwort senden & erledigen"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPendingAnswer(null);
+                    setAnswerError(null);
+                  }}
+                  className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100"
+                >
+                  Abbrechen
+                </button>
+              </div>
+            </form>
+          )}
         </div>
       )}
 
