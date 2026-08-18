@@ -14,6 +14,8 @@ export interface LagerItem {
   name: string;
   itemNumber: string;
   qrId: string | null;
+  /** Voller QR-Inhalt aus HERO (z. B. „hero:s:<qr_id>"). */
+  qrPayload?: string | null;
   unit: string;
   category: string | null;
   quantity: number; // local stock (MySQL)

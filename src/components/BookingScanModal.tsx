@@ -10,6 +10,8 @@ export interface ScanArticle {
   name: string;
   itemNumber: string;
   qrId: string | null;
+  /** Voller QR-Inhalt aus HERO (z. B. „hero:s:<qr_id>"). */
+  qrPayload?: string | null;
   unit: string;
 }
 
@@ -110,16 +112,28 @@ export default function BookingScanModal({
   }
 
   function addByCode(raw: string): ScanArticle | null {
-    const code = raw.trim().toLowerCase();
-    if (!code) return null;
+    const trimmed = raw.trim();
+    if (!trimmed) return null;
+    // Mögliche Vergleichswerte aus dem Scan ableiten. HERO gibt im QR-Code
+    // „hero:s:<qr_id>" aus (z. B. „hero:s:jlRflnZsmGU"), teils auch als URL –
+    // daraus den eigentlichen Code herausziehen, damit der Scan zum qr_id passt.
+    const cand = new Set<string>();
+    cand.add(trimmed.toLowerCase());
+    const heroMatch = /^hero:[^:]*:(.+)$/i.exec(trimmed);
+    if (heroMatch) cand.add(heroMatch[1].trim().toLowerCase());
+    // Falls eine URL codiert ist: letztes Pfadsegment ebenfalls versuchen.
+    const seg = trimmed.split(/[/?#]/).filter(Boolean).pop();
+    if (seg) cand.add(seg.trim().toLowerCase());
+
     const found = articles.find(
       (a) =>
-        a.itemNumber.toLowerCase() === code ||
-        (a.qrId != null && a.qrId.toLowerCase() === code) ||
-        a.name.toLowerCase() === code
+        cand.has(a.itemNumber.toLowerCase()) ||
+        (a.qrId != null && cand.has(a.qrId.toLowerCase())) ||
+        (a.qrPayload != null && cand.has(a.qrPayload.toLowerCase())) ||
+        cand.has(a.name.toLowerCase())
     );
     if (!found) {
-      setScanError(`Nicht gefunden: ${raw.trim()}`);
+      setScanError(`Nicht gefunden: ${trimmed}`);
       return null;
     }
     setScanError(null);

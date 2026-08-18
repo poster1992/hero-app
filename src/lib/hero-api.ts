@@ -1190,6 +1190,8 @@ export interface StockArticle {
   name: string;
   itemNumber: string;
   qrId: string | null;
+  /** Voller QR-Inhalt aus HERO (z. B. „hero:s:<qr_id>") – das, was der QR-Code enthält. */
+  qrPayload: string | null;
   unit: string;
   category: string | null;
   totalStock: number;
@@ -1217,6 +1219,7 @@ export async function getStockArticles(): Promise<StockArticle[]> {
               name: string | null;
               item_number: string | null;
               qr_id: string | null;
+              qr_payload: string | null;
               unit_type: string | null;
               category: string | null;
               total_stock: number | null;
@@ -1236,6 +1239,7 @@ export async function getStockArticles(): Promise<StockArticle[]> {
             name
             item_number
             qr_id
+            qr_payload
             unit_type
             category
             total_stock
@@ -1257,6 +1261,7 @@ export async function getStockArticles(): Promise<StockArticle[]> {
           name: s.name ?? "—",
           itemNumber: s.item_number ?? "",
           qrId: s.qr_id ?? null,
+          qrPayload: s.qr_payload ?? null,
           unit: s.unit_type ?? "",
           category: s.category ?? null,
           totalStock: s.total_stock ?? 0,

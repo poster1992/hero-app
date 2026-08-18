@@ -41,6 +41,7 @@ export default function LagerHero({
           name: a.name,
           itemNumber: a.itemNumber,
           qrId: a.qrId,
+          qrPayload: a.qrPayload,
           unit: a.unit,
         }))}
       />

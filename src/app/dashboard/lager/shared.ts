@@ -36,6 +36,7 @@ export async function loadLagerItems(): Promise<LagerItem[]> {
       name: a.name,
       itemNumber: a.itemNumber,
       qrId: a.qrId,
+      qrPayload: a.qrPayload,
       unit: a.unit,
       category: a.category,
       quantity: localQ.get(a.id) ?? 0, // lokaler Bestand aus MySQL (HERO-Bestand ignoriert)
