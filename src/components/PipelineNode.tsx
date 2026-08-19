@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import LogbookButton from "@/components/LogbookButton";
 import type { PipelineProjectRef } from "@/lib/hero-api";
 
@@ -27,6 +28,7 @@ export default function PipelineNode({
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const offerTotal = projects.reduce((s, p) => s + p.offerSum, 0);
+  const pathname = usePathname();
 
   useEffect(() => setMounted(true), []);
 
@@ -76,15 +78,20 @@ export default function PipelineNode({
             <ul className="divide-y divide-gray-800/60">
               {projects.map((p) => (
                 <li key={p.id} className="flex items-center transition-colors hover:bg-gray-800/40">
+                  {/* Projektnummer → Projekt-Popup öffnen */}
+                  <Link
+                    href={`/dashboard/projekte?open=${p.id}&back=${encodeURIComponent(pathname ?? "/dashboard/cockpit")}`}
+                    title="Projekt-Details öffnen"
+                    className="flex w-16 shrink-0 items-center self-stretch py-3 pl-5 text-xs font-medium text-gray-500 transition-colors hover:text-brand-red"
+                  >
+                    {p.relativeId ?? "—"}
+                  </Link>
                   <Link
                     href={`/dashboard/projekte/${p.id}?name=${encodeURIComponent(p.name)}${
                       p.relativeId != null ? `&nr=${p.relativeId}` : ""
                     }`}
-                    className="flex min-w-0 flex-1 items-baseline gap-3 px-5 py-3"
+                    className="flex min-w-0 flex-1 items-baseline gap-3 py-3 pr-2"
                   >
-                    <span className="w-12 shrink-0 text-xs font-medium text-gray-500">
-                      {p.relativeId ?? "—"}
-                    </span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm text-brand-red">{p.name}</span>
                       {p.customerName && (
