@@ -46,6 +46,23 @@ async function currentUser(): Promise<AppUser | null> {
   return getUserByUsername(session.username);
 }
 
+/**
+ * Lädt die vollständige Aufgabe (inkl. Projekt, Beschreibung, Verlauf/Notizen) –
+ * z. B. um aus einer Meldung heraus die zugehörige Aufgabe mit allen Infos zu zeigen.
+ * Nur für Ersteller, Zugewiesene oder Administratoren.
+ */
+export async function getTaskDetailAction(taskId: number): Promise<Task | null> {
+  const me = await currentUser();
+  if (!me || !Number.isFinite(taskId) || taskId <= 0) return null;
+  const task = await getTaskById(taskId);
+  if (!task) return null;
+  const mayView =
+    me.role === "administrator" ||
+    task.createdById === me.id ||
+    task.assignees.some((a) => a.id === me.id);
+  return mayView ? task : null;
+}
+
 function formatDueDate(d: string | null): string {
   if (!d) return "—";
   const [y, m, day] = d.split("-");
