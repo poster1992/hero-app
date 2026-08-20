@@ -27,6 +27,7 @@ export default function CameraScanner({
   const onDetectRef = useRef(onDetect);
   onDetectRef.current = onDetect;
   const trackRef = useRef<MediaStreamTrack | null>(null);
+  const viewRef = useRef<HTMLDivElement>(null);
 
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(true);
@@ -60,6 +61,49 @@ export default function CameraScanner({
       /* Zoom optional */
     }
   }
+
+  // Pinch-to-Zoom auf dem Kamerabild: zoomt die KAMERA (nicht die Seite), damit der
+  // Zielrahmen fix bleibt und sich nicht mit vergrößert. Verhindert das Seiten-Zoomen.
+  useEffect(() => {
+    const el = viewRef.current;
+    if (!el) return;
+    let start: { d: number; z: number } | null = null;
+    const distOf = (t: TouchList) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+    const onStart = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        start = { d: distOf(e.touches), z: zoomValueRef.current };
+        if (autoZoomRef.current) {
+          autoZoomRef.current = false;
+          setAutoZoom(false);
+        }
+      }
+    };
+    const onMove = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        e.preventDefault(); // Seite/Rahmen NICHT mitzoomen
+        const c = zoomCapsRef.current;
+        if (start && c) {
+          const factor = distOf(e.touches) / (start.d || 1);
+          const target = Math.min(c.max, Math.max(c.min, start.z * factor));
+          applyZoom(target);
+        }
+      }
+    };
+    const onEnd = (e: TouchEvent) => {
+      if (e.touches.length < 2) start = null;
+    };
+    el.addEventListener("touchstart", onStart, { passive: false });
+    el.addEventListener("touchmove", onMove, { passive: false });
+    el.addEventListener("touchend", onEnd);
+    el.addEventListener("touchcancel", onEnd);
+    return () => {
+      el.removeEventListener("touchstart", onStart);
+      el.removeEventListener("touchmove", onMove);
+      el.removeEventListener("touchend", onEnd);
+      el.removeEventListener("touchcancel", onEnd);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     let stop: (() => void) | undefined;
@@ -208,7 +252,7 @@ export default function CameraScanner({
   return (
     <div className="fixed inset-0 z-[200] flex flex-col bg-black">
       {/* Vollbild-Kamerabild */}
-      <div className="relative flex-1 overflow-hidden">
+      <div ref={viewRef} className="relative flex-1 overflow-hidden" style={{ touchAction: "none" }}>
         {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
         <video ref={videoRef} className="h-full w-full bg-black object-cover" muted playsInline autoPlay />
 
