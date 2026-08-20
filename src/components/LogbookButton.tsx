@@ -42,7 +42,7 @@ export default function LogbookButton({
   // Aufgabe zuweisen
   const [assignOpen, setAssignOpen] = useState(false);
   const [users, setUsers] = useState<{ id: number; name: string }[] | null>(null);
-  const [assignee, setAssignee] = useState<number | "">("");
+  const [assignees, setAssignees] = useState<number[]>([]);
   const [taskTitle, setTaskTitle] = useState("");
   const [taskDesc, setTaskDesc] = useState("");
   const [dueDate, setDueDate] = useState("");
@@ -64,10 +64,13 @@ export default function LogbookButton({
     }
   }
 
+  const toggleAssignee = (id: number) =>
+    setAssignees((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+
   async function onAssign(e: React.FormEvent) {
     e.preventDefault();
     setAssignMsg(null);
-    if (!assignee) return setAssignMsg({ ok: false, text: "Bitte einen Mitarbeiter wählen." });
+    if (assignees.length === 0) return setAssignMsg({ ok: false, text: "Bitte mindestens einen Mitarbeiter wählen." });
     if (!taskTitle.trim()) return setAssignMsg({ ok: false, text: "Bitte einen Titel angeben." });
     if (!dueDate) return setAssignMsg({ ok: false, text: "Bitte ein Fälligkeitsdatum angeben." });
     setAssigning(true);
@@ -75,7 +78,7 @@ export default function LogbookButton({
       const fd = new FormData();
       fd.set("title", taskTitle.trim());
       if (taskDesc.trim()) fd.set("description", taskDesc.trim());
-      fd.append("assignedTo", String(assignee));
+      for (const id of assignees) fd.append("assignedTo", String(id));
       fd.set("dueDate", dueDate);
       fd.set("projectId", String(projectId));
       if (projectRelativeId != null) fd.set("projectRelativeId", String(projectRelativeId));
@@ -87,7 +90,7 @@ export default function LogbookButton({
         setAssignMsg({ ok: true, text: "Aufgabe zugewiesen ✅" });
         setTaskTitle("");
         setTaskDesc("");
-        setAssignee("");
+        setAssignees([]);
         setDueDate("");
       }
     } catch {
@@ -228,19 +231,37 @@ export default function LogbookButton({
           </button>
           {assignOpen && (
             <form onSubmit={onAssign} className="mt-3 flex flex-col gap-2">
-              <select
-                value={assignee}
-                onChange={(e) => setAssignee(e.target.value ? Number(e.target.value) : "")}
-                required
-                className="w-full rounded-lg border border-gray-700 bg-gray-950/60 px-3 py-2 text-sm text-gray-100 focus:border-brand-red focus:outline-none"
-              >
-                <option value="">Mitarbeiter wählen …</option>
-                {(users ?? []).map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.name}
-                  </option>
-                ))}
-              </select>
+              <div>
+                <p className="mb-1 text-xs text-gray-400">
+                  Mitarbeiter wählen *{assignees.length > 0 ? ` (${assignees.length})` : ""}
+                </p>
+                {users === null ? (
+                  <p className="rounded-lg border border-gray-700 bg-gray-950/60 px-3 py-2 text-sm text-gray-500">
+                    Mitarbeiter werden geladen …
+                  </p>
+                ) : users.length === 0 ? (
+                  <p className="rounded-lg border border-gray-700 bg-gray-950/60 px-3 py-2 text-sm text-gray-500">
+                    Keine Mitarbeiter verfügbar.
+                  </p>
+                ) : (
+                  <div className="grid max-h-40 grid-cols-1 gap-0.5 overflow-y-auto rounded-lg border border-gray-700 bg-gray-950/60 p-2 sm:grid-cols-2">
+                    {users.map((u) => (
+                      <label
+                        key={u.id}
+                        className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-sm text-gray-200 hover:bg-gray-800/60"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={assignees.includes(u.id)}
+                          onChange={() => toggleAssignee(u.id)}
+                          className="accent-brand-red"
+                        />
+                        {u.name}
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
               <input
                 type="text"
                 value={taskTitle}
