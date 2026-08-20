@@ -3,6 +3,7 @@ import { mkdir, writeFile, readFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import type { RowDataPacket } from "mysql2";
 import { getPool } from "./db";
+import { receiptDupKey } from "./receipt-duplicates";
 
 /** Directory for uploaded receipt files (configurable via BELEGE_DIR). */
 const BELEGE_DIR = process.env.BELEGE_DIR || path.join(process.cwd(), "data", "belege");
@@ -592,6 +593,50 @@ export async function listManualReceiptsByProject(projectId: number): Promise<Ma
     [projectId]
   );
   return rows.map(mapRow);
+}
+
+export interface DuplicateBeleg {
+  id: number;
+  date: string | null;
+  supplier: string | null;
+  invoiceNumber: string | null;
+  gross: number;
+  source: string | null;
+  hasFile: boolean;
+  created: string | null;
+}
+
+/**
+ * Alle manuellen Belege, die denselben Dubletten-Schlüssel (Lieferant+Betrag+Datum)
+ * wie die Vorgabe haben – für das Dubletten-Popup (zum Vergleichen/Löschen).
+ */
+export async function listManualDuplicates(
+  supplier: string | null,
+  gross: number,
+  date: string | null
+): Promise<DuplicateBeleg[]> {
+  if (!date || !Number.isFinite(gross) || gross === 0) return [];
+  const key = receiptDupKey(supplier, gross, date);
+  if (!key) return [];
+  const [rows] = await getPool().query<RowDataPacket[]>(
+    `SELECT id, beleg_date, supplier, invoice_number, gross, source, stored_name, created
+       FROM manual_receipts
+      WHERE gross = ? AND beleg_date = ?
+      ORDER BY id ASC`,
+    [gross, date.slice(0, 10)]
+  );
+  return rows
+    .filter((r) => receiptDupKey(r.supplier as string | null, Number(r.gross), date) === key)
+    .map((r) => ({
+      id: r.id as number,
+      date: r.beleg_date ? String(r.beleg_date).slice(0, 10) : null,
+      supplier: (r.supplier as string | null) ?? null,
+      invoiceNumber: (r.invoice_number as string | null) ?? null,
+      gross: Number(r.gross),
+      source: (r.source as string | null) ?? null,
+      hasFile: !!r.stored_name,
+      created: r.created ? String(r.created) : null,
+    }));
 }
 
 // ---------------------------------------------------------------------------

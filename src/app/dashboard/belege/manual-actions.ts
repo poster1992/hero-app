@@ -10,7 +10,9 @@ import {
   deleteManualReceipt,
   getManualReceipt,
   listManualReceiptUploads,
+  listManualDuplicates,
   type ManualReceiptUpload,
+  type DuplicateBeleg,
 } from "@/lib/manual-receipts";
 import { getBookAccounts, getProjects, getSupplierContacts } from "@/lib/hero-api";
 import { deleteTasksForBeleg } from "@/lib/tasks";
@@ -367,6 +369,17 @@ export async function deleteBelegAction(formData: FormData): Promise<void> {
   await deleteTasksForBeleg(id).catch(() => {});
   revalidatePath(PATH);
   revalidatePath("/dashboard/aufgaben");
+}
+
+/** Alle manuellen Belege mit demselben Dubletten-Schlüssel (für das Dubletten-Popup). */
+export async function listDuplicateBelegeAction(
+  supplier: string | null,
+  gross: number,
+  date: string | null
+): Promise<DuplicateBeleg[]> {
+  const session = await getSession();
+  if (!session) return [];
+  return listManualDuplicates(supplier, gross, date).catch(() => []);
 }
 
 /** Markiert einen manuellen Beleg als bezahlt/offen. */
