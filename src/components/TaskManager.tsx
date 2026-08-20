@@ -917,9 +917,10 @@ export default function TaskManager({
   })();
 
   // Filter (Status + Suche) für die Aufgabenlisten.
+  // Beim Öffnen der Seite standardmäßig nur die offenen Aufgaben zeigen.
   const [statusFilter, setStatusFilter] = useState<
     "alle" | "offen" | "in_arbeit" | "erledigt" | "ueberfaellig"
-  >("alle");
+  >("offen");
   const [search, setSearch] = useState("");
   // „Von mir gesendete" Aufgaben standardmäßig ausblenden (Einstellung wird gemerkt).
   const [hideSent, setHideSent] = useState(true);
