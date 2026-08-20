@@ -23,12 +23,15 @@ import {
   DAILY_REPORT_CHECK_MISSING_KEY,
   DAILY_REPORT_LOGBOOK_KEYWORDS_KEY,
   DAILY_REPORT_INSTRUCTIONS_KEY,
+  TASK_DIGEST_ENABLED_KEY,
+  TASK_DIGEST_HOUR_KEY,
 } from "@/lib/settings";
 import { getUserByUsername } from "@/lib/users";
 import { sendMailResult, verifySmtp } from "@/lib/mailer";
 import { getGoogleReviewStats } from "@/lib/google-reviews";
 import { addBaustelle, deleteBaustelle } from "@/lib/baustellen-docs";
 import { sendDailyReport } from "@/lib/daily-report";
+import { sendOpenTaskDigests } from "@/lib/task-digest";
 
 const PATH = "/dashboard/einstellungen";
 
@@ -174,6 +177,42 @@ export async function saveDailyReportConfigAction(
   }
   revalidatePath(PATH);
   return { success: "Tagesbericht-Einstellungen gespeichert." };
+}
+
+/** Speichert die Konfiguration der abendlichen „offene Aufgaben"-Mail. */
+export async function saveTaskDigestConfigAction(
+  _prev: SettingsState,
+  formData: FormData
+): Promise<SettingsState> {
+  if (!(await isAdmin())) return { error: "Kein Zugriff." };
+  const enabled = formData.get("enabled") === "on" || formData.get("enabled") === "1" ? "1" : "0";
+  const hour = String(formData.get("hour") ?? "18").trim();
+  if (!/^\d+$/.test(hour) || Number(hour) > 23) return { error: "Uhrzeit muss 0–23 sein." };
+  try {
+    await Promise.all([
+      setSetting(TASK_DIGEST_ENABLED_KEY, enabled),
+      setSetting(TASK_DIGEST_HOUR_KEY, hour),
+    ]);
+  } catch {
+    return { error: "Speichern fehlgeschlagen." };
+  }
+  revalidatePath(PATH);
+  return { success: "Aufgaben-Mail-Einstellungen gespeichert." };
+}
+
+/** Sendet SOFORT die eigene „offene Aufgaben"-Mail an die Admin-Adresse (Test). */
+export async function sendTestTaskDigestAction(): Promise<{ ok: boolean; message: string }> {
+  const session = await getSession();
+  if (!session || session.role !== "administrator") return { ok: false, message: "Kein Zugriff." };
+  const me = await getUserByUsername(session.username);
+  if (!me?.email) return { ok: false, message: "Für deinen Benutzer ist keine E-Mail hinterlegt." };
+  const r = await sendOpenTaskDigests({ only: [me.id] });
+  if (r.recipients === 0) {
+    return { ok: false, message: "Du hast aktuell keine offenen Aufgaben – nichts zu senden." };
+  }
+  return r.sent
+    ? { ok: true, message: `Testmail an ${me.email} gesendet.` }
+    : { ok: false, message: `Nicht gesendet: ${r.reason ?? "unbekannt"}.` };
 }
 
 export interface TestReportResult {

@@ -5,8 +5,16 @@ import { useActionState, useState, useTransition } from "react";
 import {
   saveDailyReportConfigAction,
   sendTestDailyReportAction,
+  saveTaskDigestConfigAction,
+  sendTestTaskDigestAction,
   type SettingsState,
 } from "@/app/dashboard/einstellungen/actions";
+
+export interface TaskDigestUiConfig {
+  enabled: boolean;
+  hour: number;
+  lastSent: string | null;
+}
 
 export interface DailyReportUiConfig {
   enabled: boolean;
@@ -171,12 +179,74 @@ function DailyReportCard({ cfg }: { cfg: DailyReportUiConfig }) {
   );
 }
 
+/** Abendliche „offene Aufgaben"-Mail je Mitarbeiter. */
+function TaskDigestCard({ cfg }: { cfg: TaskDigestUiConfig }) {
+  const [state, action, pending] = useActionState<SettingsState, FormData>(saveTaskDigestConfigAction, {});
+  const [testing, startTest] = useTransition();
+  const [testMsg, setTestMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  return (
+    <Card
+      title="✅ Offene-Aufgaben-Mail"
+      subtitle="Jeder Mitarbeiter bekommt abends eine E-Mail mit allen Aufgaben, die für ihn noch offen sind (überfällige zuerst)."
+    >
+      <form action={action} className="flex flex-col gap-4">
+        <div className="flex flex-wrap items-center gap-4">
+          <label className="flex items-center gap-2 text-sm font-medium text-gray-800">
+            <input type="checkbox" name="enabled" defaultChecked={cfg.enabled} className="accent-brand-red" />
+            Mail aktiv
+          </label>
+          {cfg.lastSent && <span className="text-xs text-gray-400">Zuletzt gesendet: {cfg.lastSent}</span>}
+        </div>
+
+        <div className="max-w-xs">
+          <label className="mb-1 block text-sm text-gray-600">Uhrzeit (Stunde, 0–23)</label>
+          <input name="hour" type="number" min={0} max={23} defaultValue={cfg.hour} className={inputClass} />
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="submit"
+            disabled={pending}
+            className="rounded-md bg-brand-red px-4 py-2 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-50"
+          >
+            {pending ? "Speichert …" : "Speichern"}
+          </button>
+          <button
+            type="button"
+            disabled={testing}
+            onClick={() => {
+              setTestMsg(null);
+              startTest(async () => {
+                const r = await sendTestTaskDigestAction();
+                setTestMsg({ ok: r.ok, text: r.message });
+              });
+            }}
+            className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition hover:border-brand-red/50 disabled:opacity-50"
+          >
+            {testing ? "Sende Test …" : "Testmail an mich senden"}
+          </button>
+          {state.error && <span className="text-sm text-rose-600">{state.error}</span>}
+          {state.success && <span className="text-sm text-emerald-700">{state.success}</span>}
+          {testMsg && (
+            <span className={`text-sm ${testMsg.ok ? "text-emerald-700" : "text-rose-600"}`}>
+              {testMsg.ok ? "✅" : "⚠️"} {testMsg.text}
+            </span>
+          )}
+        </div>
+      </form>
+    </Card>
+  );
+}
+
 export default function AgentsPanel({
   dailyReport,
+  taskDigest,
   workflowCount,
   kiConfigured,
 }: {
   dailyReport: DailyReportUiConfig;
+  taskDigest: TaskDigestUiConfig;
   workflowCount: number;
   kiConfigured: boolean;
 }) {
@@ -190,6 +260,8 @@ export default function AgentsPanel({
       </header>
 
       <DailyReportCard cfg={dailyReport} />
+
+      <TaskDigestCard cfg={taskDigest} />
 
       <Card
         title="⚙️ Workflow-Regeln"
