@@ -921,6 +921,26 @@ export default function TaskManager({
     "alle" | "offen" | "in_arbeit" | "erledigt" | "ueberfaellig"
   >("alle");
   const [search, setSearch] = useState("");
+  // „Von mir gesendete" Aufgaben standardmäßig ausblenden (Einstellung wird gemerkt).
+  const [hideSent, setHideSent] = useState(true);
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem("tasks-hide-sent");
+      if (v != null) setHideSent(v === "1");
+    } catch {
+      /* localStorage optional */
+    }
+  }, []);
+  const toggleHideSent = () =>
+    setHideSent((v) => {
+      const next = !v;
+      try {
+        localStorage.setItem("tasks-hide-sent", next ? "1" : "0");
+      } catch {
+        /* localStorage optional */
+      }
+      return next;
+    });
   // Admin: standardmäßig die eigenen Aufgaben; umschaltbar auf „alle".
   const [adminScope, setAdminScope] = useState<"mine" | "all">("mine");
   // Admin: Aufgaben einer bestimmten Person anzeigen.
@@ -1211,12 +1231,24 @@ export default function TaskManager({
             )}
           </div>
         )}
+        <label
+          className="ml-auto flex cursor-pointer items-center gap-1.5 text-sm text-gray-600"
+          title="Die von dir gestellten Aufgaben (rechte Spalte) aus- oder einblenden"
+        >
+          <input
+            type="checkbox"
+            checked={hideSent}
+            onChange={toggleHideSent}
+            className="accent-brand-red"
+          />
+          „Von mir gesendete" ausblenden
+        </label>
         <input
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Suchen (Titel, Mitarbeiter, Projekt …)"
-          className="ml-auto w-full max-w-xs rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 outline-none focus:border-brand-red/60"
+          className="w-full max-w-xs rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 outline-none focus:border-brand-red/60"
         />
       </div>
 
@@ -1334,7 +1366,7 @@ export default function TaskManager({
       {/* Eigene Listen: im Standard „Meine Aufgaben"; ausgeblendet bei Person-/Tagesfilter
           oder wenn der Admin auf „Alle Aufgaben" umgeschaltet hat. */}
       {!completedDate && personId === 0 && (!isAdmin || adminScope === "mine") && (
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <div className={`grid grid-cols-1 gap-6 ${hideSent ? "" : "lg:grid-cols-2"}`}>
         {/* Mir zugewiesen */}
         <section className="flex flex-col gap-3">
           <h2 className="text-lg font-semibold text-gray-900">
@@ -1355,7 +1387,8 @@ export default function TaskManager({
           )}
         </section>
 
-        {/* Von mir gesendet */}
+        {/* Von mir gesendet – standardmäßig ausgeblendet */}
+        {!hideSent && (
         <section className="flex flex-col gap-3">
           <h2 className="text-lg font-semibold text-gray-900">
             Von mir gesendet{" "}
@@ -1374,6 +1407,7 @@ export default function TaskManager({
             ))
           )}
         </section>
+        )}
       </div>
       )}
     </div>
