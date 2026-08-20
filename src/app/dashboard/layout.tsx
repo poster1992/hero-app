@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import GlobalSearch from "@/components/GlobalSearch";
+import UploadQueueProvider from "@/components/UploadQueueProvider";
 import PreviewBanner from "@/components/PreviewBanner";
 import DataChatWidget from "@/components/DataChatWidget";
 import WorkflowTrigger from "@/components/WorkflowTrigger";
@@ -50,7 +51,9 @@ export default async function DashboardLayout({
             <GlobalSearch />
           </div>
         )}
-        <div className="flex flex-1 flex-col">{children}</div>
+        <div className="flex flex-1 flex-col">
+          <UploadQueueProvider>{children}</UploadQueueProvider>
+        </div>
       </main>
       {allowedModules.includes("ki") && <DataChatWidget />}
     </div>

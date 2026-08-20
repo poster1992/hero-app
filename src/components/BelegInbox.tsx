@@ -1,10 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, useTransition } from "react";
-import {
-  ingestInboxBelegeAction,
-  type InboxItemResult,
-} from "@/app/dashboard/belege/inbox-actions";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { type InboxItemResult } from "@/app/dashboard/belege/inbox-actions";
+import { useUploadQueue } from "@/components/UploadQueueProvider";
 
 const euro = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
 function fmtDate(iso?: string): string {
@@ -37,10 +35,10 @@ interface Pending {
 export default function BelegInbox() {
   const [pending, setPending] = useState<Pending[]>([]);
   const [dragOver, setDragOver] = useState(false);
-  const [processing, startProcessing] = useTransition();
-  const [results, setResults] = useState<InboxItemResult[] | null>(null);
+  const [results] = useState<InboxItemResult[] | null>(null);
   const [summary, setSummary] = useState<{ ok: boolean; text: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { enqueueBelege } = useUploadQueue();
 
   const addFiles = useCallback((files: FileList | File[]) => {
     // PDFs/Bilder haben einen MIME-Typ – in der PWA kommen Dateien teils mit
@@ -111,26 +109,15 @@ export default function BelegInbox() {
   }, [addFiles]);
 
   const process = () => {
-    if (pending.length === 0 || processing) return;
-    setResults(null);
-    setSummary(null);
-    startProcessing(async () => {
-      const fd = new FormData();
-      for (const p of pending) fd.append("files", p.file);
-      const res = await ingestInboxBelegeAction(fd);
-      if (!res.ok) {
-        setSummary({ ok: false, text: res.error ?? "Verarbeitung fehlgeschlagen." });
-        return;
-      }
-      setResults(res.results);
-      setPending([]);
-      const failed = res.results.filter((r) => !r.ok).length;
-      setSummary({
-        ok: failed === 0,
-        text: `${res.created} erfasst${res.drafts ? `, ${res.drafts} als Entwurf (nicht erkannt)` : ""}${
-          failed ? `, ${failed} fehlgeschlagen` : ""
-        }.`,
-      });
+    if (pending.length === 0) return;
+    const count = pending.length;
+    // In die Hintergrund-Warteschlange legen – Verarbeitung läuft weiter, auch wenn
+    // man die Seite wechselt. Fortschritt zeigt der Balken unten rechts.
+    enqueueBelege(pending.map((p) => p.file));
+    setPending([]);
+    setSummary({
+      ok: true,
+      text: `${count} Beleg${count === 1 ? "" : "e"} werden im Hintergrund hochgeladen – du kannst weiterarbeiten. Fortschritt siehst du unten rechts.`,
     });
   };
 
@@ -186,8 +173,7 @@ export default function BelegInbox() {
             <button
               type="button"
               onClick={() => setPending([])}
-              disabled={processing}
-              className="text-xs text-gray-500 hover:text-gray-800 disabled:opacity-50"
+              className="text-xs text-gray-500 hover:text-gray-800"
             >
               Leeren
             </button>
@@ -200,7 +186,6 @@ export default function BelegInbox() {
                 <button
                   type="button"
                   onClick={() => setPending((prev) => prev.filter((_, j) => j !== i))}
-                  disabled={processing}
                   className="shrink-0 rounded border border-gray-300 px-1.5 text-xs text-gray-500 hover:text-brand-red"
                 >
                   ✕
@@ -211,14 +196,13 @@ export default function BelegInbox() {
           <button
             type="button"
             onClick={process}
-            disabled={processing}
-            className="rounded-md bg-brand-red px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+            className="rounded-md bg-brand-red px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
           >
-            {processing ? "Wird ausgewertet …" : `${pending.length} Beleg${pending.length === 1 ? "" : "e"} auswerten`}
+            {`${pending.length} Beleg${pending.length === 1 ? "" : "e"} hochladen`}
           </button>
-          {processing && (
-            <p className="mt-2 text-xs text-gray-500">Je Beleg einige Sekunden – bitte warten …</p>
-          )}
+          <p className="mt-2 text-xs text-gray-500">
+            Läuft im Hintergrund – du kannst nach dem Start sofort weiterarbeiten.
+          </p>
         </div>
       )}
 
