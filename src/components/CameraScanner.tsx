@@ -212,9 +212,9 @@ export default function CameraScanner({
         {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
         <video ref={videoRef} className="h-full w-full bg-black object-cover" muted playsInline autoPlay />
 
-        {/* Zielrahmen */}
+        {/* Quadratischer Zielrahmen, mittig */}
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <div className="h-32 w-4/5 max-w-sm rounded-xl border-2 border-white/85 shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]" />
+          <div className="aspect-square w-64 max-w-[80vw] rounded-xl border-2 border-white/85 shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]" />
         </div>
 
         {/* Schließen oben links (Safe-Area) */}
