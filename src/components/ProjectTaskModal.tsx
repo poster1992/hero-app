@@ -19,7 +19,7 @@ export default function ProjectTaskModal({
 }) {
   const [mounted, setMounted] = useState(false);
   const [users, setUsers] = useState<{ id: number; name: string }[] | null>(null);
-  const [assignee, setAssignee] = useState<number | "">("");
+  const [assignees, setAssignees] = useState<number[]>([]);
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState("");
   const [dueDate, setDueDate] = useState("");
@@ -43,10 +43,13 @@ export default function ProjectTaskModal({
     };
   }, [onClose]);
 
+  const toggleAssignee = (id: number) =>
+    setAssignees((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setMsg(null);
-    if (!assignee) return setMsg({ ok: false, text: "Bitte einen Mitarbeiter wählen." });
+    if (assignees.length === 0) return setMsg({ ok: false, text: "Bitte mindestens einen Mitarbeiter wählen." });
     if (!title.trim()) return setMsg({ ok: false, text: "Bitte einen Titel angeben." });
     if (!dueDate) return setMsg({ ok: false, text: "Bitte ein Fälligkeitsdatum angeben." });
     setBusy(true);
@@ -54,7 +57,7 @@ export default function ProjectTaskModal({
       const fd = new FormData();
       fd.set("title", title.trim());
       if (desc.trim()) fd.set("description", desc.trim());
-      fd.append("assignedTo", String(assignee));
+      for (const id of assignees) fd.append("assignedTo", String(id));
       fd.set("dueDate", dueDate);
       fd.set("projectId", String(projectId));
       if (projectRelativeId != null) fd.set("projectRelativeId", String(projectRelativeId));
@@ -107,20 +110,31 @@ export default function ProjectTaskModal({
 
         <form onSubmit={onSubmit} className="flex flex-col gap-3">
           <div>
-            <label className="mb-1 block text-sm text-gray-600">An Mitarbeiter *</label>
-            <select
-              value={assignee}
-              onChange={(e) => setAssignee(e.target.value ? Number(e.target.value) : "")}
-              required
-              className={inputClass}
-            >
-              <option value="">Mitarbeiter wählen …</option>
-              {(users ?? []).map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name}
-                </option>
-              ))}
-            </select>
+            <label className="mb-1 block text-sm text-gray-600">
+              An Mitarbeiter *{assignees.length > 0 ? ` (${assignees.length})` : ""}
+            </label>
+            {users === null ? (
+              <p className="text-sm text-gray-400">Mitarbeiter werden geladen …</p>
+            ) : users.length === 0 ? (
+              <p className="text-sm text-gray-400">Keine Mitarbeiter verfügbar.</p>
+            ) : (
+              <div className="grid max-h-48 grid-cols-1 gap-1 overflow-y-auto rounded-md border border-gray-200 p-2 sm:grid-cols-2">
+                {users.map((u) => (
+                  <label
+                    key={u.id}
+                    className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-sm text-gray-700 hover:bg-gray-50"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={assignees.includes(u.id)}
+                      onChange={() => toggleAssignee(u.id)}
+                      className="accent-brand-red"
+                    />
+                    {u.name}
+                  </label>
+                ))}
+              </div>
+            )}
           </div>
           <div>
             <label className="mb-1 block text-sm text-gray-600">Titel *</label>
