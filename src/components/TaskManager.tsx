@@ -2,6 +2,7 @@
 
 import { createContext, useActionState, useContext, useState, useEffect, useRef, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   createTaskAction,
   setStatusAction,
@@ -419,12 +420,22 @@ function TaskCard({
             {overdue ? " · überfällig" : ""}
           </span>
         )}
-        {task.projectName && (
-          <span>
-            📁 {task.projectRelativeId != null ? `#${task.projectRelativeId} ` : ""}
-            {task.projectName}
-          </span>
-        )}
+        {task.projectName &&
+          (task.projectId ? (
+            <Link
+              href={`/dashboard/projekte?open=${task.projectId}&back=/dashboard/aufgaben`}
+              title="Projekt-Details öffnen"
+              className="inline-flex items-center gap-1 rounded transition-colors hover:text-brand-red"
+            >
+              📁 {task.projectRelativeId != null ? `#${task.projectRelativeId} ` : ""}
+              {task.projectName}
+            </Link>
+          ) : (
+            <span>
+              📁 {task.projectRelativeId != null ? `#${task.projectRelativeId} ` : ""}
+              {task.projectName}
+            </span>
+          ))}
       </div>
 
       {/* Vordefinierte Antwort-Buttons (z.B. aus einer Workflow-Regel) */}
