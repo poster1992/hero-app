@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { ingestInboxBelegeAction } from "@/app/dashboard/belege/inbox-actions";
+import { queueInboxUploadAction } from "@/app/dashboard/belege/inbox-actions";
 
 interface UploadQueueCtx {
   /** Legt Belege in die Hintergrund-Warteschlange (Verarbeitung läuft weiter, auch beim Navigieren). */
@@ -21,7 +21,7 @@ interface Progress {
   done: number;
   currentName: string | null;
   active: boolean;
-  summary: { created: number; drafts: number; failed: number } | null;
+  summary: { uploaded: number; failed: number } | null;
 }
 
 const EMPTY: Progress = { total: 0, done: 0, currentName: null, active: false, summary: null };
@@ -30,7 +30,7 @@ export default function UploadQueueProvider({ children }: { children: React.Reac
   const router = useRouter();
   const queueRef = useRef<File[]>([]);
   const runningRef = useRef(false);
-  const acc = useRef({ created: 0, drafts: 0, failed: 0 });
+  const acc = useRef({ uploaded: 0, failed: 0 });
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [p, setP] = useState<Progress>(EMPTY);
 
@@ -42,19 +42,14 @@ export default function UploadQueueProvider({ children }: { children: React.Reac
       try {
         const fd = new FormData();
         fd.append("files", file);
-        const res = await ingestInboxBelegeAction(fd);
-        if (res.ok) {
-          acc.current.created += res.created;
-          acc.current.drafts += res.drafts;
-          acc.current.failed += res.results.filter((r) => !r.ok).length;
-        } else {
-          acc.current.failed += 1;
-        }
+        const res = await queueInboxUploadAction(fd);
+        acc.current.uploaded += res.queued;
+        acc.current.failed += res.failed + (res.ok ? 0 : res.queued === 0 ? 1 : 0);
       } catch {
         acc.current.failed += 1;
       }
       setP((s) => ({ ...s, done: s.done + 1 }));
-      // Liste im Hintergrund aktualisieren, sobald ein Beleg fertig ist.
+      // Liste aktualisieren – der Beleg erscheint sofort (wird dann im Hintergrund erkannt).
       router.refresh();
     }
     runningRef.current = false;
@@ -63,7 +58,7 @@ export default function UploadQueueProvider({ children }: { children: React.Reac
     router.refresh();
     // Zusammenfassung nach einigen Sekunden ausblenden.
     if (hideTimer.current) clearTimeout(hideTimer.current);
-    hideTimer.current = setTimeout(() => setP(EMPTY), 8000);
+    hideTimer.current = setTimeout(() => setP(EMPTY), 9000);
   }, [router]);
 
   const enqueueBelege = useCallback(
@@ -72,7 +67,7 @@ export default function UploadQueueProvider({ children }: { children: React.Reac
       if (list.length === 0) return;
       if (hideTimer.current) clearTimeout(hideTimer.current);
       if (!runningRef.current) {
-        acc.current = { created: 0, drafts: 0, failed: 0 };
+        acc.current = { uploaded: 0, failed: 0 };
         queueRef.current.push(...list);
         setP({ total: list.length, done: 0, currentName: null, active: true, summary: null });
         void run();
@@ -108,16 +103,19 @@ export default function UploadQueueProvider({ children }: { children: React.Reac
                   <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
                     <div className="h-full rounded-full bg-brand-red transition-all" style={{ width: `${pct}%` }} />
                   </div>
-                  <p className="mt-1.5 text-xs text-gray-400">Du kannst weiterarbeiten – läuft im Hintergrund.</p>
+                  <p className="mt-1.5 text-xs text-gray-400">
+                    Du kannst weiterarbeiten – Erfassung läuft danach auf dem Server weiter.
+                  </p>
                 </>
               ) : (
                 p.summary && (
                   <>
-                    <p className="text-sm font-semibold text-gray-900">Upload abgeschlossen</p>
+                    <p className="text-sm font-semibold text-gray-900">
+                      {p.summary.uploaded} Beleg{p.summary.uploaded === 1 ? "" : "e"} hochgeladen
+                    </p>
                     <p className="mt-0.5 text-xs text-gray-600">
-                      {p.summary.created} erfasst
-                      {p.summary.drafts ? `, ${p.summary.drafts} als Entwurf` : ""}
-                      {p.summary.failed ? `, ${p.summary.failed} fehlgeschlagen` : ""}.
+                      Werden im Hintergrund automatisch erfasst und erscheinen nach und nach in der Liste.
+                      {p.summary.failed ? ` ${p.summary.failed} fehlgeschlagen.` : ""}
                     </p>
                   </>
                 )

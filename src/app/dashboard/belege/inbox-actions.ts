@@ -5,7 +5,7 @@ import { getSession } from "@/lib/session";
 import { getUserByUsername } from "@/lib/users";
 import { getAllowedModules } from "@/lib/role-store";
 import { getBookAccounts } from "@/lib/hero-api";
-import { createManualReceipt } from "@/lib/manual-receipts";
+import { createManualReceipt, createInboxPendingReceipt } from "@/lib/manual-receipts";
 import { extractBeleg, isConfidentialBeleg } from "@/lib/beleg-extract";
 import { rotateBuffer } from "@/lib/auto-rotate";
 
@@ -21,6 +21,50 @@ async function requireAccess() {
   // Voller Belege-Zugriff nötig (nicht die eingeschränkte Ansicht).
   if (!allowed.includes("cockpit_belege")) return null;
   return user;
+}
+
+export interface QueueUploadResult {
+  ok: boolean;
+  error?: string;
+  /** Wie viele Dateien gespeichert und zur Hintergrund-Erfassung eingereiht wurden. */
+  queued: number;
+  failed: number;
+}
+
+/**
+ * Speichert hochgeladene Belege SOFORT auf dem Server (mit Datei) und reiht sie zur
+ * Hintergrund-Erfassung ein (OCR läuft serverseitig weiter). Dadurch übersteht der
+ * Upload einen Tab-/App-Neustart. Gibt schnell zurück – keine OCR im Request.
+ */
+export async function queueInboxUploadAction(formData: FormData): Promise<QueueUploadResult> {
+  const user = await requireAccess();
+  if (!user) return { ok: false, error: "Kein Zugriff.", queued: 0, failed: 0 };
+
+  const uploads = formData
+    .getAll("files")
+    .filter((u): u is File => typeof u === "object" && u !== null && "arrayBuffer" in u && (u as File).size > 0);
+  if (uploads.length === 0) return { ok: false, error: "Keine Dateien.", queued: 0, failed: 0 };
+
+  let queued = 0;
+  let failed = 0;
+  for (const f of uploads) {
+    const name = f.name || "Beleg";
+    if (f.size > MAX_SIZE) {
+      failed++;
+      continue;
+    }
+    try {
+      const buffer = Buffer.from(await f.arrayBuffer());
+      const mime = f.type || "application/pdf";
+      await createInboxPendingReceipt({ buffer, originalName: name, mime }, user.id);
+      queued++;
+    } catch {
+      failed++;
+    }
+  }
+
+  revalidatePath(PATH);
+  return { ok: queued > 0, queued, failed, error: queued === 0 ? "Speichern fehlgeschlagen." : undefined };
 }
 
 export interface InboxItemResult {

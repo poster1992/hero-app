@@ -357,9 +357,15 @@ export async function getManualDuplicateKeys(): Promise<Set<string>> {
  * damit sie KEINE Buchungsaufgabe/Rechnungsprüfung auslösen.
  */
 export async function listInboxReceipts(): Promise<InboxReceipt[]> {
+  await ensureAutoStatusColumn();
   const [rows] = await getPool().query<RowDataPacket[]>(
+    // Noch nicht fertig erfasste Belege (auto_status='pending') NICHT auslösen –
+    // erst wenn der Hintergrund-Worker die Felder erkannt hat.
     `SELECT id, beleg_date, created, supplier, description, gross
-     FROM manual_receipts WHERE source = 'inbox' AND confidential = 0 ORDER BY id DESC`
+     FROM manual_receipts
+     WHERE source = 'inbox' AND confidential = 0
+       AND (auto_status IS NULL OR auto_status <> 'pending')
+     ORDER BY id DESC`
   );
   return (rows as {
     id: number;
@@ -586,6 +592,129 @@ export async function listManualReceiptsByProject(projectId: number): Promise<Ma
     [projectId]
   );
   return rows.map(mapRow);
+}
+
+// ---------------------------------------------------------------------------
+// Hintergrund-Verarbeitung (Job-Queue): Posteingang-Belege werden sofort mit
+// Datei gespeichert (auto_status='pending') und später serverseitig per OCR
+// erkannt/erfasst. Übersteht Tab-/App-Neustart, da die Bytes auf dem Server liegen.
+// ---------------------------------------------------------------------------
+
+let autoStatusColumnReady = false;
+/** Stellt die Spalte `auto_status` sicher (einmalig, self-healing). */
+export async function ensureAutoStatusColumn(): Promise<void> {
+  if (autoStatusColumnReady) return;
+  const pool = getPool();
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT COUNT(*) AS n FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'manual_receipts' AND COLUMN_NAME = 'auto_status'`
+  );
+  if ((rows[0]?.n ?? 0) === 0) {
+    // Tolerant gegenüber parallelen ersten Aufrufen (Duplicate-Column ignorieren).
+    await pool
+      .query("ALTER TABLE manual_receipts ADD COLUMN auto_status VARCHAR(16) NULL")
+      .catch(() => {});
+    await pool.query("ALTER TABLE manual_receipts ADD INDEX idx_mr_auto (auto_status)").catch(() => {});
+  }
+  autoStatusColumnReady = true;
+}
+
+/** Legt einen Posteingang-Beleg mit Datei sofort an und markiert ihn zur Auto-Erfassung. */
+export async function createInboxPendingReceipt(
+  file: { buffer: Buffer; originalName: string; mime: string },
+  uploadedBy: number | null
+): Promise<number> {
+  await ensureAutoStatusColumn();
+  const id = await createManualReceipt({
+    date: null,
+    supplier: null,
+    description: "(wird automatisch erfasst …)",
+    gross: 0,
+    vatRate: null,
+    accountNumber: null,
+    accountName: null,
+    file,
+    uploadedBy,
+    source: "inbox",
+  });
+  await getPool().query("UPDATE manual_receipts SET auto_status = 'pending' WHERE id = ?", [id]);
+  return id;
+}
+
+/** IDs der noch zu erfassenden Posteingang-Belege (älteste zuerst). */
+export async function listPendingInboxReceiptIds(limit = 5): Promise<number[]> {
+  await ensureAutoStatusColumn();
+  const [rows] = await getPool().query<RowDataPacket[]>(
+    "SELECT id FROM manual_receipts WHERE auto_status = 'pending' ORDER BY id ASC LIMIT ?",
+    [limit]
+  );
+  return rows.map((r) => r.id as number);
+}
+
+/** Anzahl noch offener Auto-Erfassungen. */
+export async function countPendingInboxReceipts(): Promise<number> {
+  await ensureAutoStatusColumn();
+  const [rows] = await getPool().query<RowDataPacket[]>(
+    "SELECT COUNT(*) AS n FROM manual_receipts WHERE auto_status = 'pending'"
+  );
+  return (rows[0]?.n as number) ?? 0;
+}
+
+/** Schreibt die per OCR erkannten Felder in einen Beleg und schließt die Auto-Erfassung ab. */
+export async function applyAutoExtraction(
+  id: number,
+  fields: {
+    date: string | null;
+    supplier: string | null;
+    description: string | null;
+    gross: number;
+    vatRate: number | null;
+    accountNumber: string | null;
+    accountName: string | null;
+    invoiceNumber: string | null;
+    skontoAmount: number | null;
+    skontoPayAmount: number | null;
+    skontoDueDate: string | null;
+    ocrText: string | null;
+    confidential: boolean;
+  }
+): Promise<void> {
+  await getPool().query(
+    `UPDATE manual_receipts
+        SET beleg_date = ?, supplier = ?, description = ?, gross = ?, vat_rate = ?,
+            account_number = ?, account_name = ?, invoice_number = ?,
+            skonto_amount = ?, skonto_pay_amount = ?, skonto_due_date = ?,
+            ocr_text = ?, confidential = ?, auto_status = 'done'
+      WHERE id = ?`,
+    [
+      fields.date,
+      fields.supplier,
+      fields.description,
+      fields.gross,
+      fields.vatRate,
+      fields.accountNumber,
+      fields.accountName,
+      fields.invoiceNumber,
+      fields.skontoAmount,
+      fields.skontoPayAmount,
+      fields.skontoDueDate,
+      fields.ocrText && fields.ocrText.trim() ? fields.ocrText.trim() : null,
+      fields.confidential ? 1 : 0,
+      id,
+    ]
+  );
+}
+
+/** Schließt die Auto-Erfassung ab, ohne Felder zu ändern (z. B. nicht erkannt → Entwurf). */
+export async function markInboxAutoDone(id: number, description?: string | null): Promise<void> {
+  if (description != null) {
+    await getPool().query(
+      "UPDATE manual_receipts SET auto_status = 'done', description = ? WHERE id = ?",
+      [description, id]
+    );
+  } else {
+    await getPool().query("UPDATE manual_receipts SET auto_status = 'done' WHERE id = ?", [id]);
+  }
 }
 
 /** Loads a receipt's stored file for download/inline view. */

@@ -47,6 +47,32 @@ export async function register(): Promise<void> {
     console.log("[daily-report] aktiv – tägliche Prüfung alle 10 Minuten.");
   }
 
+  // Posteingang-Hintergrund-Erfassung: hochgeladene Belege (auto_status='pending')
+  // werden serverseitig per OCR erkannt – unabhängig vom Browser des Nutzers, daher
+  // übersteht der Upload einen Tab-/App-Neustart. Häufiger Takt für schnelle Erfassung.
+  const gInbox = globalThis as unknown as { __inboxWorkerStarted?: boolean; __inboxWorkerRunning?: boolean };
+  if (!gInbox.__inboxWorkerStarted) {
+    gInbox.__inboxWorkerStarted = true;
+    const tickInbox = async () => {
+      if (gInbox.__inboxWorkerRunning) return; // keine Überlappung
+      gInbox.__inboxWorkerRunning = true;
+      try {
+        const { processPendingInboxReceipts } = await import("./lib/inbox-worker");
+        const r = await processPendingInboxReceipts(5);
+        if (r.processed > 0) {
+          console.log(`[inbox-worker] erfasst: ${r.processed}, offen: ${r.remaining}`);
+        }
+      } catch (e) {
+        console.warn("[inbox-worker] Fehler:", e instanceof Error ? e.message : e);
+      } finally {
+        gInbox.__inboxWorkerRunning = false;
+      }
+    };
+    setTimeout(tickInbox, 20_000);
+    setInterval(tickInbox, 40_000);
+    console.log("[inbox-worker] aktiv – Posteingang-Erfassung alle 40 Sekunden.");
+  }
+
   // Abendliche „offene Aufgaben"-Mail je Mitarbeiter (prüft alle 10 Min die
   // Fälligkeit, versendet höchstens einmal pro Kalendertag zur Zielstunde).
   const g4 = globalThis as unknown as { __taskDigestStarted?: boolean };
