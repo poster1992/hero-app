@@ -12,6 +12,7 @@ import {
   type RoleState,
   type HeroTokenState,
 } from "@/app/dashboard/benutzer/actions";
+import CredentialPdfButton from "@/components/CredentialPdfButton";
 import type { AppUser } from "@/lib/users";
 
 interface RoleOption {
@@ -196,6 +197,7 @@ export default function UserAdmin({
               <th className="px-4 py-2 font-semibold">Status</th>
               <th className="px-4 py-2 text-right font-semibold">HERO-Token</th>
               <th className="px-4 py-2 text-right font-semibold">Passwort</th>
+              <th className="px-4 py-2 text-right font-semibold">Zugangsdaten</th>
               <th className="px-4 py-2 text-right font-semibold">Aktion</th>
             </tr>
           </thead>
@@ -233,6 +235,9 @@ export default function UserAdmin({
                 </td>
                 <td className="px-4 py-2 text-right">
                   <PasswordResetForm userId={u.id} />
+                </td>
+                <td className="px-4 py-2 text-right">
+                  <CredentialPdfButton userId={u.id} roleLabel={roleLabel(u.role)} />
                 </td>
                 <td className="px-4 py-2 text-right">
                   {u.username === currentUsername ? (

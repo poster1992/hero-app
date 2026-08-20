@@ -1,11 +1,62 @@
 "use server";
 
+import { randomInt } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { getSession } from "@/lib/session";
-import { createUser, setUserActive, setUserPassword, setUserRole, setUserHeroToken } from "@/lib/users";
+import { createUser, setUserActive, setUserPassword, setUserRole, setUserHeroToken, listUsers } from "@/lib/users";
 import { roleExists } from "@/lib/role-store";
 
 const PATH = "/dashboard/benutzer";
+
+/** Erzeugt ein zufälliges, gut lesbares Passwort (ohne verwechselbare Zeichen). */
+function generatePassword(): string {
+  const ALPHA = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz";
+  const DIGIT = "23456789";
+  const SYM = "!@#$%*";
+  const pick = (set: string, n: number) => Array.from({ length: n }, () => set[randomInt(set.length)]).join("");
+  const chars = (pick(ALPHA, 5) + pick(DIGIT, 2) + pick(SYM, 1)).split("");
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = randomInt(i + 1);
+    [chars[i], chars[j]] = [chars[j], chars[i]];
+  }
+  const core = chars.join("");
+  return core.slice(0, 4) + "-" + core.slice(4);
+}
+
+export interface CredentialResult {
+  ok: boolean;
+  error?: string;
+  username?: string;
+  displayName?: string;
+  role?: string;
+  password?: string;
+}
+
+/**
+ * Setzt für einen Benutzer ein NEUES zufälliges Passwort und gibt die Zugangsdaten
+ * zurück (für das PDF). Das alte Passwort wird dabei ersetzt (Klartext ist sonst
+ * nicht verfügbar – es liegt nur als Hash vor).
+ */
+export async function generateCredentialsAction(formData: FormData): Promise<CredentialResult> {
+  if (!(await ensureAdmin())) return { ok: false, error: "Kein Zugriff." };
+  const id = Number(formData.get("id"));
+  if (!Number.isFinite(id) || id <= 0) return { ok: false, error: "Ungültige ID." };
+  const user = (await listUsers()).find((u) => u.id === id);
+  if (!user) return { ok: false, error: "Benutzer nicht gefunden." };
+  const password = generatePassword();
+  try {
+    await setUserPassword(id, password);
+  } catch {
+    return { ok: false, error: "Passwort konnte nicht gesetzt werden." };
+  }
+  return {
+    ok: true,
+    username: user.username,
+    displayName: user.displayName ?? user.username,
+    role: user.role,
+    password,
+  };
+}
 
 export interface CreateUserState {
   error?: string;
