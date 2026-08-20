@@ -8,6 +8,13 @@ import { getBookAccounts } from "@/lib/hero-api";
 import { createManualReceipt, createInboxPendingReceipt } from "@/lib/manual-receipts";
 import { extractBeleg, isConfidentialBeleg } from "@/lib/beleg-extract";
 import { rotateBuffer } from "@/lib/auto-rotate";
+import { sniffMime } from "@/lib/file-sniff";
+
+/** Bestimmt den echten MIME-Typ: Browser-Angabe, sonst aus dem Dateiinhalt (Fallback PDF). */
+function resolveMime(declared: string, buffer: Buffer): string {
+  if (declared && declared !== "application/octet-stream") return declared;
+  return sniffMime(buffer, "application/pdf");
+}
 
 const PATH = "/dashboard/belege";
 const MAX_SIZE = 25 * 1024 * 1024;
@@ -55,7 +62,7 @@ export async function queueInboxUploadAction(formData: FormData): Promise<QueueU
     }
     try {
       const buffer = Buffer.from(await f.arrayBuffer());
-      const mime = f.type || "application/pdf";
+      const mime = resolveMime(f.type, buffer);
       await createInboxPendingReceipt({ buffer, originalName: name, mime }, user.id);
       queued++;
     } catch {
@@ -123,7 +130,7 @@ export async function ingestInboxBelegeAction(formData: FormData): Promise<Inbox
       continue;
     }
     const buffer = Buffer.from(await f.arrayBuffer());
-    const mime = f.type || "application/pdf";
+    const mime = resolveMime(f.type, buffer);
     const file = { buffer, originalName: name, mime };
 
     let ex;

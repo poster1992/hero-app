@@ -4,6 +4,7 @@ import path from "node:path";
 import type { RowDataPacket } from "mysql2";
 import { getPool } from "./db";
 import { receiptDupKey } from "./receipt-duplicates";
+import { extForMime } from "./file-sniff";
 
 /** Directory for uploaded receipt files (configurable via BELEGE_DIR). */
 const BELEGE_DIR = process.env.BELEGE_DIR || path.join(process.cwd(), "data", "belege");
@@ -285,7 +286,10 @@ export async function createManualReceipt(input: {
   let storedName: string | null = null;
   if (input.file) {
     await mkdir(BELEGE_DIR, { recursive: true });
-    const ext = path.extname(input.file.originalName) || "";
+    // Nur eine „echte" kurze Endung übernehmen; sonst aus dem MIME ableiten
+    // (verhindert kaputte Endungen wie „. 8619" bei Dateinamen ohne Suffix).
+    const rawExt = path.extname(input.file.originalName);
+    const ext = /^\.[A-Za-z0-9]{1,5}$/.test(rawExt) ? rawExt : extForMime(input.file.mime);
     storedName = `${randomUUID()}${ext}`;
     await writeFile(path.join(BELEGE_DIR, storedName), input.file.buffer);
   }
