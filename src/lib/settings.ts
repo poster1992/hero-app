@@ -41,6 +41,12 @@ export const DAILY_REPORT_CHECK_MISSING_KEY = "daily_report_check_missing"; // n
 export const DAILY_REPORT_LOGBOOK_KEYWORDS_KEY = "daily_report_logbook_keywords"; // Komma-Liste (leer = Standard)
 export const DAILY_REPORT_INSTRUCTIONS_KEY = "daily_report_instructions"; // Freitext an die KI
 
+// --- Abendliche „offene Aufgaben"-Mail je Mitarbeiter ---
+export const TASK_DIGEST_ENABLED_KEY = "task_digest_enabled"; // "0" = aus (Default: an)
+export const TASK_DIGEST_HOUR_KEY = "task_digest_hour"; // Zielstunde (Default 18)
+export const TASK_DIGEST_LAST_SENT_KEY = "task_digest_last_sent"; // yyyy-mm-dd
+export const TASK_DIGEST_LAST_ATTEMPT_KEY = "task_digest_last_attempt"; // ms-Timestamp (Drossel)
+
 // --- SMTP (E-Mail-Versand), pflegbar über die Konfiguration ---
 export const SMTP_HOST_KEY = "smtp_host";
 export const SMTP_PORT_KEY = "smtp_port";

@@ -47,6 +47,24 @@ export async function register(): Promise<void> {
     console.log("[daily-report] aktiv – tägliche Prüfung alle 10 Minuten.");
   }
 
+  // Abendliche „offene Aufgaben"-Mail je Mitarbeiter (prüft alle 10 Min die
+  // Fälligkeit, versendet höchstens einmal pro Kalendertag zur Zielstunde).
+  const g4 = globalThis as unknown as { __taskDigestStarted?: boolean };
+  if (!g4.__taskDigestStarted) {
+    g4.__taskDigestStarted = true;
+    const tickDigest = async () => {
+      try {
+        const { maybeRunOpenTaskDigests } = await import("./lib/task-digest");
+        await maybeRunOpenTaskDigests();
+      } catch (e) {
+        console.warn("[task-digest] Timer-Fehler:", e instanceof Error ? e.message : e);
+      }
+    };
+    setTimeout(tickDigest, 75_000);
+    setInterval(tickDigest, TEN_MINUTES);
+    console.log("[task-digest] aktiv – tägliche Prüfung alle 10 Minuten.");
+  }
+
   // Dritter Loop: Volltext-Indexierung manueller Belege automatisch nachziehen.
   // Deckt Belege ab, die NICHT über den Posteingang kamen (Formular-Uploads,
   // Altbestand) – so muss niemand mehr manuell „Volltext indexieren" klicken.
