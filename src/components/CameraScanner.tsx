@@ -34,14 +34,14 @@ export default function CameraScanner({
   // Zoom-/Torch-Fähigkeiten des Geräts (nicht überall vorhanden).
   const [zoom, setZoom] = useState<{ min: number; max: number; step: number } | null>(null);
   const [zoomValue, setZoomValue] = useState(1);
-  const [autoZoom, setAutoZoom] = useState(true);
+  const [autoZoom, setAutoZoom] = useState(false);
   const [torchSupported, setTorchSupported] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
 
   // Refs, damit der Auto-Zoom-Timer immer aktuelle Werte sieht (ohne Neustart).
   const zoomCapsRef = useRef<{ min: number; max: number; step: number } | null>(null);
   const zoomValueRef = useRef(1);
-  const autoZoomRef = useRef(true);
+  const autoZoomRef = useRef(false);
   const lastDetectRef = useRef(0);
   const zoomTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
