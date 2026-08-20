@@ -12,6 +12,7 @@ import type { ReceiptOcrFields } from "@/lib/receipt-ocr";
 import type { OcrStatus } from "@/app/dashboard/belege/ocr-index";
 import OcrIndexPanel from "@/components/OcrIndexPanel";
 import type { DuplicateGroup } from "@/lib/receipt-duplicates";
+import DuplicateWarning from "@/components/DuplicateWarning";
 
 const currencyFormatter = new Intl.NumberFormat("de-DE", {
   style: "currency",
@@ -275,25 +276,7 @@ export default async function MonthlyReceipts({
 
       {monthly && !restricted && <ReceiptsSummaryPanel summary={summary} />}
 
-      {duplicateGroups.length > 0 && (
-        <div className="rounded-xl border border-amber-300 bg-amber-50 px-5 py-4 text-sm text-amber-900 shadow-sm">
-          <p className="font-semibold">
-            ⚠ {duplicateGroups.length} mögliche{" "}
-            {duplicateGroups.length === 1 ? "Dublette" : "Dubletten"} (Lieferant + Betrag + Datum)
-          </p>
-          <ul className="mt-2 flex flex-col gap-0.5">
-            {duplicateGroups.slice(0, 12).map((g) => (
-              <li key={g.key}>
-                {g.supplier || "—"} · {currencyFormatter.format(g.gross)} ·{" "}
-                {g.date.split("-").reverse().join(".")} <span className="font-medium">({g.count}×)</span>
-              </li>
-            ))}
-            {duplicateGroups.length > 12 && (
-              <li className="text-amber-700">… und {duplicateGroups.length - 12} weitere</li>
-            )}
-          </ul>
-        </div>
-      )}
+      <DuplicateWarning groups={duplicateGroups} />
 
       {SHOW_LEGACY_HERO_PANEL && hideHeroOutput && (
         <div className="rounded-xl border border-gray-200 bg-gray-50 px-5 py-4 text-sm text-gray-600">

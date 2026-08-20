@@ -1,16 +1,14 @@
 "use client";
 
 import { useMemo, useRef, useState, useTransition } from "react";
-import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import {
   setBelegPaidAction,
   deleteBelegAction,
   saveBelegColumnsAction,
-  listDuplicateBelegeAction,
 } from "@/app/dashboard/belege/manual-actions";
 import { receiptDupKey } from "@/lib/receipt-duplicates";
-import type { DuplicateBeleg } from "@/lib/manual-receipts";
+import DuplicateModal from "@/components/DuplicateModal";
 import { buildMultilineSepaAction, type SepaItem } from "@/app/dashboard/belege/sepa-actions";
 import { decideReviewAction } from "@/app/dashboard/belege/review-actions";
 import { setReceiptPaymentStatusAction } from "@/app/dashboard/belege/status-actions";
@@ -449,33 +447,15 @@ export default function ManualBelegeTable({
   const sortArrow = (col: "id" | "datum") => (sort?.col === col ? (sort.dir === "asc" ? " ▲" : " ▼") : "");
 
   // Dubletten-Popup: zeigt alle Belege mit gleichem Lieferant+Betrag+Datum, einer davon löschbar.
-  const dupRouter = useRouter();
   const [dupModal, setDupModal] = useState<{ supplier: string | null; gross: number; date: string | null } | null>(null);
-  const [dupManual, setDupManual] = useState<DuplicateBeleg[] | null>(null);
-  const [dupBusy, startDup] = useTransition();
   const openDup = (supplier: string | null, gross: number, date: string | null) => {
     setDupModal({ supplier, gross, date });
-    setDupManual(null);
-    startDup(async () => {
-      setDupManual(await listDuplicateBelegeAction(supplier, gross, date));
-    });
-  };
-  const deleteDup = (id: number, label: string) => {
-    if (!window.confirm(`Beleg „${label}" (#${id}) wirklich endgültig löschen?`)) return;
-    const fd = new FormData();
-    fd.set("id", String(id));
-    startDup(async () => {
-      await deleteBelegAction(fd);
-      const list = dupModal
-        ? await listDuplicateBelegeAction(dupModal.supplier, dupModal.gross, dupModal.date)
-        : null;
-      setDupManual(list);
-      dupRouter.refresh();
-    });
   };
   const dupKey = dupModal ? receiptDupKey(dupModal.supplier, dupModal.gross, dupModal.date) : null;
   const heroDupMatches = dupKey
-    ? heroRows.filter((h) => receiptDupKey(h.supplier, h.gross, h.date) === dupKey)
+    ? heroRows
+        .filter((h) => receiptDupKey(h.supplier, h.gross, h.date) === dupKey)
+        .map((h) => ({ id: h.id, number: h.number, supplier: h.supplier, gross: h.gross, date: h.date, docUrl: h.docUrl }))
     : [];
 
   // Spalten ein-/ausblenden (pro User gespeichert). show(key) = Spalte sichtbar.
@@ -1354,139 +1334,16 @@ export default function ManualBelegeTable({
       />
     )}
 
-    {/* Dubletten-Popup: Belege mit gleichem Lieferant+Betrag+Datum, einer davon löschbar. */}
-    {dupModal &&
-      createPortal(
-        <div
-          className="fixed inset-0 z-[130] flex items-start justify-center overflow-y-auto bg-black/60 p-4 sm:items-center"
-          onClick={() => setDupModal(null)}
-        >
-          <div
-            className="my-8 flex max-h-[85vh] w-full max-w-xl flex-col overflow-hidden rounded-xl border border-gray-300 bg-white shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-start justify-between gap-3 border-b border-gray-200 px-5 py-3">
-              <div className="min-w-0">
-                <h2 className="text-lg font-semibold text-gray-900">Mögliche Dublette</h2>
-                <p className="mt-0.5 truncate text-sm text-gray-500">
-                  {dupModal.supplier ?? "—"} · {new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" }).format(dupModal.gross)} · {formatDate(dupModal.date)}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setDupModal(null)}
-                aria-label="Schließen"
-                className="shrink-0 text-gray-400 transition-colors hover:text-gray-700"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="overflow-y-auto px-5 py-4">
-              {dupManual === null ? (
-                <p className="py-6 text-center text-sm text-gray-500">Wird geladen …</p>
-              ) : (
-                <>
-                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    Manuelle Belege ({dupManual.length})
-                  </p>
-                  {dupManual.length === 0 ? (
-                    <p className="text-sm text-gray-400">Keine passenden manuellen Belege gefunden.</p>
-                  ) : (
-                    <ul className="divide-y divide-gray-100 overflow-hidden rounded-lg border border-gray-200">
-                      {dupManual.map((m) => (
-                        <li key={m.id} className="flex items-center gap-3 px-3 py-2.5">
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-medium text-gray-900">
-                              #{m.id} · {m.supplier ?? "—"}
-                              <span className="ml-1 font-normal text-gray-500">
-                                {new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" }).format(m.gross)}
-                              </span>
-                            </p>
-                            <p className="truncate text-xs text-gray-500">
-                              {formatDate(m.date)}
-                              {m.invoiceNumber ? ` · Nr. ${m.invoiceNumber}` : ""}
-                              {m.source === "inbox" ? " · Posteingang" : m.source === "form" ? " · Formular" : ""}
-                            </p>
-                          </div>
-                          {m.hasFile && (
-                            <button
-                              type="button"
-                              onClick={() => window.open(`/api/beleg?id=${m.id}`, "_blank", "noopener,noreferrer")}
-                              className="shrink-0 rounded-md border border-gray-300 px-2.5 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900"
-                            >
-                              👁 Ansehen
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            disabled={dupBusy}
-                            onClick={() => deleteDup(m.id, m.supplier ?? m.invoiceNumber ?? `Beleg ${m.id}`)}
-                            className="shrink-0 rounded-md bg-brand-red px-2.5 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-                          >
-                            🗑 Löschen
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-
-                  {heroDupMatches.length > 0 && (
-                    <>
-                      <p className="mb-2 mt-4 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                        HERO-Belege ({heroDupMatches.length}) · nur zum Vergleich
-                      </p>
-                      <ul className="divide-y divide-gray-100 overflow-hidden rounded-lg border border-gray-200">
-                        {heroDupMatches.map((h) => (
-                          <li key={h.id} className="flex items-center gap-3 px-3 py-2.5">
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate text-sm font-medium text-gray-900">
-                                {h.number || "—"} · {h.supplier ?? "—"}
-                                <span className="ml-1 font-normal text-gray-500">
-                                  {new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" }).format(h.gross)}
-                                </span>
-                              </p>
-                              <p className="truncate text-xs text-gray-500">
-                                {formatDate(h.date)} · aus HERO (hier nicht löschbar)
-                              </p>
-                            </div>
-                            {h.docUrl && (
-                              <a
-                                href={h.docUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="shrink-0 rounded-md border border-gray-300 px-2.5 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900"
-                              >
-                                👁 Ansehen
-                              </a>
-                            )}
-                          </li>
-                        ))}
-                      </ul>
-                    </>
-                  )}
-
-                  <p className="mt-3 text-xs text-gray-400">
-                    Tipp: Ist ein Beleg doppelt erfasst, hier den überflüssigen manuellen Beleg löschen. HERO-Belege
-                    können nur in HERO selbst gelöscht werden.
-                  </p>
-                </>
-              )}
-            </div>
-
-            <div className="flex justify-end border-t border-gray-200 px-5 py-3">
-              <button
-                type="button"
-                onClick={() => setDupModal(null)}
-                className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
-              >
-                Schließen
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
+    {/* Dubletten-Popup (gemeinsame Komponente): Belege mit gleichem Lieferant+Betrag+Datum. */}
+    {dupModal && (
+      <DuplicateModal
+        supplier={dupModal.supplier}
+        gross={dupModal.gross}
+        date={dupModal.date}
+        heroMatches={heroDupMatches}
+        onClose={() => setDupModal(null)}
+      />
+    )}
     </>
   );
 }
