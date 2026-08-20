@@ -206,68 +206,91 @@ export default function CameraScanner({
   }
 
   return (
-    <div className="mt-2 rounded-md border border-gray-300 bg-black/90 p-2">
-      <div className="relative overflow-hidden rounded">
+    <div className="fixed inset-0 z-[200] flex flex-col bg-black">
+      {/* Vollbild-Kamerabild */}
+      <div className="relative flex-1 overflow-hidden">
         {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-        <video ref={videoRef} className="h-72 w-full rounded bg-black object-cover sm:h-64" muted playsInline autoPlay />
+        <video ref={videoRef} className="h-full w-full bg-black object-cover" muted playsInline autoPlay />
+
+        {/* Zielrahmen */}
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <div className="h-24 w-4/5 rounded-lg border-2 border-white/80" />
+          <div className="h-32 w-4/5 max-w-sm rounded-xl border-2 border-white/85 shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]" />
         </div>
+
+        {/* Schließen oben links (Safe-Area) */}
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Kamera schließen"
+          className="absolute left-4 flex h-11 w-11 items-center justify-center rounded-full bg-black/55 text-xl text-white hover:bg-black/75"
+          style={{ top: "max(env(safe-area-inset-top), 1rem)" }}
+        >
+          ✕
+        </button>
+
         {/* Taschenlampe oben rechts (falls unterstützt) */}
         {torchSupported && (
           <button
             type="button"
             onClick={toggleTorch}
             aria-label={torchOn ? "Taschenlampe aus" : "Taschenlampe an"}
-            className={`absolute right-2 top-2 flex h-9 w-9 items-center justify-center rounded-full text-lg shadow ${
-              torchOn ? "bg-amber-400 text-gray-900" : "bg-black/50 text-white hover:bg-black/70"
+            className={`absolute right-4 flex h-11 w-11 items-center justify-center rounded-full text-xl shadow ${
+              torchOn ? "bg-amber-400 text-gray-900" : "bg-black/55 text-white hover:bg-black/75"
             }`}
+            style={{ top: "max(env(safe-area-inset-top), 1rem)" }}
           >
             🔦
           </button>
         )}
+
+        {/* Status/Hinweis unten über dem Bild */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-3 flex flex-col items-center gap-1 px-4 text-center">
+          {starting && !error && <p className="text-xs text-white/80">Kamera wird gestartet …</p>}
+          {error && <p className="text-sm font-medium text-rose-300">{error}</p>}
+          {feedback && (
+            <p className={`text-sm font-semibold ${feedback.ok ? "text-emerald-300" : "text-rose-300"}`}>
+              {feedback.text}
+            </p>
+          )}
+          {!error && !feedback && (
+            <p className="text-xs text-white/70">Barcode / QR-Code anvisieren</p>
+          )}
+        </div>
       </div>
 
-      {/* Zoom: automatisch oder manuell */}
-      {zoom && (
-        <div className="mt-2 flex items-center gap-2 px-1">
-          <button
-            type="button"
-            onClick={toggleAutoZoom}
-            className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold transition-colors ${
-              autoZoom ? "bg-emerald-500 text-white" : "bg-white/15 text-white/80 hover:bg-white/25"
-            }`}
-            title="Automatisch heranzoomen, bis ein Code erkannt wird"
-          >
-            {autoZoom ? "Auto-Zoom ✓" : "Auto-Zoom"}
-          </button>
-          <input
-            type="range"
-            min={zoom.min}
-            max={zoom.max}
-            step={zoom.step}
-            value={zoomValue}
-            onChange={(e) => onManualZoom(Number(e.target.value))}
-            className={`h-1.5 w-full cursor-pointer accent-emerald-400 ${autoZoom ? "opacity-60" : ""}`}
-          />
-          <span className="w-10 text-right text-xs tabular-nums text-white/70">
-            {zoomValue.toFixed(1)}×
-          </span>
-        </div>
-      )}
-
-      {starting && !error && <p className="mt-1 text-center text-xs text-white/70">Kamera wird gestartet …</p>}
-      {error && <p className="mt-1 text-center text-xs text-rose-300">{error}</p>}
-      {feedback && (
-        <p className={`mt-1 text-center text-sm font-medium ${feedback.ok ? "text-emerald-300" : "text-rose-300"}`}>
-          {feedback.text}
-        </p>
-      )}
-      <div className="mt-2 flex justify-center">
+      {/* Bedienleiste unten (Zoom + Schließen), Safe-Area */}
+      <div
+        className="shrink-0 bg-black px-4 pt-3"
+        style={{ paddingBottom: "max(env(safe-area-inset-bottom), 0.75rem)" }}
+      >
+        {zoom && (
+          <div className="mb-3 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={toggleAutoZoom}
+              className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold transition-colors ${
+                autoZoom ? "bg-emerald-500 text-white" : "bg-white/15 text-white/80 hover:bg-white/25"
+              }`}
+              title="Automatisch heranzoomen, bis ein Code erkannt wird"
+            >
+              {autoZoom ? "Auto-Zoom ✓" : "Auto-Zoom"}
+            </button>
+            <input
+              type="range"
+              min={zoom.min}
+              max={zoom.max}
+              step={zoom.step}
+              value={zoomValue}
+              onChange={(e) => onManualZoom(Number(e.target.value))}
+              className={`h-1.5 w-full cursor-pointer accent-emerald-400 ${autoZoom ? "opacity-60" : ""}`}
+            />
+            <span className="w-10 text-right text-xs tabular-nums text-white/70">{zoomValue.toFixed(1)}×</span>
+          </div>
+        )}
         <button
           type="button"
           onClick={onClose}
-          className="rounded-md bg-white/90 px-3 py-1.5 text-sm font-medium text-gray-800 hover:bg-white"
+          className="w-full rounded-lg bg-white/90 py-3 text-base font-semibold text-gray-900 hover:bg-white"
         >
           Kamera schließen
         </button>

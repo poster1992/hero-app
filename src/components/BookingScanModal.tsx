@@ -386,6 +386,8 @@ export default function BookingScanModal({
                       ? { ok: true, text: `✓ ${found.name}` }
                       : { ok: false, text: `Nicht gefunden: ${code}` }
                   );
+                  // Artikel erfasst → Vollbild-Kamera schließen (weiterer Scan per Button).
+                  if (found) setCameraOn(false);
                 }}
               />
             )}
