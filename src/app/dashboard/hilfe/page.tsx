@@ -43,6 +43,39 @@ export default function HilfePage() {
         </p>
       </header>
 
+      {/* Anleitungen zum Herunterladen */}
+      <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
+        <h2 className="text-base font-medium text-gray-900">Anleitungen (PDF)</h2>
+        <p className="mt-1 text-sm text-gray-600">
+          Zum Ansehen oder Herunterladen und Weiterleiten an Mitarbeiter.
+        </p>
+        <ul className="mt-3 flex flex-col gap-2">
+          <li className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+            <span className="flex items-center gap-2 text-sm font-medium text-gray-900">
+              <span aria-hidden>📄</span>
+              Ware auf ein Projekt buchen – App installieren &amp; scannen
+            </span>
+            <span className="flex items-center gap-2">
+              <a
+                href="/anleitung-lager-buchung.pdf"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900"
+              >
+                Ansehen
+              </a>
+              <a
+                href="/anleitung-lager-buchung.pdf"
+                download="FLOORTEC-Anleitung-Lager-Buchung.pdf"
+                className="rounded-md bg-brand-red px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90"
+              >
+                ⬇ Herunterladen
+              </a>
+            </span>
+          </li>
+        </ul>
+      </div>
+
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {SECTIONS.map((s) => (
           <div
