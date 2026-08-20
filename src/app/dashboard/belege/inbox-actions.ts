@@ -9,6 +9,7 @@ import { createManualReceipt, createInboxPendingReceipt } from "@/lib/manual-rec
 import { extractBeleg, isConfidentialBeleg } from "@/lib/beleg-extract";
 import { rotateBuffer } from "@/lib/auto-rotate";
 import { sniffMime } from "@/lib/file-sniff";
+import { applySupplierFingerprint } from "@/lib/supplier-fingerprints";
 
 /** Bestimmt den echten MIME-Typ: Browser-Angabe, sonst aus dem Dateiinhalt (Fallback PDF). */
 function resolveMime(declared: string, buffer: Buffer): string {
@@ -141,9 +142,19 @@ export async function ingestInboxBelegeAction(formData: FormData): Promise<Inbox
     }
 
     if (ex.ok && ex.total != null) {
-      const accountNumber = ex.accountNumber ?? null;
+      // Lieferanten-Erkennung: bekannte Absender fest zuordnen (verhindert z. B., dass
+      // der Rechnungsempfänger fälschlich als Lieferant erkannt wird).
+      const fp = await applySupplierFingerprint({
+        fullText: ex.fullText,
+        supplier: ex.supplier ?? null,
+        description: ex.description ?? null,
+        accountNumber: ex.accountNumber ?? null,
+        accountName: null,
+      }).catch(() => null);
+      const supplier = fp ? fp.supplier : ex.supplier ?? null;
+      const accountNumber = (fp ? fp.accountNumber : ex.accountNumber ?? null) ?? null;
       const accountName = accountNumber
-        ? accountNameByNumber.get(accountNumber) ?? ex.accountName ?? null
+        ? accountNameByNumber.get(accountNumber) ?? fp?.accountName ?? ex.accountName ?? null
         : null;
       // Falsch/verdreht gescannte Belege automatisch aufrichten (0 = keine Drehung).
       const fileToSave = ex.rotation
@@ -155,7 +166,7 @@ export async function ingestInboxBelegeAction(formData: FormData): Promise<Inbox
       try {
         await createManualReceipt({
           date: ex.date ?? null,
-          supplier: ex.supplier ?? null,
+          supplier,
           description: ex.description ?? null,
           gross: ex.total,
           vatRate: ex.vatRate ?? null,

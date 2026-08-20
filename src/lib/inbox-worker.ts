@@ -1,6 +1,7 @@
 import "server-only";
 import { getBookAccounts } from "./hero-api";
 import { extractBeleg, isConfidentialBeleg } from "./beleg-extract";
+import { applySupplierFingerprint } from "./supplier-fingerprints";
 import {
   getManualReceiptFile,
   listPendingInboxReceiptIds,
@@ -46,14 +47,23 @@ export async function processPendingInboxReceipts(
       }
 
       if (ex.ok && ex.total != null) {
-        const accountNumber = ex.accountNumber ?? null;
+        // Lieferanten-Erkennung: bekannte Absender (Fingerabdruck im Text) fest zuordnen.
+        const fp = await applySupplierFingerprint({
+          fullText: ex.fullText,
+          supplier: ex.supplier ?? null,
+          description: ex.description ?? null,
+          accountNumber: ex.accountNumber ?? null,
+          accountName: null,
+        }).catch(() => null);
+        const supplier = fp ? fp.supplier : ex.supplier ?? null;
+        const accountNumber = (fp ? fp.accountNumber : ex.accountNumber ?? null) ?? null;
         const accountName = accountNumber
-          ? accountNameByNumber.get(accountNumber) ?? ex.accountName ?? null
+          ? accountNameByNumber.get(accountNumber) ?? fp?.accountName ?? ex.accountName ?? null
           : null;
         const confidential = isConfidentialBeleg(ex.kind, accountName);
         await applyAutoExtraction(id, {
           date: ex.date ?? null,
-          supplier: ex.supplier ?? null,
+          supplier,
           description: ex.description ?? null,
           gross: ex.total,
           vatRate: ex.vatRate ?? null,
