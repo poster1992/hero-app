@@ -108,6 +108,21 @@ function rowTint(r: BelegRow, todayISO: string): string {
   return "bg-red-600/55 hover:bg-red-600/65";
 }
 
+/** Klartext zur Zeilenfarbe – wird als Tooltip beim Überfahren angezeigt. */
+function rowTintLabel(r: BelegRow, todayISO: string): string {
+  if (r.gross < 0) return "🔵 Gutschrift (negativer Beleg)";
+  if (r.isPaid) return "🟢 Bezahlt";
+  const skontoOpen =
+    r.skontoPayAmount != null &&
+    r.skontoPayAmount < r.gross &&
+    r.skontoDueDate != null &&
+    r.skontoDueDate >= todayISO;
+  if (skontoOpen) return "🔵 Offen – Skonto noch ziehbar";
+  const due = r.date ? addDays(r.date, NET_DAYS) : null;
+  if (!due || todayISO <= due) return "🟠 Offen – noch im Zahlungsziel";
+  return "🔴 Überfällig";
+}
+
 /** Status-Zelle: Bezahlt/Offen + Skonto-Kennzeichnung; „als bezahlt" fragt bei Skonto nach. */
 function PaidCell({ r }: { r: BelegRow }) {
   const router = useRouter();
@@ -1074,7 +1089,7 @@ export default function ManualBelegeTable({
                 <tr
                   key={r.id}
                   className={`border-t border-gray-100 ${rowTint(r, todayISO)}`}
-                  title="Rechtsklick für Aktionen (Bearbeiten / Löschen)"
+                  title={`${rowTintLabel(r, todayISO)} · Rechtsklick für Aktionen (Bearbeiten / Löschen)`}
                   onContextMenu={(e) => {
                     e.preventDefault();
                     setMenu({
@@ -1189,7 +1204,7 @@ export default function ManualBelegeTable({
                 <tr
                   key={`h-${h.id}`}
                   className="border-t border-gray-100 bg-indigo-50/50 hover:bg-indigo-50"
-                  title={h.docUrl ? "Rechtsklick: Beleg-PDF öffnen" : undefined}
+                  title={`🟣 HERO-Beleg (${h.isPaid ? "bezahlt" : "offen"})${h.docUrl ? " · Rechtsklick: Beleg-PDF öffnen" : ""}`}
                   onContextMenu={(e) => {
                     if (!h.docUrl) return;
                     e.preventDefault();
