@@ -31,6 +31,7 @@ export default function LagerMovements({
   isAdmin?: boolean;
 }) {
   const [filter, setFilter] = useState<Filter>("all");
+  const [search, setSearch] = useState("");
   const router = useRouter();
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [, startDelete] = useTransition();
@@ -60,15 +61,32 @@ export default function LagerMovements({
     [movements]
   );
 
-  const filtered = useMemo(
-    () =>
+  const filtered = useMemo(() => {
+    const byDir =
       filter === "in"
         ? movements.filter((m) => m.delta >= 0)
         : filter === "out"
           ? movements.filter((m) => m.delta < 0)
-          : movements,
-    [movements, filter]
-  );
+          : movements;
+    const q = search.trim().toLowerCase();
+    if (!q) return byDir;
+    // Wortweise Suche (UND) über Artikel, Projekt (+Nr.), Mitarbeiter, Kommentar.
+    const words = q.split(/\s+/).filter(Boolean);
+    return byDir.filter((m) => {
+      const hay = [
+        m.materialName,
+        m.projectName,
+        m.projectRelativeId != null ? `#${m.projectRelativeId}` : "",
+        m.employeeName,
+        m.byName,
+        m.comment,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return words.every((w) => hay.includes(w));
+    });
+  }, [movements, filter, search]);
 
   const tabs: { key: Filter; label: string }[] = [
     { key: "all", label: "Alle" },
@@ -100,6 +118,14 @@ export default function LagerMovements({
           })}
         </div>
       </div>
+
+      <input
+        type="text"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder="Suchen (Artikel, Projekt, Mitarbeiter, Kommentar) …"
+        className="mb-3 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-brand-red/60"
+      />
 
       {filtered.length === 0 ? (
         <p className="text-sm text-gray-400">
