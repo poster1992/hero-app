@@ -28,7 +28,7 @@ export default async function LagerBuchungenPage() {
           {error}
         </div>
       ) : (
-        <LagerMovements movements={movements} />
+        <LagerMovements movements={movements} isAdmin={session.role === "administrator"} />
       )}
     </div>
   );

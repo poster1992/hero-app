@@ -8,6 +8,7 @@ import {
   listArticlesWithoutEk,
   setMaterialEkByArticle,
   setMaterialMinMaxByArticle,
+  deleteStockMovement,
 } from "@/lib/materials";
 import { createEkPriceRequest, completeEkPriceRequests } from "@/lib/tasks";
 import { getAllowedModules } from "@/lib/role-store";
@@ -131,6 +132,16 @@ export async function submitBooking(input: BookingInput): Promise<BookingResult>
 
   revalidatePath(PATH);
   return { ok: true };
+}
+
+/** Admin: löscht eine Lagerbuchung (Ein-/Ausbuchung) und rechnet den Bestand zurück. */
+export async function deleteMovementAction(id: number): Promise<{ ok: boolean; error?: string }> {
+  const session = await getSession();
+  if (session?.role !== "administrator") return { ok: false, error: "Kein Zugriff." };
+  if (!Number.isFinite(id) || id <= 0) return { ok: false, error: "Ungültige ID." };
+  const ok = await deleteStockMovement(id).catch(() => false);
+  if (ok) revalidatePath(PATH);
+  return ok ? { ok: true } : { ok: false, error: "Löschen fehlgeschlagen." };
 }
 
 /** Admin: setzt den EK-Preis eines Artikels und schließt offene Preis-Aufgaben. */

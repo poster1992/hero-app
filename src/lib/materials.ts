@@ -229,6 +229,27 @@ export async function bookStockByArticle(
   );
 }
 
+/**
+ * Löscht eine Lagerbuchung und macht ihren Bestandseffekt rückgängig
+ * (quantity −= delta der Buchung). Nur für Administratoren gedacht.
+ */
+export async function deleteStockMovement(id: number): Promise<boolean> {
+  if (!Number.isFinite(id) || id <= 0) return false;
+  const pool = getPool();
+  const [rows] = await pool.query<RowDataPacket[]>(
+    "SELECT material_id, delta FROM stock_movements WHERE id = ? LIMIT 1",
+    [id]
+  );
+  const row = rows[0];
+  if (!row) return false;
+  const materialId = row.material_id as number;
+  const delta = num(row.delta);
+  // Bestandseffekt zurückrechnen, dann die Buchung entfernen.
+  await pool.query("UPDATE materials SET quantity = quantity - ? WHERE id = ?", [delta, materialId]);
+  await pool.query("DELETE FROM stock_movements WHERE id = ?", [id]);
+  return true;
+}
+
 export interface StockOutItem {
   date: string | null;
   materialName: string;

@@ -1,7 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import type { StockMovement } from "@/lib/material-types";
+import { deleteMovementAction } from "@/app/dashboard/lager/actions";
 
 const numberFmt = new Intl.NumberFormat("de-DE", { maximumFractionDigits: 2 });
 
@@ -21,8 +23,33 @@ function formatDateTime(s: string | null): string {
 type Filter = "all" | "in" | "out";
 
 /** Buchungs-Historie (eigene Lager-Unterseite): die letzten Ein-/Ausbuchungen, filterbar. */
-export default function LagerMovements({ movements }: { movements: StockMovement[] }) {
+export default function LagerMovements({
+  movements,
+  isAdmin = false,
+}: {
+  movements: StockMovement[];
+  isAdmin?: boolean;
+}) {
   const [filter, setFilter] = useState<Filter>("all");
+  const router = useRouter();
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [, startDelete] = useTransition();
+
+  const onDelete = (mv: StockMovement) => {
+    const dir = mv.delta >= 0 ? "Einbuchung" : "Ausbuchung";
+    if (
+      !window.confirm(
+        `${dir} „${mv.materialName}" (${mv.delta >= 0 ? "+" : ""}${numberFmt.format(mv.delta)}) wirklich löschen?\n\nDer Lagerbestand wird entsprechend zurückgerechnet.`
+      )
+    )
+      return;
+    setDeletingId(mv.id);
+    startDelete(async () => {
+      await deleteMovementAction(mv.id);
+      setDeletingId(null);
+      router.refresh();
+    });
+  };
 
   const counts = useMemo(
     () => ({
@@ -99,12 +126,24 @@ export default function LagerMovements({ movements }: { movements: StockMovement
                   {mv.employeeName ? ` · ${mv.employeeName}` : mv.byName ? ` · ${mv.byName}` : ""}
                 </span>
               </div>
-              <span
-                className={`shrink-0 font-semibold ${mv.delta >= 0 ? "text-emerald-700" : "text-rose-600"}`}
-              >
-                {mv.delta >= 0 ? "+" : ""}
-                {numberFmt.format(mv.delta)}
-              </span>
+              <div className="flex shrink-0 items-center gap-2">
+                <span className={`font-semibold ${mv.delta >= 0 ? "text-emerald-700" : "text-rose-600"}`}>
+                  {mv.delta >= 0 ? "+" : ""}
+                  {numberFmt.format(mv.delta)}
+                </span>
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => onDelete(mv)}
+                    disabled={deletingId === mv.id}
+                    title="Buchung löschen (Bestand wird zurückgerechnet)"
+                    className="flex h-7 w-7 items-center justify-center rounded-md border border-gray-200 text-gray-400 transition-colors hover:border-brand-red/50 hover:text-brand-red disabled:opacity-50"
+                    aria-label="Buchung löschen"
+                  >
+                    {deletingId === mv.id ? "…" : "🗑"}
+                  </button>
+                )}
+              </div>
             </li>
           ))}
         </ul>
