@@ -286,6 +286,15 @@ function isoWeek(d: Date): { year: number; week: number } {
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 /**
+ * Liefert ein Date, dessen LOKALE Felder (getFullYear/getMonth/getDate/getHours …)
+ * der Wandzeit in Europa/Luxemburg entsprechen. So werden Tag/Woche/Monat exakt zur
+ * lokalen Zeitzone gebildet – unabhängig davon, dass der Server auf UTC läuft.
+ */
+function luxLocal(d: Date): Date {
+  return new Date(d.toLocaleString("en-US", { timeZone: "Europe/Luxembourg" }));
+}
+
+/**
  * Outbound stock (Abbuchungen) valued at EK: per-item detail for the current
  * day/week/month plus weekly (last 8) and monthly (last 12) comparison totals.
  */
@@ -302,7 +311,7 @@ export async function getStockOutboundReport(): Promise<StockOutReport> {
       ORDER BY mv.created_at DESC, mv.id DESC`
   );
 
-  const now = new Date();
+  const now = luxLocal(new Date()); // „heute" nach Luxemburger Zeit
   const todayKey = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`;
   const curWeek = isoWeek(now);
   const curMonth = { y: now.getFullYear(), m: now.getMonth() };
@@ -334,7 +343,7 @@ export async function getStockOutboundReport(): Promise<StockOutReport> {
   const items: StockOutItem[] = [];
   for (const r of rows) {
     if (!r.created_at) continue;
-    const dt = new Date(r.created_at);
+    const dt = luxLocal(new Date(r.created_at)); // Buchungszeit in Luxemburger Zeit
     const qty = num(r.qty);
     const value = round2(qty * num(r.ek_price ?? 0));
     const w = isoWeek(dt);
