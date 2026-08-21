@@ -171,7 +171,7 @@ export async function setMaterialMinMaxAction(formData: FormData): Promise<void>
   const user = await getUserByUsername(session.username);
   if (!user) return;
   const allowed = await getAllowedModules(user.role);
-  if (!allowed.includes("lager")) return;
+  if (!allowed.includes("lager_bestand_edit")) return; // Schreibrecht Artikelbestandsliste
 
   const heroArticleId = Number(formData.get("heroArticleId"));
   const name = String(formData.get("name") ?? "").trim();

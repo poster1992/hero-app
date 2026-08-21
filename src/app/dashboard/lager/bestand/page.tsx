@@ -11,7 +11,20 @@ export default async function LagerBestandPage() {
   if (!session) redirect("/login");
   const me = await getUserByUsername(session.username);
   const allowed = me ? await getAllowedModules(me.role) : [];
+  // Leserecht für die Artikelbestandsliste (Bestand ansehen).
+  const canRead = allowed.includes("lager_bestand");
+  // Schreibrecht (Min/Max bearbeiten).
+  const canEdit = allowed.includes("lager_bestand_edit");
   const canSeeEk = allowed.includes("lager_ek");
+
+  if (!canRead) {
+    return (
+      <div className="flex w-full max-w-full flex-1 flex-col gap-6 px-6 py-8">
+        <h1 className="text-2xl font-semibold text-gray-900">Lager · Artikelbestandsliste</h1>
+        <p className="text-sm text-gray-500">Für diesen Bereich fehlt dir die Berechtigung.</p>
+      </div>
+    );
+  }
 
   let items: LagerItem[] = [];
   let error: string | null = null;
@@ -35,7 +48,7 @@ export default async function LagerBestandPage() {
           {error}
         </div>
       ) : (
-        <LagerBestand items={items} canSeeEk={canSeeEk} />
+        <LagerBestand items={items} canSeeEk={canSeeEk} canEdit={canEdit} />
       )}
     </div>
   );

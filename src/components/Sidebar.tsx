@@ -45,7 +45,7 @@ const NAV_ITEMS: NavItem[] = [
     module: "lager",
     children: [
       { href: "/dashboard/lager", label: "Ein-/Ausbuchen" },
-      { href: "/dashboard/lager/bestand", label: "Artikelbestandsliste" },
+      { href: "/dashboard/lager/bestand", label: "Artikelbestandsliste", module: "lager_bestand" },
       { href: "/dashboard/lager/buchungen", label: "Letzte Buchungen" },
     ],
   },

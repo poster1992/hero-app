@@ -116,9 +116,12 @@ function MinMaxCell({ item }: { item: LagerItem }) {
 export default function LagerBestand({
   items,
   canSeeEk = false,
+  canEdit = false,
 }: {
   items: LagerItem[];
   canSeeEk?: boolean;
+  /** Darf Min/Max bearbeiten (Schreibrecht)? Sonst nur Anzeige. */
+  canEdit?: boolean;
 }) {
   const [query, setQuery] = useState("");
 
@@ -197,7 +200,15 @@ export default function LagerBestand({
                       )}
                     </td>
                     <td className="px-4 py-2 text-right">
-                      <MinMaxCell item={a} />
+                      {canEdit ? (
+                        <MinMaxCell item={a} />
+                      ) : (
+                        <span className="text-gray-700 tabular-nums">
+                          {a.minStock != null ? numberFmt.format(a.minStock) : "—"}
+                          {" / "}
+                          {a.maxStock != null ? numberFmt.format(a.maxStock) : "—"}
+                        </span>
+                      )}
                     </td>
                     {canSeeEk && (
                       <td className="px-4 py-2 text-right">

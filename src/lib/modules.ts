@@ -17,6 +17,8 @@ export const MODULES: AppModule[] = [
   { key: "projekte_finanzen", label: "Projekt-Finanzen (Kosten/Ertrag/Belege im Projekt-Popup)" },
   { key: "dokumente", label: "Dokumente" },
   { key: "lager", label: "Lager" },
+  { key: "lager_bestand", label: "Artikelbestandsliste – ansehen (Lesen)" },
+  { key: "lager_bestand_edit", label: "Artikelbestandsliste – bearbeiten (Min/Max)", note: "Schreibrecht: setzt voraus, dass „Artikelbestandsliste – ansehen“ aktiv ist." },
   { key: "lager_ek", label: "Lager EK-Preise (sehen & pflegen)" },
   { key: "kunden", label: "Kunden" },
   { key: "aufgaben", label: "Aufgaben" },
