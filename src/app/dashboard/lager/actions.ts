@@ -100,17 +100,26 @@ export async function submitBooking(input: BookingInput): Promise<BookingResult>
   );
   if (items.length === 0) return { ok: false, error: "Keine Artikel erfasst." };
 
-  // Ausbuchen nur auf Projekte „In Umsetzung" (phaseCode 1111) – serverseitig erzwungen.
-  if (input.direction === "out") {
-    const rel = input.project?.relativeId ?? null;
-    if (rel == null) return { ok: false, error: "Ausbuchen nur auf ein Projekt in Umsetzung möglich." };
+  // Projekt-Regeln serverseitig erzwingen:
+  //  - abgeschlossene Projekte (phaseCode 2000) sind gar nicht buchbar
+  //  - Ausbuchen nur auf Projekte „In Umsetzung" (phaseCode 1111)
+  const rel = input.project?.relativeId ?? null;
+  if (input.direction === "out" && rel == null) {
+    return { ok: false, error: "Ausbuchen nur auf ein Projekt in Umsetzung möglich." };
+  }
+  if (rel != null || input.direction === "out") {
     try {
       const pipeline = await getProjectPipeline();
       const inUmsetzung = new Set<number>();
+      const closed = new Set<number>();
       for (const st of pipeline.stages) {
         if (st.phaseCode === 1111) for (const pr of st.projects) if (pr.relativeId != null) inUmsetzung.add(pr.relativeId);
+        if (st.phaseCode === 2000) for (const pr of st.projects) if (pr.relativeId != null) closed.add(pr.relativeId);
       }
-      if (!inUmsetzung.has(rel)) {
+      if (rel != null && closed.has(rel)) {
+        return { ok: false, error: "Auf abgeschlossene Projekte kann nicht mehr gebucht werden." };
+      }
+      if (input.direction === "out" && (rel == null || !inUmsetzung.has(rel))) {
         return { ok: false, error: "Ausbuchen ist nur auf Projekte „In Umsetzung“ möglich." };
       }
     } catch {
