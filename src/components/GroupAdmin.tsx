@@ -44,7 +44,7 @@ export default function GroupAdmin({ groups }: { groups: RoleWithCount[] }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
+      <div className="border border-line bg-white p-5">
         <h2 className="mb-4 text-lg font-semibold text-gray-900">Neue Gruppe anlegen</h2>
         <form action={formAction} className="flex flex-wrap items-end gap-3">
           <div className="flex-1 min-w-[14rem]">
@@ -69,7 +69,7 @@ export default function GroupAdmin({ groups }: { groups: RoleWithCount[] }) {
         </form>
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
+      <div className="overflow-x-auto border border-line bg-white">
         <table className="w-full border-collapse text-sm">
           <thead className="bg-gray-50">
             <tr className="text-left text-xs uppercase tracking-wide text-gray-500">

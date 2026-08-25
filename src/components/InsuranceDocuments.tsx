@@ -75,12 +75,12 @@ export default function InsuranceDocuments({
 
       <div className="flex flex-col gap-5">
         {docs.length === 0 ? (
-          <p className="rounded-xl border border-gray-200 bg-white p-8 text-center text-sm text-gray-500 shadow-lg shadow-black/10">
+          <p className="border border-line bg-white p-8 text-center text-sm text-gray-500">
             Noch keine Versicherungsunterlagen. Lade links das erste Dokument hoch.
           </p>
         ) : (
           groups.map(([category, items]) => (
-            <div key={category} className="rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
+            <div key={category} className="border border-line bg-white">
               <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
                 <h2 className="text-sm font-semibold text-gray-900">{category}</h2>
                 <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
@@ -140,7 +140,7 @@ function UploadPanel({ categories, onDone }: { categories: string[]; onDone: () 
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="rounded-xl border border-gray-300 bg-white p-4 shadow-lg shadow-black/10">
+      <div className="border border-line bg-white p-4">
         <h2 className="mb-3 text-sm font-semibold text-gray-900">Unterlage hinzufügen</h2>
         <div className="flex flex-col gap-2">
           <label className="text-xs font-medium text-gray-600">Kategorie</label>
@@ -255,7 +255,7 @@ function CategoryManager({
   };
 
   return (
-    <div className="rounded-xl border border-gray-300 bg-white p-4 shadow-lg shadow-black/10">
+    <div className="border border-line bg-white p-4">
       <h2 className="mb-3 text-sm font-semibold text-gray-900">Kategorien verwalten</h2>
       <div className="flex items-center gap-2">
         <input

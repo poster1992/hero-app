@@ -23,7 +23,7 @@ export default function RolePreviewSwitcher({
   }
 
   return (
-    <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
+    <div className="border border-line bg-white p-5">
       <h2 className="text-lg font-semibold text-gray-900">Ansicht als Gruppe testen</h2>
       <p className="mt-1 text-sm text-gray-600">
         Klicke auf eine Gruppe, um das Menü aus ihrer Sicht zu sehen (was sie sehen kann und was

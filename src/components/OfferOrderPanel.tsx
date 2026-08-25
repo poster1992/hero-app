@@ -78,7 +78,7 @@ export default function OfferOrderPanel({
           onClick={() => setOpen(false)}
         >
           <div
-            className="w-[96vw] max-w-[1600px] rounded-xl border border-gray-200 bg-white p-6 shadow-2xl"
+            className="w-[96vw] max-w-[1600px] border border-line bg-white p-6 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-2 flex items-center justify-between">

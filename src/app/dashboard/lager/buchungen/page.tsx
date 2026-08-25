@@ -33,7 +33,7 @@ export default async function LagerBuchungenPage() {
       </header>
 
       {error ? (
-        <div className="rounded-md border border-brand-red/30 bg-brand-red/10 p-4 text-sm text-red-300">
+        <div className="rounded-md border border-brand-red/30 bg-brand-red/10 p-4 text-sm text-brand-red-dark">
           {error}
         </div>
       ) : (

@@ -25,7 +25,7 @@ export default function OrderRateMonthly({
 
   return (
     <div>
-      <h2 className="mb-4 text-lg font-medium text-gray-900">Auftragsquote pro Monat {year}</h2>
+      <h2 className="mb-4 font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">Auftragsquote pro Monat {year}</h2>
 
       {/* Tabelle: Monate waagerecht, Kennzahlen senkrecht */}
       <div className="overflow-x-auto">

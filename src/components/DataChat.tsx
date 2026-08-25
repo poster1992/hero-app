@@ -106,7 +106,7 @@ export default function DataChat() {
     <div className="flex h-full w-full flex-col gap-3">
       <div
         ref={scrollRef}
-        className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-gray-300 bg-white p-4"
+        className="min-h-0 flex-1 overflow-y-auto border border-line bg-white p-4"
       >
         {messages.length === 0 || showHelp ? (
           <div className="flex flex-col gap-4">
@@ -160,7 +160,7 @@ export default function DataChat() {
       </div>
 
       {error && (
-        <div className="rounded-md border border-brand-red/30 bg-brand-red/10 p-3 text-sm text-red-300">
+        <div className="rounded-md border border-brand-red/30 bg-brand-red/10 p-3 text-sm text-brand-red-dark">
           {error}
         </div>
       )}

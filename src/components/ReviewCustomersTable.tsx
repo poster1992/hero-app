@@ -275,11 +275,11 @@ export default function ReviewCustomersTable({
       )}
 
       {/* Tabelle */}
-      <div className="rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
+      <div className="border border-line bg-white">
         <div className="max-h-[calc(100vh-20rem)] overflow-y-auto overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead>
-              <tr className="text-xs uppercase tracking-wide text-gray-200 [&>th]:sticky [&>th]:top-0 [&>th]:z-10 [&>th]:border-b-2 [&>th]:border-white/10 [&>th]:bg-[#191c20]">
+              <tr className="text-xs uppercase tracking-wide text-muted [&>th]:sticky [&>th]:top-0 [&>th]:z-10 [&>th]:border-b [&>th]:border-line [&>th]:bg-paper-2">
                 <th className="px-3 py-3">
                   <input
                     type="checkbox"
@@ -372,7 +372,7 @@ export default function ReviewCustomersTable({
       </div>
 
       {/* Historie */}
-      <div className="rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
+      <div className="border border-line bg-white">
         <button
           type="button"
           onClick={() => setShowHistory((s) => !s)}

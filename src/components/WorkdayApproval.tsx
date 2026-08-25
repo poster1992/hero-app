@@ -217,7 +217,7 @@ export default function WorkdayApproval({
   return (
     <div className="flex flex-col gap-4">
       {/* Aktionsleiste */}
-      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-gray-300 bg-white px-5 py-3 shadow-lg shadow-black/10">
+      <div className="flex flex-wrap items-center gap-3 border border-line bg-white px-5 py-3">
         <button
           type="button"
           disabled={pending || selectedCount === 0}
@@ -244,7 +244,7 @@ export default function WorkdayApproval({
       {groups.map((g) => {
         const allChosen = g.openIds.length > 0 && g.openIds.every((id) => selected.has(id));
         return (
-          <div key={g.date} className="overflow-hidden rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
+          <div key={g.date} className="overflow-hidden border border-line bg-white">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 bg-gray-50 px-5 py-3">
               <h2 className="text-base font-semibold capitalize text-gray-900">{fmtDay(g.date)}</h2>
               <div className="flex items-center gap-3">

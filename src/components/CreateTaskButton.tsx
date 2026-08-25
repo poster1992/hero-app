@@ -66,7 +66,7 @@ export default function CreateTaskButton({
       onClick={() => setOpen(false)}
     >
       <div
-        className="max-h-[85vh] w-[80vw] max-w-5xl overflow-y-auto rounded-xl border border-gray-300 bg-white p-6 shadow-2xl"
+        className="max-h-[85vh] w-[80vw] max-w-5xl overflow-y-auto border border-line bg-white p-6 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-1 flex items-center justify-between">

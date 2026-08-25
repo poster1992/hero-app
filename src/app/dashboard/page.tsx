@@ -88,7 +88,7 @@ export default async function DashboardPage() {
       </header>
 
       <div className={`grid grid-cols-1 gap-6 ${canSeeOverdue ? "xl:grid-cols-2" : "max-w-2xl"}`}>
-      <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
+      <div className="border border-line bg-white p-5">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-900">
             Meine Aufgaben{" "}
@@ -130,7 +130,7 @@ export default async function DashboardPage() {
       </div>
 
       {canSeeOverdue && (
-        <div className="rounded-xl border border-rose-300 bg-white p-5 shadow-lg shadow-black/10">
+        <div className="rounded-xl border border-rose-300 bg-white p-5">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-lg font-semibold text-gray-900">
               Überfällige Aufgaben (Unternehmen){" "}
@@ -169,8 +169,8 @@ export default async function DashboardPage() {
       </div>
 
       {pipeline && (
-        <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
-          <h2 className="mb-4 text-lg font-medium text-gray-900">Projekt-Pipeline</h2>
+        <div className="border border-line bg-white p-5">
+          <h2 className="mb-4 font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">Projekt-Pipeline</h2>
           <ProjectPipelines pipeline={pipeline} />
         </div>
       )}

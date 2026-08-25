@@ -47,15 +47,15 @@ export default async function MitarbeiterbewertungPage({
       </header>
 
       {error && (
-        <div className="rounded-md border border-brand-red/30 bg-brand-red/10 p-4 text-sm text-red-300">
+        <div className="rounded-md border border-brand-red/30 bg-brand-red/10 p-4 text-sm text-brand-red-dark">
           Fehler beim Laden der Daten von HERO: {error}
         </div>
       )}
 
       {data && (
-        <div className="overflow-x-auto rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
+        <div className="overflow-x-auto border border-line bg-white">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-5 py-4">
-            <h2 className="text-lg font-medium text-gray-900">
+            <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
               Rangliste nach Gewinn · {year} abgeschlossen
             </h2>
             <p className="text-sm text-gray-600">

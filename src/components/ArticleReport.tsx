@@ -221,7 +221,7 @@ export default function ArticleReport({ rows, merges }: { rows: ArticleRow[]; me
         </div>
       )}
 
-      <div className="rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
+      <div className="border border-line bg-white">
         {rows.length === 0 ? (
           <p className="px-5 py-8 text-center text-sm text-gray-500">
             Noch keine ausgelesenen Beleg-Artikel. Belege zuerst unter „Belege" indexieren.
@@ -230,7 +230,7 @@ export default function ArticleReport({ rows, merges }: { rows: ArticleRow[]; me
           <div className="max-h-[calc(100vh-16rem)] overflow-auto">
             <table className="w-full min-w-[860px] text-left text-xs">
               <thead>
-                <tr className="text-xs uppercase tracking-wide text-gray-700 [&>th]:sticky [&>th]:top-0 [&>th]:z-10 [&>th]:border-b-2 [&>th]:border-white/10 [&>th]:bg-[#191c20]">
+                <tr className="text-xs uppercase tracking-wide text-muted [&>th]:sticky [&>th]:top-0 [&>th]:z-10 [&>th]:border-b [&>th]:border-line [&>th]:bg-paper-2">
                   <th className="w-8 px-2 py-2" />
                   <Th k="article" label="Artikel" />
                   <Th k="supplier" label="Lieferant" />
@@ -276,7 +276,7 @@ export default function ArticleReport({ rows, merges }: { rows: ArticleRow[]; me
                         <td className="px-3 py-2 text-center align-top whitespace-nowrap text-gray-600">{g.rows.length} · {g.suppliers} Lief.</td>
                       </tr>
                       {open && (
-                        <tr className="border-b border-gray-200 bg-black/30">
+                        <tr className="border-b border-line bg-paper-2">
                           <td colSpan={6} className="px-3 py-2">
                             <table className="w-full text-[11px]">
                               <thead>
@@ -295,7 +295,7 @@ export default function ArticleReport({ rows, merges }: { rows: ArticleRow[]; me
                                   .slice()
                                   .sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""))
                                   .map((r, i) => (
-                                    <tr key={`${g.key}-${i}`} className="border-t border-white/10">
+                                    <tr key={`${g.key}-${i}`} className="border-t border-line">
                                       <td className="px-2 py-1 text-gray-100">{r.article}</td>
                                       <td className="px-2 py-1 whitespace-nowrap text-gray-300">{r.date ? dateFmt.format(new Date(r.date)) : "—"}</td>
                                       <td className="px-2 py-1 text-gray-200">{r.supplier}</td>

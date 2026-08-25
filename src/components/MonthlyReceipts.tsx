@@ -269,7 +269,7 @@ export default async function MonthlyReceipts({
       )}
 
       {error && (
-        <div className="rounded-md border border-brand-red/30 bg-brand-red/10 p-4 text-sm text-red-300">
+        <div className="rounded-md border border-brand-red/30 bg-brand-red/10 p-4 text-sm text-brand-red-dark">
           Fehler beim Laden der Daten von HERO: {error}
         </div>
       )}
@@ -279,7 +279,7 @@ export default async function MonthlyReceipts({
       <DuplicateWarning groups={duplicateGroups} />
 
       {SHOW_LEGACY_HERO_PANEL && hideHeroOutput && (
-        <div className="rounded-xl border border-gray-200 bg-gray-50 px-5 py-4 text-sm text-gray-600">
+        <div className="border border-line bg-gray-50 px-5 py-4 text-sm text-gray-600">
           Ab Juli 2026 werden Belege nur noch über den Posteingang erfasst – siehe Abschnitt
           „Manuelle Belege“ unten.
         </div>
@@ -289,9 +289,9 @@ export default async function MonthlyReceipts({
         // HERO-Belege stehen jetzt (gekennzeichnet) in der gemeinsamen Liste unten.
         // Diese eingeklappte Ansicht behält die vollen HERO-Funktionen (Rechnungs-
         // prüfung, SEPA, Zahlstatus, OCR), bis sie in die gemeinsame Liste umgezogen sind.
-        <details className="rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
+        <details className="border border-line bg-white">
           <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-2 px-5 py-4">
-            <span className="text-lg font-medium text-gray-900">
+            <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
               HERO-Belege · {heading}{" "}
               <span className="text-sm font-normal text-gray-500">– Prüfung / SEPA / Zahlstatus</span>
             </span>

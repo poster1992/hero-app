@@ -148,7 +148,7 @@ export default function LagerMovements({
   ];
 
   return (
-    <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
+    <div className="border border-line bg-white p-5">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-semibold text-gray-900">Letzte Buchungen</h2>
         <div className="flex flex-wrap gap-1.5">
@@ -246,7 +246,7 @@ export default function LagerMovements({
             onClick={() => setEdit(null)}
           >
             <div
-              className="my-8 w-full max-w-md rounded-xl border border-gray-300 bg-white p-5 shadow-2xl"
+              className="my-8 w-full max-w-md border border-line bg-white p-5 shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="mb-3 flex items-start justify-between gap-3">

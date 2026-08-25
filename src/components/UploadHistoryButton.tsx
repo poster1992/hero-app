@@ -97,7 +97,7 @@ export default function UploadHistoryButton({
       onClick={() => setOpen(false)}
     >
       <div
-        className="max-h-[85vh] w-[80vw] max-w-5xl overflow-hidden rounded-xl border border-gray-300 bg-white shadow-2xl"
+        className="max-h-[85vh] w-[80vw] max-w-5xl overflow-hidden border border-line bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">

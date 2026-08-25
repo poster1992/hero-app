@@ -44,7 +44,7 @@ export default function HilfePage() {
       </header>
 
       {/* Anleitungen zum Herunterladen */}
-      <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
+      <div className="border border-line bg-white p-5">
         <h2 className="text-base font-medium text-gray-900">Anleitungen (PDF)</h2>
         <p className="mt-1 text-sm text-gray-600">
           Zum Ansehen oder Herunterladen und Weiterleiten an Mitarbeiter.
@@ -80,7 +80,7 @@ export default function HilfePage() {
         {SECTIONS.map((s) => (
           <div
             key={s.title}
-            className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10"
+            className="border border-line bg-white p-5"
           >
             <h2 className="text-base font-medium text-gray-900">{s.title}</h2>
             <p className="mt-1 text-sm text-gray-600">{s.text}</p>
@@ -88,7 +88,7 @@ export default function HilfePage() {
         ))}
       </div>
 
-      <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
+      <div className="border border-line bg-white p-5">
         <h2 className="text-base font-medium text-gray-900">Support</h2>
         <p className="mt-1 text-sm text-gray-600">
           Die Daten stammen live aus HERO Software. Bei Fragen oder Problemen mit dem

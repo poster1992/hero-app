@@ -55,7 +55,7 @@ export default function ProjectPlanningSearch({ projects }: { projects: ProjectO
     summary != null ? round1(summary.calculatedHours - summary.plannedHours) : 0;
 
   return (
-    <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
+    <div className="border border-line bg-white p-5">
       <h2 className="text-lg font-semibold text-gray-900">Projekt-Stunden</h2>
       <p className="mt-1 text-sm text-gray-600">
         Projekt suchen: kalkulierte vs. bereits verplante Arbeitsstunden.
@@ -119,7 +119,7 @@ export default function ProjectPlanningSearch({ projects }: { projects: ProjectO
 
           {loading && <p className="text-sm text-gray-500">Lade Stunden …</p>}
           {error && (
-            <p className="rounded-md border border-brand-red/30 bg-brand-red/10 p-3 text-sm text-red-300">
+            <p className="rounded-md border border-brand-red/30 bg-brand-red/10 p-3 text-sm text-brand-red-dark">
               {error}
             </p>
           )}

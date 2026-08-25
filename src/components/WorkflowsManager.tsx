@@ -893,9 +893,9 @@ export default function WorkflowsManager({
   return (
     <div className="flex flex-col gap-6">
       {/* Neue Regel */}
-      <div className="rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
+      <div className="border border-line bg-white">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-5 py-4">
-          <h2 className="text-lg font-medium text-gray-900">Regeln</h2>
+          <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">Regeln</h2>
           <div className="flex flex-wrap items-center gap-2">
             {runMsg && <span className="text-xs text-gray-500">{runMsg}</span>}
             <button
@@ -963,9 +963,9 @@ export default function WorkflowsManager({
       </div>
 
       {/* Dienst-Historie (Läufe der automatischen Prüfung) */}
-      <div className="rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
+      <div className="border border-line bg-white">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-5 py-4">
-          <h2 className="text-lg font-medium text-gray-900">Dienst-Historie (Prüfläufe)</h2>
+          <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">Dienst-Historie (Prüfläufe)</h2>
           <span className="text-xs text-gray-500">Läuft automatisch alle 10 Minuten</span>
         </div>
         {runs.length === 0 ? (
@@ -990,9 +990,9 @@ export default function WorkflowsManager({
       </div>
 
       {/* Protokoll */}
-      <div className="rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
+      <div className="border border-line bg-white">
         <div className="border-b border-gray-200 px-5 py-4">
-          <h2 className="text-lg font-medium text-gray-900">Protokoll (letzte Aktionen)</h2>
+          <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">Protokoll (letzte Aktionen)</h2>
         </div>
         {log.length === 0 ? (
           <p className="px-5 py-6 text-center text-sm text-gray-500">Noch keine Aktionen.</p>

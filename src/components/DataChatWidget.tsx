@@ -10,7 +10,7 @@ export default function DataChatWidget() {
   return (
     <>
       {open && (
-        <div className="fixed bottom-24 right-5 z-40 flex h-[70vh] max-h-[640px] w-[min(420px,calc(100vw-2.5rem))] flex-col rounded-xl border border-gray-300 bg-white shadow-2xl">
+        <div className="fixed bottom-24 right-5 z-40 flex h-[70vh] max-h-[640px] w-[min(420px,calc(100vw-2.5rem))] flex-col border border-line bg-white shadow-2xl">
           <header className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
             <span className="text-sm font-semibold text-gray-900">KI-Assistent</span>
             <button

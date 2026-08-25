@@ -702,7 +702,7 @@ function TaskCard({
           onClick={closeBeleg}
         >
           <div
-            className="rounded-xl border border-gray-300 bg-white px-6 py-5 text-sm text-gray-500 shadow-2xl"
+            className="border border-line bg-white px-6 py-5 text-sm text-gray-500 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             {belegLoading ? "Werte werden geladen …" : "Werte nicht verfügbar"}
@@ -1027,7 +1027,7 @@ export default function TaskManager({
           onClick={() => setOpen(false)}
         >
           <div
-            className="w-full max-w-2xl rounded-xl border border-gray-300 bg-white p-6 shadow-2xl"
+            className="w-full max-w-2xl border border-line bg-white p-6 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-4 flex items-center justify-between">
@@ -1271,7 +1271,7 @@ export default function TaskManager({
           ) : (completedTasks ?? []).length === 0 ? (
             <p className="text-sm text-gray-400">An diesem Tag wurde keine Aufgabe erledigt.</p>
           ) : (
-            <div className="overflow-x-auto rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
+            <div className="overflow-x-auto border border-line bg-white">
               <table className="w-full text-left text-sm">
                 <thead>
                   <tr className="text-xs uppercase tracking-wide text-gray-500 [&>th]:border-b [&>th]:border-gray-200 [&>th]:px-4 [&>th]:py-2.5">

@@ -86,7 +86,7 @@ export default function UploadQueueProvider({ children }: { children: React.Reac
     <Ctx.Provider value={{ enqueueBelege, active: p.active }}>
       {children}
       {show && (
-        <div className="fixed bottom-4 right-4 z-[200] w-80 max-w-[92vw] rounded-xl border border-gray-200 bg-white shadow-2xl">
+        <div className="fixed bottom-4 right-4 z-[200] w-80 max-w-[92vw] border border-line bg-white shadow-2xl">
           <div className="flex items-start gap-3 p-4">
             <div className="text-xl" aria-hidden>
               {p.active ? "⏳" : p.summary && p.summary.failed > 0 ? "⚠️" : "✅"}

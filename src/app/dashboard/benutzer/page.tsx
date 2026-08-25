@@ -15,7 +15,7 @@ export default async function BenutzerPage() {
         <header>
           <h1 className="text-2xl font-semibold text-gray-900">Benutzer</h1>
         </header>
-        <div className="rounded-md border border-brand-red/30 bg-brand-red/10 p-4 text-sm text-red-300">
+        <div className="rounded-md border border-brand-red/30 bg-brand-red/10 p-4 text-sm text-brand-red-dark">
           Kein Zugriff – diese Seite ist nur für Administratoren.
         </div>
       </div>
@@ -43,7 +43,7 @@ export default async function BenutzerPage() {
       <RolePreviewSwitcher activeRole={effectiveRole} roles={roles} />
 
       {error ? (
-        <div className="rounded-md border border-brand-red/30 bg-brand-red/10 p-4 text-sm text-red-300">
+        <div className="rounded-md border border-brand-red/30 bg-brand-red/10 p-4 text-sm text-brand-red-dark">
           {error}
         </div>
       ) : (

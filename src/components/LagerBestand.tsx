@@ -137,7 +137,7 @@ export default function LagerBestand({
   }, [query, items]);
 
   return (
-    <div className="rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
+    <div className="border border-line bg-white">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 px-4 py-3">
         <h2 className="text-lg font-semibold text-gray-900">
           Artikel &amp; Bestand{" "}

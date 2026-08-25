@@ -300,9 +300,9 @@ export default function LohnAbschlaegeClient({
       )}
 
       {/* Abschläge erfassen + Export */}
-      <div className="rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
+      <div className="border border-line bg-white">
         <div className="border-b border-gray-200 px-5 py-4">
-          <h2 className="text-lg font-medium text-gray-900">Abschläge erfassen</h2>
+          <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">Abschläge erfassen</h2>
           <p className="mt-1 text-sm text-gray-600">
             Auftraggeber: {companyName || "FLOORTEC"} · Betrag je Mitarbeiter eintragen, der
             leer bleibt, wird nicht überwiesen.
@@ -440,9 +440,9 @@ export default function LohnAbschlaegeClient({
       </div>
 
       {/* Mitarbeiterverwaltung */}
-      <div className="rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
+      <div className="border border-line bg-white">
         <div className="border-b border-gray-200 px-5 py-4">
-          <h2 className="text-lg font-medium text-gray-900">Mitarbeiter &amp; Bankverbindung</h2>
+          <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">Mitarbeiter &amp; Bankverbindung</h2>
           <p className="mt-1 text-sm text-gray-600">
             Eigene Liste – Name + IBAN/BIC. Wird für den SEPA-Export verwendet.
           </p>
@@ -476,9 +476,9 @@ export default function LohnAbschlaegeClient({
       </div>
 
       {/* Historie der erstellten Lohnläufe */}
-      <div className="rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
+      <div className="border border-line bg-white">
         <div className="border-b border-gray-200 px-5 py-4">
-          <h2 className="text-lg font-medium text-gray-900">Historie · erstellte Lohndateien</h2>
+          <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">Historie · erstellte Lohndateien</h2>
           <p className="mt-1 text-sm text-gray-600">
             Jeder SEPA-Export wird hier gespeichert – nachträglich als PDF erstellbar.
           </p>

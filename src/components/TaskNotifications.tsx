@@ -60,7 +60,7 @@ function TaskDetailModal({ task, onClose }: { task: Task; onClose: () => void })
       onClick={onClose}
     >
       <div
-        className="my-8 flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-xl border border-gray-300 bg-white shadow-2xl"
+        className="my-8 flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden border border-line bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3 border-b border-gray-200 px-5 py-3">

@@ -897,9 +897,9 @@ export default function ManualBelegeTable({
 
   return (
     <>
-    <div className="overflow-x-auto rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
+    <div className="overflow-x-auto border border-line bg-white">
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-gray-200 px-5 py-4">
-        <h2 className="text-lg font-medium text-gray-900">Erfasste Belege {periodLabel}</h2>
+        <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">Erfasste Belege {periodLabel}</h2>
         <div className="flex flex-wrap items-center gap-3">
           <p className="text-sm text-gray-600">
             {filtered.length} {filtered.length === 1 ? "Beleg" : "Belege"} · {currencyFormatter.format(total)}

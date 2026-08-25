@@ -543,7 +543,7 @@ export default function ProjectDetailModal({
     >
       <div
         id="project-print-area"
-        className="my-6 w-[90vw] max-w-[1700px] rounded-xl border border-gray-300 bg-white shadow-2xl"
+        className="my-6 w-[90vw] max-w-[1700px] border border-line bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Schriftzug – nur im Druck / PDF sichtbar */}

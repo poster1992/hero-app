@@ -15,7 +15,7 @@ export default function BaustellenAdmin({ items }: { items: BaustelleDoc[] }) {
   );
 
   return (
-    <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
+    <div className="border border-line bg-white p-5">
       <h2 className="mb-1 text-lg font-semibold text-gray-900">Baustellen-Dokumentation</h2>
       <p className="mb-4 text-sm text-gray-600">
         Menüpunkte für Baustellen-Fotos anlegen. Die Fotos werden live aus dem HERO-Projekt geladen

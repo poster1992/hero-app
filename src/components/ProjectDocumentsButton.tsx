@@ -117,7 +117,7 @@ export default function ProjectDocumentsButton({ projectId }: { projectId: numbe
       onClick={() => setOpen(false)}
     >
       <div
-        className="flex max-h-[80vh] w-full max-w-xl flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl"
+        className="flex max-h-[80vh] w-full max-w-xl flex-col overflow-hidden border border-line bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between gap-3 border-b border-gray-200 px-5 py-3">

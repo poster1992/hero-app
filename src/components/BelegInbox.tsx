@@ -167,7 +167,7 @@ export default function BelegInbox() {
 
       {/* Warteschlange */}
       {pending.length > 0 && (
-        <div className="rounded-xl border border-gray-300 bg-white p-4 shadow-sm">
+        <div className="border border-line bg-white p-4 shadow-sm">
           <div className="mb-2 flex items-center justify-between">
             <h3 className="text-sm font-semibold text-gray-900">Bereit zur Verarbeitung ({pending.length})</h3>
             <button
@@ -220,7 +220,7 @@ export default function BelegInbox() {
 
       {/* Ergebnis je Datei */}
       {results && results.length > 0 && (
-        <div className="overflow-x-auto rounded-xl border border-gray-300 bg-white shadow-sm">
+        <div className="overflow-x-auto border border-line bg-white shadow-sm">
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-500 [&>th]:px-4 [&>th]:py-2">

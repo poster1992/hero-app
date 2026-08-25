@@ -113,7 +113,7 @@ export default function VehicleDocuments({ vehicles }: { vehicles: Vehicle[] }) 
             onChanged={() => reloadDocs(selected.id)}
           />
         ) : (
-          <p className="rounded-xl border border-gray-200 bg-white p-8 text-center text-sm text-gray-500 shadow-lg shadow-black/10">
+          <p className="border border-line bg-white p-8 text-center text-sm text-gray-500">
             Lege links ein Fahrzeug an oder wähle eines aus.
           </p>
         )}
@@ -142,7 +142,7 @@ function VehicleList({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="rounded-xl border border-gray-300 bg-white p-4 shadow-lg shadow-black/10">
+      <div className="border border-line bg-white p-4">
         <h2 className="mb-3 text-sm font-semibold text-gray-900">Neues Fahrzeug</h2>
         <form action={formAction} ref={formRef} className="flex flex-col gap-2">
           <input name="name" placeholder="Bezeichnung * (z. B. VW Crafter)" className={inputClass} required />
@@ -161,7 +161,7 @@ function VehicleList({
         </form>
       </div>
 
-      <div className="rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
+      <div className="border border-line bg-white">
         <div className="border-b border-gray-200 px-4 py-3 text-sm font-semibold text-gray-900">
           Fahrzeuge ({vehicles.length})
         </div>
@@ -303,7 +303,7 @@ function VehiclePanel({
   return (
     <div className="flex flex-col gap-4">
       {/* Kopf */}
-      <div className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-gray-300 bg-white p-4 shadow-lg shadow-black/10">
+      <div className="flex flex-wrap items-start justify-between gap-3 border border-line bg-white p-4">
         <div>
           <h2 className="text-lg font-semibold text-gray-900">{vehicle.name}</h2>
           <p className="text-sm text-gray-600">{vehicle.plate ?? "— kein Kennzeichen —"}</p>
@@ -332,7 +332,7 @@ function VehiclePanel({
       </div>
 
       {/* Notizfeld je Fahrzeug (mehrzeilig, direkt speichern) */}
-      <div className="rounded-xl border border-gray-300 bg-white p-4 shadow-lg shadow-black/10">
+      <div className="border border-line bg-white p-4">
         <div className="mb-2 flex items-center justify-between">
           <h3 className="text-sm font-semibold text-gray-900">Notiz</h3>
           {noteMsg && (
@@ -364,7 +364,7 @@ function VehiclePanel({
       </div>
 
       {showEdit && (
-        <form action={editAction} className="grid grid-cols-1 gap-2 rounded-xl border border-gray-300 bg-white p-4 shadow-lg shadow-black/10 sm:grid-cols-2">
+        <form action={editAction} className="grid grid-cols-1 gap-2 border border-line bg-white p-4 sm:grid-cols-2">
           <input type="hidden" name="id" value={vehicle.id} />
           {/* Notiz wird separat im Notizfeld gepflegt; hier den bestehenden Wert erhalten. */}
           <input type="hidden" name="note" value={vehicle.note ?? ""} />
@@ -409,7 +409,7 @@ function VehiclePanel({
 
       {/* Ausstehende Uploads mit Beschriftung */}
       {pending.length > 0 && (
-        <div className="rounded-xl border border-gray-300 bg-white p-4 shadow-lg shadow-black/10">
+        <div className="border border-line bg-white p-4">
           <h3 className="mb-2 text-sm font-semibold text-gray-900">Bereit zum Hochladen ({pending.length})</h3>
           <ul className="flex flex-col gap-2">
             {pending.map((p, i) => (
@@ -468,7 +468,7 @@ function VehiclePanel({
       )}
 
       {/* Dokumentliste */}
-      <div className="rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
+      <div className="border border-line bg-white">
         <div className="border-b border-gray-200 px-4 py-3 text-sm font-semibold text-gray-900">
           Unterlagen ({docs.length})
         </div>

@@ -46,7 +46,7 @@ export default async function AbcAnalysePage({
       </header>
 
       {error && (
-        <div className="rounded-md border border-brand-red/30 bg-brand-red/10 p-4 text-sm text-red-300">
+        <div className="rounded-md border border-brand-red/30 bg-brand-red/10 p-4 text-sm text-brand-red-dark">
           Fehler beim Laden der Daten von HERO: {error}
         </div>
       )}

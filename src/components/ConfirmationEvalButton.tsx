@@ -45,7 +45,7 @@ export default function ConfirmationEvalButton({ defaultYear }: { defaultYear: n
           onClick={() => setOpen(false)}
         >
           <div
-            className="w-full max-w-5xl rounded-xl border border-gray-300 bg-white p-6 shadow-2xl"
+            className="w-full max-w-5xl border border-line bg-white p-6 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-4 flex items-center justify-between">

@@ -960,7 +960,7 @@ function OcrReviewModal({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-2xl rounded-xl border border-gray-300 bg-white p-6 shadow-2xl"
+        className="w-full max-w-2xl border border-line bg-white p-6 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-3 flex items-center justify-between gap-2">
@@ -1119,7 +1119,7 @@ function MissingIbanModal({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-xl rounded-xl border border-gray-300 bg-white p-6 shadow-2xl"
+        className="w-full max-w-xl border border-line bg-white p-6 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-3 flex items-center justify-between gap-2">
@@ -1209,7 +1209,7 @@ function HistoryModal({ row, onClose }: { row: ReceiptRow; onClose: () => void }
       onClick={onClose}
     >
       <div
-        className="w-full max-w-lg rounded-xl border border-gray-300 bg-white p-6 shadow-2xl"
+        className="w-full max-w-lg border border-line bg-white p-6 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between gap-2">
@@ -1302,7 +1302,7 @@ function ReviewModal({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-lg rounded-xl border border-gray-300 bg-white p-6 shadow-2xl"
+        className="w-full max-w-lg border border-line bg-white p-6 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between gap-2">

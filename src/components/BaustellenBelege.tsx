@@ -108,10 +108,10 @@ export default function BaustellenBelege({
   };
 
   return (
-    <div className="rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
+    <div className="border border-line bg-white">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-5 py-4">
         <div>
-          <h2 className="text-lg font-medium text-gray-900">Belege</h2>
+          <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">Belege</h2>
           <p className="text-xs text-gray-500">
             Nur für diese Baustelle · unabhängig von den HERO-Belegen
           </p>

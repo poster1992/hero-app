@@ -27,9 +27,9 @@ export default function CustomersTable({ customers }: { customers: CustomerSumma
         className="w-full max-w-md rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-brand-red focus:outline-none"
       />
 
-      <div className="rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
+      <div className="border border-line bg-white">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-5 py-4">
-          <h2 className="text-lg font-medium text-gray-900">Kunden</h2>
+          <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">Kunden</h2>
           <p className="text-sm text-gray-600">{filtered.length} Kontakte</p>
         </div>
 
@@ -39,7 +39,7 @@ export default function CustomersTable({ customers }: { customers: CustomerSumma
           <div className="max-h-[calc(100vh-16rem)] overflow-y-auto overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead>
-                <tr className="text-xs uppercase tracking-wide text-gray-700 [&>th]:sticky [&>th]:top-0 [&>th]:z-10 [&>th]:border-b-2 [&>th]:border-white/10 [&>th]:bg-[#191c20]">
+                <tr className="text-xs uppercase tracking-wide text-muted [&>th]:sticky [&>th]:top-0 [&>th]:z-10 [&>th]:border-b [&>th]:border-line [&>th]:bg-paper-2">
                   <th className="px-4 py-3 font-medium">Nr.</th>
                   <th className="px-4 py-3 font-medium">Name / Firma</th>
                   <th className="px-4 py-3 font-medium">Adresse</th>

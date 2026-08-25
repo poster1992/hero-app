@@ -146,11 +146,11 @@ export default function BelegeChecklist({
           aria-modal="true"
         >
           <div
-            className="mt-6 w-full max-w-2xl rounded-xl border border-gray-300 bg-white shadow-2xl"
+            className="mt-6 w-full max-w-2xl border border-line bg-white shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between gap-3 border-b border-gray-200 px-5 py-4">
-              <h2 className="text-lg font-medium text-gray-900">Monatliche Checkliste {periodLabel}</h2>
+              <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">Monatliche Checkliste {periodLabel}</h2>
               <div className="flex items-center gap-3">
                 <p className="text-sm text-gray-600">
                   {doneCount} / {items.length} erledigt

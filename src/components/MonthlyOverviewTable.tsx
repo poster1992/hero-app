@@ -259,7 +259,7 @@ export default function MonthlyOverviewTable({
   };
 
   return (
-    <div className="rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
+    <div className="border border-line bg-white">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-5 py-4">
         <div className="flex items-center gap-2">
           <h2 className="text-lg font-semibold text-gray-900">Monatliche Übersicht {periodLabel}</h2>

@@ -217,7 +217,7 @@ export default function KontoauszugClient({
       {/* Lade-Overlay während Einlesen / Speichern */}
       {(busy || confirming || rechecking) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="flex flex-col items-center gap-4 rounded-xl border border-gray-300 bg-white px-10 py-8 shadow-2xl">
+          <div className="flex flex-col items-center gap-4 border border-line bg-white px-10 py-8 shadow-2xl">
             <span className="h-10 w-10 animate-spin rounded-full border-4 border-gray-300 border-t-brand-red" />
             <p className="text-sm font-medium text-gray-800">
               {busy
@@ -232,7 +232,7 @@ export default function KontoauszugClient({
       )}
 
       {/* Upload */}
-      <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
+      <div className="border border-line bg-white p-5">
         <div className="flex flex-wrap items-center gap-3">
           <input
             ref={fileRef}
@@ -264,9 +264,9 @@ export default function KontoauszugClient({
       </div>
 
       {/* Persistente Liste offener Buchungen */}
-      <div className="rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
+      <div className="border border-line bg-white">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-5 py-4">
-          <h2 className="text-lg font-medium text-gray-900">Offene Buchungen · Sichtkontrolle</h2>
+          <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">Offene Buchungen · Sichtkontrolle</h2>
           <span className="text-sm text-gray-600">{result.info}</span>
         </div>
 
@@ -425,9 +425,9 @@ export default function KontoauszugClient({
       </div>
 
       {/* Historie der eingelesenen Kontoauszüge */}
-      <div className="rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
+      <div className="border border-line bg-white">
         <div className="border-b border-gray-200 px-5 py-4">
-          <h2 className="text-lg font-medium text-gray-900">Historie · eingelesene Kontoauszüge</h2>
+          <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">Historie · eingelesene Kontoauszüge</h2>
         </div>
         {history.length === 0 ? (
           <p className="px-5 py-6 text-center text-sm text-gray-500">Noch keine Auszüge eingelesen.</p>

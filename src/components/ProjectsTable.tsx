@@ -312,9 +312,9 @@ export default function ProjectsTable({
         )}
       </div>
 
-      <div className="rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
+      <div className="border border-line bg-white">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-5 py-4">
-          <h2 className="text-lg font-medium text-gray-900">Projekte</h2>
+          <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">Projekte</h2>
           <p className="text-sm text-gray-600">
             <span className="mr-3 text-gray-400">Tipp: Rechtsklick auf ein Projekt → Aufgabe erstellen</span>
             {filtered.length} Projekte
@@ -348,7 +348,7 @@ export default function ProjectsTable({
               <col style={{ width: "4%" }} />
             </colgroup>
             <thead>
-              <tr className="text-xs uppercase tracking-wide text-gray-700 [&>th]:sticky [&>th]:top-0 [&>th]:z-10 [&>th]:border-b-2 [&>th]:border-white/10 [&>th]:bg-[#191c20]">
+              <tr className="text-xs uppercase tracking-wide text-muted [&>th]:sticky [&>th]:top-0 [&>th]:z-10 [&>th]:border-b [&>th]:border-line [&>th]:bg-paper-2">
                 <Th k="nr" label="Nr." />
                 <Th k="name" label="Projekt" />
                 <Th k="customer" label="Kunde" />

@@ -43,7 +43,7 @@ export default function ActivityLog({ entries }: { entries: GlobalLogEntry[] }) 
         <span className="ml-auto text-sm text-gray-500">{filtered.length} Einträge</span>
       </div>
 
-      <div className="rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
+      <div className="border border-line bg-white">
         {filtered.length === 0 ? (
           <p className="px-5 py-8 text-center text-sm text-gray-500">Keine Einträge.</p>
         ) : (

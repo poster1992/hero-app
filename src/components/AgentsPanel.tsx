@@ -33,7 +33,7 @@ const inputClass =
 
 function Card({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
+    <div className="border border-line bg-white p-5">
       <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
       {subtitle && <p className="mt-1 mb-4 text-sm text-gray-600">{subtitle}</p>}
       {children}

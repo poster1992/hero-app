@@ -791,7 +791,7 @@ export default function ManualBelegeForm({
           onClick={() => setOpen(false)}
         >
           <div
-            className="w-full max-w-3xl rounded-xl border border-gray-300 bg-white p-6 shadow-2xl"
+            className="w-full max-w-3xl border border-line bg-white p-6 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-4 flex items-center justify-between">

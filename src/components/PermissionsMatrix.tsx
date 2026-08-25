@@ -20,14 +20,14 @@ export default function PermissionsMatrix({
 }) {
   if (roles.length === 0) {
     return (
-      <div className="rounded-xl border border-gray-300 bg-white p-5 text-sm text-gray-500 shadow-lg shadow-black/10">
+      <div className="border border-line bg-white p-5 text-sm text-gray-500">
         Keine Gruppen vorhanden. Lege oben eine Gruppe an, um Rechte zu vergeben.
       </div>
     );
   }
 
   return (
-    <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
+    <div className="border border-line bg-white p-5">
       <h2 className="mb-1 text-lg font-semibold text-gray-900">Rechte je Gruppe</h2>
       <p className="mb-4 text-sm text-gray-600">
         Lege fest, welche Bereiche jede Gruppe im Menü sieht – die Cockpit-Menüpunkte lassen sich

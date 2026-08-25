@@ -90,7 +90,7 @@ export default async function BewertungenPage() {
 
       {/* Kennzahl: versendete Zufriedenheitsumfragen (wie in der Unternehmensübersicht) */}
       <div className="flex flex-wrap gap-4">
-        <div className="flex min-w-[220px] items-center gap-4 rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
+        <div className="flex min-w-[220px] items-center gap-4 border border-line bg-white p-5">
           <span className="text-3xl" aria-hidden>
             ✉️
           </span>

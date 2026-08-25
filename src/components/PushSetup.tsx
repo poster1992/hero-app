@@ -7,7 +7,7 @@ export default function PushSetup() {
 
   if (state === "loading" || state === "unsupported") return null;
 
-  const box = "rounded-xl border border-gray-300 bg-white p-4 shadow-lg shadow-black/10";
+  const box = "border border-line bg-white p-4";
 
   if (state === "ios-needs-install") {
     return (

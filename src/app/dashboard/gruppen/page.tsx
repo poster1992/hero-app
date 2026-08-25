@@ -15,7 +15,7 @@ export default async function GruppenPage() {
         <header>
           <h1 className="text-2xl font-semibold text-gray-900">Benutzergruppen</h1>
         </header>
-        <div className="rounded-md border border-brand-red/30 bg-brand-red/10 p-4 text-sm text-red-300">
+        <div className="rounded-md border border-brand-red/30 bg-brand-red/10 p-4 text-sm text-brand-red-dark">
           Kein Zugriff – nur für Administratoren.
         </div>
       </div>
@@ -46,7 +46,7 @@ export default async function GruppenPage() {
       </header>
 
       {error ? (
-        <div className="rounded-md border border-brand-red/30 bg-brand-red/10 p-4 text-sm text-red-300">
+        <div className="rounded-md border border-brand-red/30 bg-brand-red/10 p-4 text-sm text-brand-red-dark">
           {error}
         </div>
       ) : (

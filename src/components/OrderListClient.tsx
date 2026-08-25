@@ -109,7 +109,7 @@ export default function OrderListClient({ items }: { items: OrderItem[] }) {
   };
 
   const manualForm = showManual ? (
-    <div className="rounded-xl border border-brand-red/40 bg-white p-4 shadow-lg shadow-black/10">
+    <div className="rounded-xl border border-brand-red/40 bg-white p-4">
       <div className="mb-3 flex items-center justify-between">
         <h3 className="text-sm font-semibold text-gray-900">Artikel manuell hinzufügen</h3>
         <button type="button" onClick={() => { setShowManual(false); setManualErr(null); }} className="text-xs text-gray-400 hover:text-brand-red">
@@ -201,7 +201,7 @@ export default function OrderListClient({ items }: { items: OrderItem[] }) {
       <div className="flex flex-col gap-4">
         {toolbar}
         {manualForm}
-        <div className="rounded-xl border border-gray-300 bg-white p-8 text-center text-sm text-gray-500 shadow-lg shadow-black/10">
+        <div className="border border-line bg-white p-8 text-center text-sm text-gray-500">
           Die Bestellliste ist leer. Artikel im <strong>Preisvergleich</strong> auswählen und „Zur
           Bestellliste hinzufügen" – oder oben „+ Artikel" manuell erfassen.
         </div>
@@ -215,7 +215,7 @@ export default function OrderListClient({ items }: { items: OrderItem[] }) {
       {manualForm}
 
       {bySupplier.map(([sup, list]) => (
-        <div key={sup} className="rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
+        <div key={sup} className="border border-line bg-white">
           <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3">
             <h2 className="text-base font-semibold text-gray-900">🏷️ {sup}</h2>
             <span className="text-xs text-gray-500">

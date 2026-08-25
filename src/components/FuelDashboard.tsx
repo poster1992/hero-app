@@ -79,7 +79,7 @@ export default function FuelDashboard({
   return (
     <div className="flex flex-col gap-6">
       {/* Auswerten-Leiste */}
-      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-gray-300 bg-white p-4 shadow-lg shadow-black/10">
+      <div className="flex flex-wrap items-center gap-3 border border-line bg-white p-4">
         <span className="text-sm text-gray-700">
           Tankrechnungen ausgewertet: <strong>{done}</strong> / {status.total}
         </span>
@@ -101,7 +101,7 @@ export default function FuelDashboard({
       </div>
 
       {analysis.invoiceCount === 0 ? (
-        <p className="rounded-xl border border-gray-300 bg-white px-5 py-8 text-center text-sm text-gray-500 shadow-lg shadow-black/10">
+        <p className="border border-line bg-white px-5 py-8 text-center text-sm text-gray-500">
           Noch keine Tankrechnungen ausgewertet. Klicke oben auf „Rechnungen auswerten".
         </p>
       ) : (
@@ -114,7 +114,7 @@ export default function FuelDashboard({
               ["Liter gesamt", `${liters.format(analysis.totalLiters)} L`],
               ["Fahrzeuge", String(analysis.vehicles.length)],
             ].map(([label, val]) => (
-              <div key={label} className="rounded-xl border border-gray-300 bg-white px-4 py-3 shadow-lg shadow-black/10">
+              <div key={label} className="border border-line bg-white px-4 py-3">
                 <div className="text-xs text-gray-500">{label}</div>
                 <div className="mt-1 text-lg font-semibold tabular-nums text-gray-900">{val}</div>
               </div>
@@ -122,8 +122,8 @@ export default function FuelDashboard({
           </div>
 
           {/* Kosten je Monat */}
-          <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
-            <h2 className="mb-4 text-lg font-medium text-gray-900">Tankkosten je Monat (netto)</h2>
+          <div className="border border-line bg-white p-5">
+            <h2 className="mb-4 font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">Tankkosten je Monat (netto)</h2>
             <ResponsiveContainer width="100%" height={260}>
               <BarChart data={analysis.months} margin={{ top: 4, right: 8, left: 8, bottom: 4 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
@@ -140,9 +140,9 @@ export default function FuelDashboard({
           </div>
 
           {/* Je Monat, gestapelt nach Fahrzeug */}
-          <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
+          <div className="border border-line bg-white p-5">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-lg font-medium text-gray-900">Je Monat nach Fahrzeug</h2>
+              <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">Je Monat nach Fahrzeug</h2>
               <div className="flex overflow-hidden rounded-md border border-gray-300 text-xs">
                 <button
                   type="button"
@@ -182,8 +182,8 @@ export default function FuelDashboard({
           </div>
 
           {/* Kosten je Fahrzeug */}
-          <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
-            <h2 className="mb-4 text-lg font-medium text-gray-900">Tankkosten je Fahrzeug (netto)</h2>
+          <div className="border border-line bg-white p-5">
+            <h2 className="mb-4 font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">Tankkosten je Fahrzeug (netto)</h2>
             <ResponsiveContainer width="100%" height={vehChartHeight}>
               <BarChart
                 data={topVehicles}
@@ -212,9 +212,9 @@ export default function FuelDashboard({
           </div>
 
           {/* Tabelle je Fahrzeug */}
-          <div className="overflow-hidden rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
+          <div className="overflow-hidden border border-line bg-white">
             <div className="border-b border-gray-200 px-5 py-4">
-              <h2 className="text-lg font-medium text-gray-900">Übersicht je Fahrzeug</h2>
+              <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">Übersicht je Fahrzeug</h2>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[560px] text-left text-sm">

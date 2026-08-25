@@ -87,7 +87,7 @@ export default function ProjectTaskModal({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-lg rounded-xl border border-gray-300 bg-white p-5 shadow-2xl"
+        className="w-full max-w-lg border border-line bg-white p-5 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-3 flex items-start justify-between gap-3">

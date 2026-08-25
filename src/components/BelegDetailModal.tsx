@@ -48,7 +48,7 @@ export default function BelegDetailModal({
       onClick={onClose}
     >
       <div
-        className="flex h-[95vh] w-[95vw] max-w-none flex-col overflow-hidden rounded-xl border border-gray-300 bg-white shadow-2xl"
+        className="flex h-[95vh] w-[95vw] max-w-none flex-col overflow-hidden border border-line bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">

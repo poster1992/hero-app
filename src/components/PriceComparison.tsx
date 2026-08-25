@@ -292,7 +292,7 @@ export default function PriceComparison({ rows }: { rows: PriceRow[] }) {
       )}
       {orderMsg && orderSel.size === 0 && <p className="text-xs text-emerald-600">{orderMsg}</p>}
 
-      <div className="rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
+      <div className="border border-line bg-white">
         {rows.length === 0 ? (
           <p className="px-5 py-8 text-center text-sm text-gray-500">
             Noch keine ausgelesenen Beleg-Artikel. Belege zuerst unter „Belege" indexieren.
@@ -301,7 +301,7 @@ export default function PriceComparison({ rows }: { rows: PriceRow[] }) {
           <div className="max-h-[calc(100vh-15rem)] overflow-auto">
             <table className="w-full min-w-[900px] text-left text-xs">
               <thead>
-                <tr className="text-xs uppercase tracking-wide text-gray-700 [&>th]:sticky [&>th]:top-0 [&>th]:z-10 [&>th]:border-b-2 [&>th]:border-white/10 [&>th]:bg-[#191c20]">
+                <tr className="text-xs uppercase tracking-wide text-muted [&>th]:sticky [&>th]:top-0 [&>th]:z-10 [&>th]:border-b [&>th]:border-line [&>th]:bg-paper-2">
                   <th className="px-3 py-2 font-medium">Artikel (Gruppe)</th>
                   <th className="px-3 py-2 text-center font-medium">Positionen · Lieferanten</th>
                   <th className="px-3 py-2 text-right font-medium">Günstigster</th>
@@ -352,7 +352,7 @@ export default function PriceComparison({ rows }: { rows: PriceRow[] }) {
                           .slice()
                           .sort((a, b) => a.unitPrice - b.unitPrice)
                           .map((r, i) => (
-                            <tr key={`${g.key}-${i}`} className="border-b border-white/10 bg-black/30 text-[11px]">
+                            <tr key={`${g.key}-${i}`} className="border-b border-line bg-paper-2 text-[11px]">
                               <td className="px-3 py-1.5 pl-8 align-top text-gray-100">{r.article}</td>
                               <td className="px-3 py-1.5 text-center align-top text-gray-200">{r.supplier}</td>
                               <td className="px-3 py-1.5 text-right align-top whitespace-nowrap">
@@ -380,7 +380,7 @@ export default function PriceComparison({ rows }: { rows: PriceRow[] }) {
           <div className="max-h-[calc(100vh-15rem)] overflow-auto">
             <table className="w-full min-w-[900px] text-left text-xs">
               <thead>
-                <tr className="text-xs uppercase tracking-wide text-gray-700 [&>th]:sticky [&>th]:top-0 [&>th]:z-10 [&>th]:border-b-2 [&>th]:border-white/10 [&>th]:bg-[#191c20]">
+                <tr className="text-xs uppercase tracking-wide text-muted [&>th]:sticky [&>th]:top-0 [&>th]:z-10 [&>th]:border-b [&>th]:border-line [&>th]:bg-paper-2">
                   <th className="w-8 px-2 py-2" />
                   <Th k="article" label="Artikel" />
                   <Th k="supplier" label="Lieferant" />

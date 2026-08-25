@@ -9,7 +9,7 @@ export default function ReceiptsSummaryPanel({ summary }: { summary: ReceiptsSum
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
       <div className="grid grid-cols-2 gap-4 lg:col-span-2">
-        <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
+        <div className="border border-line bg-white p-5">
           <p className="text-sm text-gray-600">Gesamtsumme (Brutto)</p>
           <p className="mt-2 text-2xl font-semibold text-gray-900">
             {currencyFormatter.format(summary.grossTotal)}
@@ -18,20 +18,20 @@ export default function ReceiptsSummaryPanel({ summary }: { summary: ReceiptsSum
             Netto {currencyFormatter.format(summary.netTotal)} · {summary.count} Belege
           </p>
         </div>
-        <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
+        <div className="border border-line bg-white p-5">
           <p className="text-sm text-gray-600">Steuerlast</p>
           <p className="mt-2 text-2xl font-semibold text-gray-900">
             {currencyFormatter.format(summary.taxTotal)}
           </p>
           <p className="mt-1 text-xs text-gray-500">aus {summary.taxByRate.length} Steuersätzen</p>
         </div>
-        <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
+        <div className="border border-line bg-white p-5">
           <p className="text-sm text-gray-600">Bezahlt</p>
           <p className="mt-2 text-2xl font-semibold text-emerald-600">
             {currencyFormatter.format(summary.paidTotal)}
           </p>
         </div>
-        <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
+        <div className="border border-line bg-white p-5">
           <p className="text-sm text-gray-600">Offen</p>
           <p
             className={`mt-2 text-2xl font-semibold ${
@@ -43,7 +43,7 @@ export default function ReceiptsSummaryPanel({ summary }: { summary: ReceiptsSum
         </div>
       </div>
 
-      <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
+      <div className="border border-line bg-white p-5">
         <p className="text-sm font-medium text-gray-700">Steuerlast nach Steuersatz</p>
         {summary.taxByRate.length === 0 ? (
           <p className="mt-3 text-sm text-gray-500">Keine Daten</p>

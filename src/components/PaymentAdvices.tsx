@@ -61,7 +61,7 @@ export function PaymentAdviceButton({
           onClick={() => setOpen(false)}
         >
           <div
-            className="w-full max-w-lg rounded-xl border border-gray-300 bg-white p-6 shadow-2xl"
+            className="w-full max-w-lg border border-line bg-white p-6 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-4 flex items-center justify-between">
@@ -138,10 +138,10 @@ export default function PaymentAdvices({
   };
 
   return (
-    <div className="overflow-hidden rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
+    <div className="overflow-hidden border border-line bg-white">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-5 py-4">
         <div>
-          <h2 className="text-lg font-medium text-gray-900">Zahlungsavise · {monthLabel}</h2>
+          <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">Zahlungsavise · {monthLabel}</h2>
           <p className="mt-0.5 text-sm text-gray-600">
             Vom Lieferanten erhaltene Zahlungsavise – werden beim Steuerberater-Export (PDF-ZIP) mitgeliefert.
           </p>

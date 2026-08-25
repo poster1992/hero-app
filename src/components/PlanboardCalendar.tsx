@@ -190,7 +190,7 @@ export default function PlanboardCalendar({ week, backUrl }: { week: PlanboardWe
           onClick={() => setSel(null)}
         >
           <div
-            className="max-h-[80vh] w-full max-w-lg overflow-y-auto rounded-xl border border-gray-200 bg-white p-5 shadow-2xl"
+            className="max-h-[80vh] w-full max-w-lg overflow-y-auto border border-line bg-white p-5 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-3 flex items-start justify-between gap-4">

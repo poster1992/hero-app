@@ -115,11 +115,11 @@ export default async function ZeitfreigabePage({
       </header>
 
       {error ? (
-        <div className="rounded-md border border-brand-red/30 bg-brand-red/10 p-4 text-sm text-red-300">
+        <div className="rounded-md border border-brand-red/30 bg-brand-red/10 p-4 text-sm text-brand-red-dark">
           Fehler beim Laden aus HERO: {error}
         </div>
       ) : workdays.length === 0 ? (
-        <div className="rounded-xl border border-gray-300 bg-white p-8 text-center text-sm text-gray-500 shadow-lg shadow-black/10">
+        <div className="border border-line bg-white p-8 text-center text-sm text-gray-500">
           Keine erfassten Arbeitstage in dieser Woche.
         </div>
       ) : (

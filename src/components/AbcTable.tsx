@@ -30,9 +30,9 @@ export default function AbcTable({
   for (const r of rows) counts[r.klasse]++;
 
   return (
-    <div className="rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
+    <div className="border border-line bg-white">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-5 py-4">
-        <h2 className="text-lg font-medium text-gray-900">{title}</h2>
+        <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">{title}</h2>
         <p className="text-sm text-gray-600">
           {rows.length} · A {counts.A} · B {counts.B} · C {counts.C} ·{" "}
           {currencyFormatter.format(total)}

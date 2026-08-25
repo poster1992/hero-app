@@ -316,7 +316,7 @@ export default async function DashboardPage({
 
           {locations.length > 0 && (
             <div className="border border-line bg-white p-5">
-              <h2 className="mb-1 text-lg font-medium text-gray-900">Einsatzorte in Luxemburg</h2>
+              <h2 className="mb-1 font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">Einsatzorte in Luxemburg</h2>
               <p className="mb-4 text-sm text-gray-600">
                 {locations.length} Projektadressen · wo wir überall arbeiten
               </p>

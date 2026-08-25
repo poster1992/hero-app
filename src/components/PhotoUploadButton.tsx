@@ -53,7 +53,7 @@ export default function PhotoUploadButton({ baustelleId }: { baustelleId: number
         type="button"
         onClick={() => inputRef.current?.click()}
         disabled={uploading}
-        className="flex items-center gap-2 rounded-lg bg-brand-red px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-black/10 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+        className="flex items-center gap-2 rounded-lg bg-brand-red px-4 py-2 text-sm font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
         title="Fotos zu diesem Projekt in HERO hochladen"
       >
         <span className="text-lg leading-none">＋</span>

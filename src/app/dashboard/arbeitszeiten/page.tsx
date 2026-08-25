@@ -87,7 +87,7 @@ export default async function ArbeitszeitenPage({
       <MonthTabs year={year} month={month} basePath={BASE_PATH} />
 
       {error && (
-        <div className="rounded-md border border-brand-red/30 bg-brand-red/10 p-4 text-sm text-red-300">
+        <div className="rounded-md border border-brand-red/30 bg-brand-red/10 p-4 text-sm text-brand-red-dark">
           Fehler beim Laden der Daten von HERO: {error}
         </div>
       )}
@@ -95,25 +95,25 @@ export default async function ArbeitszeitenPage({
       {entries && (
         <>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
+            <div className="border border-line bg-white p-5">
               <p className="text-sm text-gray-600">Gesamtstunden</p>
               <p className="mt-2 text-2xl font-semibold text-gray-900">
                 {hoursFormatter.format(totalHours)} h
               </p>
             </div>
-            <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
+            <div className="border border-line bg-white p-5">
               <p className="text-sm text-gray-600">Mitarbeiter</p>
               <p className="mt-2 text-2xl font-semibold text-gray-900">{rows.length}</p>
             </div>
-            <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
+            <div className="border border-line bg-white p-5">
               <p className="text-sm text-gray-600">Einträge</p>
               <p className="mt-2 text-2xl font-semibold text-gray-900">{entries.length}</p>
             </div>
           </div>
 
-          <div className="rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
+          <div className="border border-line bg-white">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-5 py-4">
-              <h2 className="text-lg font-medium text-gray-900">
+              <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
                 Stunden je Mitarbeiter · {MONTH_LABELS[month - 1]} {year}
               </h2>
               <p className="text-sm text-gray-600">{hoursFormatter.format(totalHours)} h gesamt</p>
@@ -125,11 +125,11 @@ export default async function ArbeitszeitenPage({
       )}
 
       {overviewError ? (
-        <div className="rounded-md border border-brand-red/30 bg-brand-red/10 p-4 text-sm text-red-300">
+        <div className="rounded-md border border-brand-red/30 bg-brand-red/10 p-4 text-sm text-brand-red-dark">
           {overviewError}
         </div>
       ) : locked && !isAdmin ? (
-        <div className="flex items-center gap-3 rounded-xl border border-gray-300 bg-white p-8 text-sm text-gray-600 shadow-lg shadow-black/10">
+        <div className="flex items-center gap-3 border border-line bg-white p-8 text-sm text-gray-600">
           <span className="text-2xl">🔒</span>
           <span>
             Die Monatsübersicht für <strong>{MONTH_LABELS[month - 1]} {year}</strong> ist gesperrt und

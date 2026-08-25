@@ -163,7 +163,7 @@ export default function SupplierIbanManager({ suppliers }: { suppliers: Supplier
         </span>
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
+      <div className="overflow-x-auto border border-line bg-white">
         <table className="w-full text-left text-sm">
           <thead className="bg-gray-50">
             <tr className="text-xs uppercase tracking-wide text-gray-500">

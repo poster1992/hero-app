@@ -464,8 +464,8 @@ export default function ArbeitsvertragForm({ contracts }: { contracts: SavedCont
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Eingabe */}
-        <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
-          <h2 className="mb-3 text-lg font-medium text-gray-900">Angaben</h2>
+        <div className="border border-line bg-white p-5">
+          <h2 className="mb-3 font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">Angaben</h2>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="sm:col-span-2"><p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Arbeitnehmer</p></div>
             <div>
@@ -737,7 +737,7 @@ export default function ArbeitsvertragForm({ contracts }: { contracts: SavedCont
         </div>
 
         {/* Vorschau */}
-        <div className="rounded-xl border border-gray-300 bg-gray-100 p-4 shadow-lg shadow-black/10">
+        <div className="border border-line bg-gray-100 p-4">
           <p className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">Vorschau — {isPf ? "Personalfragebogen" : "Arbeitsvertrag"}</p>
           {isPf ? (
             <div

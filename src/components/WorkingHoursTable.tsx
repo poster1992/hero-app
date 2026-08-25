@@ -81,7 +81,7 @@ export default function WorkingHoursTable({ entries }: { entries: TrackingTimeEn
       onClick={() => setSelected(null)}
     >
       <div
-        className="my-6 w-full max-w-2xl rounded-xl border border-gray-300 bg-white shadow-2xl"
+        className="my-6 w-full max-w-2xl border border-line bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-4 border-b border-gray-200 px-6 py-4">

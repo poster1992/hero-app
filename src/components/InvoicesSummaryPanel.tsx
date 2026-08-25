@@ -9,20 +9,20 @@ export default function InvoicesSummaryPanel({ summary }: { summary: InvoicesSum
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 lg:col-span-2">
-        <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
+        <div className="border border-line bg-white p-5">
           <p className="text-sm text-gray-600">Gesamtsumme (Brutto)</p>
           <p className="mt-2 text-2xl font-semibold text-gray-900">
             {currencyFormatter.format(summary.grossTotal)}
           </p>
           <p className="mt-1 text-xs text-gray-500">{summary.count} Rechnungen</p>
         </div>
-        <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
+        <div className="border border-line bg-white p-5">
           <p className="text-sm text-gray-600">Netto</p>
           <p className="mt-2 text-2xl font-semibold text-gray-900">
             {currencyFormatter.format(summary.netTotal)}
           </p>
         </div>
-        <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
+        <div className="border border-line bg-white p-5">
           <p className="text-sm text-gray-600">Steuerlast</p>
           <p className="mt-2 text-2xl font-semibold text-gray-900">
             {currencyFormatter.format(summary.taxTotal)}
@@ -31,7 +31,7 @@ export default function InvoicesSummaryPanel({ summary }: { summary: InvoicesSum
         </div>
       </div>
 
-      <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
+      <div className="border border-line bg-white p-5">
         <p className="text-sm font-medium text-gray-700">Steuerlast nach Steuersatz</p>
         {summary.taxByRate.length === 0 ? (
           <p className="mt-3 text-sm text-gray-500">Keine Daten</p>

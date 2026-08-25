@@ -36,7 +36,7 @@ export default function BaustellenBelegeStats({ stats }: { stats: BaustellenBele
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         {/* Kosten nach Lieferant – Diagramm */}
-        <div className="rounded-xl border border-gray-300 bg-white p-4 shadow-lg shadow-black/10 lg:col-span-2">
+        <div className="border border-line bg-white p-4 lg:col-span-2">
           <h3 className="mb-3 text-sm font-semibold text-gray-900">Kosten nach Lieferant</h3>
           {supplierData.length === 0 ? (
             <p className="py-8 text-center text-sm text-gray-500">Noch keine Beträge erkannt.</p>
@@ -63,7 +63,7 @@ export default function BaustellenBelegeStats({ stats }: { stats: BaustellenBele
         </div>
 
         {/* Bezahlstatus – Diagramm */}
-        <div className="rounded-xl border border-gray-300 bg-white p-4 shadow-lg shadow-black/10">
+        <div className="border border-line bg-white p-4">
           <h3 className="mb-3 text-sm font-semibold text-gray-900">Bezahlstatus</h3>
           {payData.length === 0 ? (
             <p className="py-8 text-center text-sm text-gray-500">Keine Beträge.</p>
@@ -92,7 +92,7 @@ export default function BaustellenBelegeStats({ stats }: { stats: BaustellenBele
       </div>
 
       {/* Kosten nach Lieferanten – Liste */}
-      <div className="rounded-xl border border-gray-300 bg-white shadow-lg shadow-black/10">
+      <div className="border border-line bg-white">
         <div className="border-b border-gray-200 px-5 py-3">
           <h3 className="text-sm font-semibold text-gray-900">Kosten nach Lieferanten</h3>
         </div>
@@ -112,7 +112,7 @@ export default function BaustellenBelegeStats({ stats }: { stats: BaustellenBele
 
 function Card({ label, value, accent }: { label: string; value: string; accent?: string }) {
   return (
-    <div className="rounded-xl border border-gray-300 bg-white p-4 shadow-lg shadow-black/10">
+    <div className="border border-line bg-white p-4">
       <p className="text-xs text-gray-500">{label}</p>
       <p className={`mt-1 text-xl font-semibold ${accent ?? "text-gray-900"}`}>{value}</p>
     </div>

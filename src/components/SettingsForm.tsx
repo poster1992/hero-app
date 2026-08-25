@@ -63,8 +63,8 @@ export default function SettingsForm({
   return (
     <div className="flex max-w-2xl flex-col gap-6">
       {/* E-Mail-Versand (SMTP) */}
-      <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
-        <h2 className="text-lg font-medium text-gray-900">E-Mail-Versand (SMTP)</h2>
+      <div className="border border-line bg-white p-5">
+        <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">E-Mail-Versand (SMTP)</h2>
         <p className="mt-1 text-sm text-gray-600">
           Für Aufgaben-Benachrichtigungen und E-Mails aus dem Dashboard. Für Microsoft 365:
           Host <code>smtp.office365.com</code>, Port <code>587</code>, Benutzer = Postfach,
@@ -136,8 +136,8 @@ export default function SettingsForm({
       </div>
 
       {/* Google-Bewertung */}
-      <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
-        <h2 className="text-lg font-medium text-gray-900">Google-Bewertung</h2>
+      <div className="border border-line bg-white p-5">
+        <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">Google-Bewertung</h2>
         <p className="mt-1 text-sm text-gray-600">
           Link zu eurer Google-Bewertungsseite (für die Aufgabe „Kunde anrufen – Zufriedenheit erfragen").
         </p>
@@ -164,8 +164,8 @@ export default function SettingsForm({
       </div>
 
       {/* Google-Rezensionen abrufen (Places API) */}
-      <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
-        <h2 className="text-lg font-medium text-gray-900">Google-Rezensionen (Zähler)</h2>
+      <div className="border border-line bg-white p-5">
+        <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">Google-Rezensionen (Zähler)</h2>
         <p className="mt-1 text-sm text-gray-600">
           Zeigt in der Unternehmensübersicht die Anzahl + Ø-Bewertung eurer Google-Rezensionen.
           Benötigt einen <strong>Google-API-Key</strong> (Places API aktiviert, Billing an) und die
