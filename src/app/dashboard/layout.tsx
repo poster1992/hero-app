@@ -44,10 +44,10 @@ export default async function DashboardLayout({
     <div className="flex min-h-screen flex-col md:flex-row">
       <WorkflowTrigger />
       <Sidebar allowedModules={allowedModules} taskNotifCount={taskNotifCount} baustellen={baustellen} />
-      <main className="flex min-w-0 flex-1 flex-col bg-black">
+      <main className="flex min-w-0 flex-1 flex-col bg-paper">
         {isPreview && <PreviewBanner role={role} />}
         {allowedModules.includes("projektsuche") && (
-          <div className="flex items-center justify-center bg-black px-4 pb-2 pt-6">
+          <div className="flex items-center justify-center bg-paper px-4 pb-2 pt-6">
             <GlobalSearch />
           </div>
         )}

@@ -2,7 +2,7 @@
 export default function Logo({ className = "" }: { className?: string }) {
   return (
     <span
-      className={`whitespace-nowrap text-lg font-semibold tracking-[0.2em] text-white ${className}`}
+      className={`whitespace-nowrap text-lg font-bold tracking-[0.14em] text-ink ${className}`}
     >
       FLOORTEC
     </span>

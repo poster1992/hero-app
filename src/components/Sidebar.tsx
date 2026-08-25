@@ -292,14 +292,14 @@ export default function Sidebar({
     <>
       {/* Mobile Topbar mit Hamburger (nur < md) – Safe-Area oben (iOS Notch/Statusleiste) */}
       <div
-        className="sticky top-0 z-30 flex items-center gap-3 border-b border-neutral-800 bg-black px-4 pb-3 md:hidden"
+        className="sticky top-0 z-30 flex items-center gap-3 border-b border-line bg-white px-4 pb-3 md:hidden"
         style={{ paddingTop: "calc(env(safe-area-inset-top) + 0.75rem)" }}
       >
         <button
           type="button"
           onClick={() => setMobileOpen(true)}
           aria-label="Menü öffnen"
-          className="flex h-9 w-9 items-center justify-center rounded-md text-gray-200 transition-colors hover:bg-white/10"
+          className="flex h-9 w-9 items-center justify-center rounded-md text-ink transition-colors hover:bg-paper"
         >
           <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" aria-hidden>
             <path d="M4 6h16M4 12h16M4 18h16" />
@@ -320,7 +320,7 @@ export default function Sidebar({
       )}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] shrink-0 transform flex-col overflow-y-auto bg-black text-gray-200 transition-transform duration-200 md:sticky md:top-0 md:z-auto md:h-screen md:max-w-none md:translate-x-0 md:border-r md:border-neutral-800 md:transition-[width] ${
+        className={`fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] shrink-0 transform flex-col overflow-y-auto bg-white text-ink-2 transition-transform duration-200 md:sticky md:top-0 md:z-auto md:h-screen md:max-w-none md:translate-x-0 md:border-r md:border-line md:transition-[width] ${
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         } ${collapsed ? "md:w-16" : "md:w-72"}`}
       >
@@ -345,7 +345,7 @@ export default function Sidebar({
             type="button"
             onClick={() => setMobileOpen(false)}
             aria-label="Menü schließen"
-            className="absolute right-3 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-white/10 hover:text-white md:hidden"
+            className="absolute right-3 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-faint transition-colors hover:bg-paper hover:text-ink md:hidden"
           >
             ✕
           </button>
@@ -355,7 +355,7 @@ export default function Sidebar({
             onClick={toggle}
             title={collapsed ? "Menü ausklappen" : "Menü einklappen"}
             aria-label={collapsed ? "Menü ausklappen" : "Menü einklappen"}
-            className={`hidden h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-white/10 hover:text-white md:flex ${
+            className={`hidden h-7 w-7 shrink-0 items-center justify-center rounded-md text-faint transition-colors hover:bg-paper hover:text-ink md:flex ${
               collapsed ? "" : "absolute right-3 top-1/2 -translate-y-1/2"
             }`}
           >
@@ -375,12 +375,12 @@ export default function Sidebar({
           const showChildren = !collapsed && hasChildren && isOpen;
           const badge = item.module === "aufgaben" ? taskNotifCount : 0;
 
-          const rowClass = `flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+          const rowClass = `flex w-full items-center gap-3 rounded-none px-3 py-2 text-sm font-medium transition-colors ${
             collapsed ? "md:justify-center" : "justify-start text-left"
           } ${
             active
-              ? "bg-white/10 font-medium text-white"
-              : "text-gray-300 hover:bg-white/10 hover:text-white"
+              ? "bg-brand-red/10 font-semibold text-brand-red shadow-[inset_2px_0_0_#e8392a]"
+              : "text-ink-2 hover:bg-paper hover:text-ink"
           }`;
 
           return (
@@ -421,7 +421,7 @@ export default function Sidebar({
                   <span className="relative flex shrink-0">
                     <NavIcon name={item.icon} />
                     {badge > 0 && collapsed && (
-                      <span className="absolute -right-1 -top-1 hidden h-2.5 w-2.5 rounded-full bg-brand-red ring-2 ring-black md:block" />
+                      <span className="absolute -right-1 -top-1 hidden h-2.5 w-2.5 rounded-full bg-brand-red ring-2 ring-white md:block" />
                     )}
                   </span>
                   <span className={collapsed ? "md:hidden" : ""}>{item.label}</span>
@@ -438,7 +438,7 @@ export default function Sidebar({
               )}
 
               {showChildren && (
-                <div className="mt-1 ml-6 flex flex-col gap-0.5 border-l border-white/10 pl-3">
+                <div className="mt-1 ml-6 flex flex-col gap-0.5 border-l border-line pl-3">
                   {item.children!.map((child) => {
                     // Aktiv ist der am spezifischsten passende Kindpunkt (längster Treffer),
                     // damit z. B. „Belege" (Unterpfad) nicht „Dokumentation" mitmarkiert.
@@ -456,10 +456,10 @@ export default function Sidebar({
                         key={child.href}
                         href={child.href}
                         onClick={() => setMobileOpen(false)}
-                        className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm transition-colors ${
+                        className={`flex items-center gap-1.5 rounded-none px-3 py-1.5 text-sm transition-colors ${
                           childActive
-                            ? "bg-white/10 font-medium text-white"
-                            : "text-gray-400 hover:bg-white/5 hover:text-white"
+                            ? "font-semibold text-brand-red"
+                            : "text-muted hover:bg-paper hover:text-ink"
                         }`}
                       >
                         <span className="text-xs">›</span>
@@ -474,14 +474,14 @@ export default function Sidebar({
         })}
       </nav>
 
-      <div className="border-t border-white/10 px-3 py-3">
+      <div className="border-t border-line px-3 py-3">
         <PushBell collapsed={collapsed} />
         <form action={logout}>
           <button
             type="submit"
             title="Abmelden"
             aria-label="Abmelden"
-            className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-gray-300 transition-colors hover:bg-white/10 hover:text-white ${
+            className={`flex items-center gap-3 rounded-none px-3 py-2 text-sm font-medium text-ink-2 transition-colors hover:bg-paper hover:text-ink ${
               collapsed ? "md:justify-center" : "w-full justify-start"
             }`}
           >
