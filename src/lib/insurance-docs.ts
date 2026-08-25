@@ -3,13 +3,14 @@ import { mkdir, writeFile, readFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import type { RowDataPacket } from "mysql2";
 import { getPool } from "./db";
+import { getSetting, setSetting } from "./settings";
 import { extForMime } from "./file-sniff";
 
 /** Ablageordner für Versicherungsunterlagen (konfigurierbar via VERSICHERUNG_DIR). */
 const VERSICHERUNG_DIR = process.env.VERSICHERUNG_DIR || path.join(process.cwd(), "data", "versicherungen");
 
-/** Vorgeschlagene Kategorien (frei erweiterbar über das Eingabefeld). */
-export const INSURANCE_CATEGORIES = [
+/** Fest vorgegebene Standard-Kategorien (nicht löschbar). */
+export const INSURANCE_CATEGORY_PRESETS = [
   "Flottenvertrag",
   "Kfz-Versicherung",
   "Betriebshaftpflicht",
@@ -19,6 +20,59 @@ export const INSURANCE_CATEGORIES = [
   "Rechtsschutzversicherung",
   "Sonstige",
 ];
+
+/** Rückwärtskompatibler Alias. */
+export const INSURANCE_CATEGORIES = INSURANCE_CATEGORY_PRESETS;
+
+const CATEGORIES_SETTING_KEY = "insurance_categories";
+
+/** Selbst angelegte (frei verwaltbare) Kategorien aus den Einstellungen. */
+export async function getCustomInsuranceCategories(): Promise<string[]> {
+  const raw = await getSetting(CATEGORIES_SETTING_KEY);
+  if (!raw) return [];
+  try {
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr.filter((x): x is string => typeof x === "string" && x.trim().length > 0) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Alle wählbaren Kategorien: Presets zuerst, danach die selbst angelegten (dedupliziert). */
+export async function getAllInsuranceCategories(): Promise<string[]> {
+  const custom = await getCustomInsuranceCategories();
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const c of [...INSURANCE_CATEGORY_PRESETS, ...custom]) {
+    const key = c.trim().toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(c.trim());
+  }
+  return out;
+}
+
+/** Legt eine neue Kategorie an (kein Duplikat zu Presets/Bestehenden). */
+export async function addInsuranceCategory(name: string): Promise<void> {
+  const clean = name.trim().slice(0, 120);
+  if (!clean) return;
+  const existing = await getAllInsuranceCategories();
+  if (existing.some((c) => c.toLowerCase() === clean.toLowerCase())) return;
+  const custom = await getCustomInsuranceCategories();
+  custom.push(clean);
+  await setSetting(CATEGORIES_SETTING_KEY, JSON.stringify(custom));
+}
+
+/** Entfernt eine selbst angelegte Kategorie (Presets sind nicht löschbar). */
+export async function removeInsuranceCategory(name: string): Promise<void> {
+  const clean = name.trim();
+  if (!clean) return;
+  const custom = await getCustomInsuranceCategories();
+  const next = custom.filter((c) => c.toLowerCase() !== clean.toLowerCase());
+  if (next.length !== custom.length) {
+    await setSetting(CATEGORIES_SETTING_KEY, JSON.stringify(next));
+  }
+}
 
 export interface InsuranceDocument {
   id: number;

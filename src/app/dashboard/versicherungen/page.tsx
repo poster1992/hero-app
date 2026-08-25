@@ -4,7 +4,8 @@ import { getUserByUsername } from "@/lib/users";
 import { getAllowedModules } from "@/lib/role-store";
 import {
   listInsuranceDocuments,
-  INSURANCE_CATEGORIES,
+  getAllInsuranceCategories,
+  INSURANCE_CATEGORY_PRESETS,
   type InsuranceDocument,
 } from "@/lib/insurance-docs";
 import InsuranceDocuments from "@/components/InsuranceDocuments";
@@ -18,9 +19,10 @@ export default async function VersicherungenPage() {
   if (!allowed.includes("cockpit_versicherungen")) redirect("/dashboard");
 
   let docs: InsuranceDocument[] = [];
+  let categories: string[] = INSURANCE_CATEGORY_PRESETS;
   let error: string | null = null;
   try {
-    docs = await listInsuranceDocuments();
+    [docs, categories] = await Promise.all([listInsuranceDocuments(), getAllInsuranceCategories()]);
   } catch (e) {
     error = e instanceof Error ? e.message : "Unterlagen konnten nicht geladen werden.";
   }
@@ -38,7 +40,7 @@ export default async function VersicherungenPage() {
       {error ? (
         <div className="rounded-md border border-brand-red/30 bg-brand-red/10 p-4 text-sm text-red-700">{error}</div>
       ) : (
-        <InsuranceDocuments docs={docs} categories={INSURANCE_CATEGORIES} />
+        <InsuranceDocuments docs={docs} categories={categories} presets={INSURANCE_CATEGORY_PRESETS} />
       )}
     </div>
   );

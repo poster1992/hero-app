@@ -1,11 +1,13 @@
 "use client";
 
-import { useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   uploadInsuranceDocAction,
   updateInsuranceDocAction,
   deleteInsuranceDocAction,
+  addInsuranceCategoryAction,
+  removeInsuranceCategoryAction,
 } from "@/app/dashboard/versicherungen/actions";
 import type { InsuranceDocument } from "@/lib/insurance-docs";
 
@@ -28,11 +30,17 @@ const inputClass =
 export default function InsuranceDocuments({
   docs,
   categories,
+  presets,
 }: {
   docs: InsuranceDocument[];
   categories: string[];
+  presets: string[];
 }) {
   const router = useRouter();
+
+  // Verwaltete Kategorien lokal halten, damit Anlegen/Löschen sofort greift.
+  const [cats, setCats] = useState<string[]>(categories);
+  useEffect(() => setCats(categories), [categories]);
 
   // Nach Kategorie gruppieren (Reihenfolge kommt bereits sortiert aus der DB).
   const groups = useMemo(() => {
@@ -45,16 +53,25 @@ export default function InsuranceDocuments({
     return Array.from(map.entries());
   }, [docs]);
 
-  // Kategorie-Vorschläge = Presets + bereits verwendete Kategorien.
+  // Auswahlvorschläge = verwaltete Kategorien + bereits verwendete (dedupliziert).
   const allCategories = useMemo(() => {
-    const set = new Set<string>(categories);
-    for (const d of docs) set.add(d.category);
-    return Array.from(set);
-  }, [categories, docs]);
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const c of [...cats, ...docs.map((d) => d.category)]) {
+      const key = c.trim().toLowerCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      out.push(c.trim());
+    }
+    return out;
+  }, [cats, docs]);
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-[22rem_1fr]">
-      <UploadPanel categories={allCategories} onDone={() => router.refresh()} />
+      <div className="flex flex-col gap-4">
+        <UploadPanel categories={allCategories} onDone={() => router.refresh()} />
+        <CategoryManager categories={cats} presets={presets} onChange={setCats} />
+      </div>
 
       <div className="flex flex-col gap-5">
         {docs.length === 0 ? (
@@ -193,6 +210,108 @@ function UploadPanel({ categories, onDone }: { categories: string[]; onDone: () 
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/* --------------------------- Kategorien verwalten -------------------------- */
+
+function CategoryManager({
+  categories,
+  presets,
+  onChange,
+}: {
+  categories: string[];
+  presets: string[];
+  onChange: (next: string[]) => void;
+}) {
+  const [name, setName] = useState("");
+  const [busy, startBusy] = useTransition();
+  const [err, setErr] = useState<string | null>(null);
+  const presetSet = useMemo(() => new Set(presets.map((p) => p.toLowerCase())), [presets]);
+
+  const add = () => {
+    const clean = name.trim();
+    if (!clean) return;
+    setErr(null);
+    startBusy(async () => {
+      const res = await addInsuranceCategoryAction(clean);
+      if (res.ok && res.categories) {
+        onChange(res.categories);
+        setName("");
+      } else {
+        setErr(res.error ?? "Fehler.");
+      }
+    });
+  };
+
+  const remove = (cat: string) => {
+    setErr(null);
+    startBusy(async () => {
+      const res = await removeInsuranceCategoryAction(cat);
+      if (res.ok && res.categories) onChange(res.categories);
+      else setErr(res.error ?? "Fehler.");
+    });
+  };
+
+  return (
+    <div className="rounded-xl border border-gray-300 bg-white p-4 shadow-lg shadow-black/10">
+      <h2 className="mb-3 text-sm font-semibold text-gray-900">Kategorien verwalten</h2>
+      <div className="flex items-center gap-2">
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              add();
+            }
+          }}
+          placeholder="Neue Kategorie …"
+          className={inputClass}
+        />
+        <button
+          type="button"
+          onClick={add}
+          disabled={busy || !name.trim()}
+          className="shrink-0 rounded-md bg-brand-red px-3 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+        >
+          + Hinzufügen
+        </button>
+      </div>
+      {err && <p className="mt-2 text-xs text-rose-600">{err}</p>}
+      <ul className="mt-3 flex flex-wrap gap-1.5">
+        {categories.map((c) => {
+          const isPreset = presetSet.has(c.toLowerCase());
+          return (
+            <li
+              key={c}
+              className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 py-0.5 pl-2.5 pr-1 text-xs text-gray-700"
+            >
+              <span>{c}</span>
+              {isPreset ? (
+                <span className="ml-0.5 text-gray-300" title="Standard-Kategorie (nicht löschbar)">
+                  🔒
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => remove(c)}
+                  disabled={busy}
+                  title="Kategorie entfernen"
+                  className="ml-0.5 rounded-full px-1 text-gray-400 hover:bg-rose-100 hover:text-rose-600 disabled:opacity-50"
+                >
+                  ✕
+                </button>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      <p className="mt-2 text-xs text-gray-400">
+        Standard-Kategorien (🔒) bleiben immer erhalten. Bereits genutzte Kategorien verschwinden erst, wenn keine
+        Unterlage mehr sie verwendet.
+      </p>
     </div>
   );
 }

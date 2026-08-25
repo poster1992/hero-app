@@ -8,6 +8,10 @@ import {
   addInsuranceDocument,
   updateInsuranceDocument,
   deleteInsuranceDocument,
+  addInsuranceCategory,
+  removeInsuranceCategory,
+  getAllInsuranceCategories,
+  INSURANCE_CATEGORY_PRESETS,
 } from "@/lib/insurance-docs";
 
 const PATH = "/dashboard/versicherungen";
@@ -96,4 +100,41 @@ export async function deleteInsuranceDocAction(formData: FormData): Promise<void
   if (!Number.isFinite(id) || id <= 0) return;
   await deleteInsuranceDocument(id);
   revalidatePath(PATH);
+}
+
+export interface CategoriesResult {
+  ok: boolean;
+  error?: string;
+  categories?: string[];
+}
+
+/** Legt eine neue Kategorie an und liefert die aktualisierte Liste zurück. */
+export async function addInsuranceCategoryAction(name: string): Promise<CategoriesResult> {
+  if (!(await requireAccess())) return { ok: false, error: "Kein Zugriff." };
+  const clean = String(name ?? "").trim();
+  if (!clean) return { ok: false, error: "Bitte einen Namen angeben." };
+  try {
+    await addInsuranceCategory(clean);
+  } catch {
+    return { ok: false, error: "Kategorie konnte nicht angelegt werden." };
+  }
+  revalidatePath(PATH);
+  return { ok: true, categories: await getAllInsuranceCategories() };
+}
+
+/** Entfernt eine selbst angelegte Kategorie (Presets sind geschützt). */
+export async function removeInsuranceCategoryAction(name: string): Promise<CategoriesResult> {
+  if (!(await requireAccess())) return { ok: false, error: "Kein Zugriff." };
+  const clean = String(name ?? "").trim();
+  if (!clean) return { ok: false, error: "Ungültige Kategorie." };
+  if (INSURANCE_CATEGORY_PRESETS.some((c) => c.toLowerCase() === clean.toLowerCase())) {
+    return { ok: false, error: "Standard-Kategorien können nicht gelöscht werden." };
+  }
+  try {
+    await removeInsuranceCategory(clean);
+  } catch {
+    return { ok: false, error: "Kategorie konnte nicht entfernt werden." };
+  }
+  revalidatePath(PATH);
+  return { ok: true, categories: await getAllInsuranceCategories() };
 }
