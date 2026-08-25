@@ -26,6 +26,7 @@ const PERIOD_LABEL: Record<Period, string> = {
 export default function StockOutPanel({ report }: { report: StockOutReport }) {
   const [period, setPeriod] = useState<Period | null>(null);
   const [compare, setCompare] = useState<"week" | "month" | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
 
   const tiles: { key: Period; value: number }[] = [
     { key: "day", value: report.totals.daily },
@@ -46,7 +47,15 @@ export default function StockOutPanel({ report }: { report: StockOutReport }) {
   const close = () => {
     setPeriod(null);
     setCompare(null);
+    setExpanded(null);
   };
+
+  const projectLabel = (p: { projectName: string | null; projectRelativeId: number | null }): string =>
+    p.projectName
+      ? `${p.projectRelativeId ? `#${p.projectRelativeId} ` : ""}${p.projectName}`
+      : p.projectRelativeId
+        ? `#${p.projectRelativeId}`
+        : "Ohne Projekt";
 
   return (
     <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
@@ -187,7 +196,10 @@ export default function StockOutPanel({ report }: { report: StockOutReport }) {
                 <button
                   key={c}
                   type="button"
-                  onClick={() => setCompare(c)}
+                  onClick={() => {
+                    setCompare(c);
+                    setExpanded(null);
+                  }}
                   className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
                     compare === c
                       ? "bg-brand-red text-white"
@@ -199,21 +211,57 @@ export default function StockOutPanel({ report }: { report: StockOutReport }) {
               ))}
             </div>
 
-            <div className="space-y-2">
-              {compareData.map((d, i) => (
-                <div key={i} className="flex items-center gap-3">
-                  <span className="w-20 shrink-0 text-xs text-gray-600">{d.label}</span>
-                  <div className="h-4 flex-1 overflow-hidden rounded-full bg-gray-100">
-                    <div
-                      className="h-full rounded-full bg-emerald-500"
-                      style={{ width: `${(d.value / compareMax) * 100}%` }}
-                    />
+            <p className="mb-2 text-xs text-gray-400">Zeitraum anklicken für die Projekte darin.</p>
+
+            <div className="space-y-1.5">
+              {compareData.map((d, i) => {
+                const isOpen = expanded === d.label;
+                return (
+                  <div key={i} className="rounded-lg">
+                    <button
+                      type="button"
+                      onClick={() => setExpanded(isOpen ? null : d.label)}
+                      disabled={d.value === 0}
+                      className="flex w-full items-center gap-3 rounded-md px-1 py-1 text-left transition-colors hover:bg-gray-50 disabled:cursor-default disabled:hover:bg-transparent"
+                    >
+                      <span className="flex w-20 shrink-0 items-center gap-1 text-xs text-gray-600">
+                        {d.value > 0 && (
+                          <span className={`text-gray-400 transition-transform ${isOpen ? "rotate-90" : ""}`}>▸</span>
+                        )}
+                        {d.label}
+                      </span>
+                      <div className="h-4 flex-1 overflow-hidden rounded-full bg-gray-100">
+                        <div
+                          className="h-full rounded-full bg-emerald-500"
+                          style={{ width: `${(d.value / compareMax) * 100}%` }}
+                        />
+                      </div>
+                      <span className="w-24 shrink-0 text-right text-sm tabular-nums text-gray-900">
+                        {currencyFormatter.format(d.value)}
+                      </span>
+                    </button>
+
+                    {isOpen && (
+                      <div className="ml-20 mr-1 mb-1 mt-1 rounded-md border border-gray-200 bg-gray-50/70 px-3 py-2">
+                        {d.projects.length === 0 ? (
+                          <p className="py-1 text-xs text-gray-500">Keine Projektdaten.</p>
+                        ) : (
+                          <ul className="divide-y divide-gray-200">
+                            {d.projects.map((p, j) => (
+                              <li key={j} className="flex items-center justify-between gap-3 py-1.5 text-sm">
+                                <span className="min-w-0 truncate text-gray-700">{projectLabel(p)}</span>
+                                <span className="shrink-0 tabular-nums font-medium text-gray-900">
+                                  {currencyFormatter.format(p.value)}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    )}
                   </div>
-                  <span className="w-24 shrink-0 text-right text-sm tabular-nums text-gray-900">
-                    {currencyFormatter.format(d.value)}
-                  </span>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>

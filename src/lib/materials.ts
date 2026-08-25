@@ -300,9 +300,18 @@ export interface StockOutItem {
   isMonth: boolean;
 }
 
+/** Ein Projekt-Anteil innerhalb einer Vergleichs-Periode. */
+export interface PeriodProject {
+  projectName: string | null;
+  projectRelativeId: number | null;
+  value: number;
+}
+
 export interface PeriodTotal {
   label: string;
   value: number;
+  /** Aufschlüsselung nach Projekt (absteigend nach Wert). */
+  projects: PeriodProject[];
 }
 
 export interface StockOutReport {
@@ -393,6 +402,29 @@ export async function getStockOutboundReport(): Promise<StockOutReport> {
   const weekSum = new Map<string, number>(weekKeys.map((k) => [k, 0]));
   const monthSum = new Map<string, number>(monthKeys.map((k) => [k, 0]));
 
+  // Projekt-Aufschlüsselung je Periode: Periodenschlüssel → Projektschlüssel → Anteil.
+  const weekProjects = new Map<string, Map<string, PeriodProject>>();
+  const monthProjects = new Map<string, Map<string, PeriodProject>>();
+  const addProject = (
+    bucket: Map<string, Map<string, PeriodProject>>,
+    periodKey: string,
+    projectName: string | null,
+    projectRelativeId: number | null,
+    value: number
+  ) => {
+    let byProject = bucket.get(periodKey);
+    if (!byProject) {
+      byProject = new Map<string, PeriodProject>();
+      bucket.set(periodKey, byProject);
+    }
+    const pKey = projectRelativeId != null ? `#${projectRelativeId}` : projectName ?? "—";
+    const existing = byProject.get(pKey);
+    if (existing) existing.value = round2(existing.value + value);
+    else byProject.set(pKey, { projectName, projectRelativeId, value: round2(value) });
+  };
+  const projectsFor = (bucket: Map<string, Map<string, PeriodProject>>, periodKey: string): PeriodProject[] =>
+    Array.from(bucket.get(periodKey)?.values() ?? []).sort((a, b) => b.value - a.value);
+
   const items: StockOutItem[] = [];
   for (const r of rows) {
     if (!r.created_at) continue;
@@ -423,9 +455,15 @@ export async function getStockOutboundReport(): Promise<StockOutReport> {
     }
 
     const wk = `${w.year}-W${w.week}`;
-    if (weekSum.has(wk)) weekSum.set(wk, weekSum.get(wk)! + value);
+    if (weekSum.has(wk)) {
+      weekSum.set(wk, weekSum.get(wk)! + value);
+      addProject(weekProjects, wk, r.project_name, r.project_relative_id, value);
+    }
     const mk = `${dt.getFullYear()}-${dt.getMonth()}`;
-    if (monthSum.has(mk)) monthSum.set(mk, monthSum.get(mk)! + value);
+    if (monthSum.has(mk)) {
+      monthSum.set(mk, monthSum.get(mk)! + value);
+      addProject(monthProjects, mk, r.project_name, r.project_relative_id, value);
+    }
   }
 
   const totals = {
@@ -437,8 +475,16 @@ export async function getStockOutboundReport(): Promise<StockOutReport> {
   return {
     totals,
     items,
-    weekly: weekKeys.map((k) => ({ label: weekLabels.get(k)!, value: round2(weekSum.get(k) ?? 0) })),
-    monthly: monthKeys.map((k) => ({ label: monthLabels.get(k)!, value: round2(monthSum.get(k) ?? 0) })),
+    weekly: weekKeys.map((k) => ({
+      label: weekLabels.get(k)!,
+      value: round2(weekSum.get(k) ?? 0),
+      projects: projectsFor(weekProjects, k),
+    })),
+    monthly: monthKeys.map((k) => ({
+      label: monthLabels.get(k)!,
+      value: round2(monthSum.get(k) ?? 0),
+      projects: projectsFor(monthProjects, k),
+    })),
   };
 }
 
