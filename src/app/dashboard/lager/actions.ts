@@ -9,6 +9,7 @@ import {
   setMaterialEkByArticle,
   setMaterialMinMaxByArticle,
   deleteStockMovement,
+  updateStockMovement,
 } from "@/lib/materials";
 import { createEkPriceRequest, completeEkPriceRequests } from "@/lib/tasks";
 import { getProjectPipeline } from "@/lib/hero-api";
@@ -161,6 +162,26 @@ export async function submitBooking(input: BookingInput): Promise<BookingResult>
 
   revalidatePath(PATH);
   return { ok: true };
+}
+
+/** Admin: ändert eine Lagerbuchung (Richtung ein/aus + Projekt). Bestand wird korrigiert. */
+export async function updateMovementAction(input: {
+  id: number;
+  direction: "in" | "out";
+  projectRelativeId: number | null;
+  projectName: string | null;
+}): Promise<{ ok: boolean; error?: string }> {
+  const session = await getSession();
+  if (session?.role !== "administrator") return { ok: false, error: "Kein Zugriff." };
+  if (!Number.isFinite(input.id) || input.id <= 0) return { ok: false, error: "Ungültige ID." };
+  if (input.direction !== "in" && input.direction !== "out") return { ok: false, error: "Ungültige Richtung." };
+  const ok = await updateStockMovement(input.id, {
+    direction: input.direction,
+    projectRelativeId: input.projectRelativeId,
+    projectName: input.projectName,
+  }).catch(() => false);
+  if (ok) revalidatePath(PATH);
+  return ok ? { ok: true } : { ok: false, error: "Änderung fehlgeschlagen." };
 }
 
 /** Admin: löscht eine Lagerbuchung (Ein-/Ausbuchung) und rechnet den Bestand zurück. */

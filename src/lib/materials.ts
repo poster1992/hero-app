@@ -250,6 +250,38 @@ export async function deleteStockMovement(id: number): Promise<boolean> {
   return true;
 }
 
+/**
+ * Ändert eine Lagerbuchung (Admin): Richtung (ein/aus) und/oder Projekt.
+ * Beim Richtungswechsel wird das Vorzeichen des delta gedreht und der Bestand
+ * entsprechend korrigiert (Menge bleibt gleich, nur die Wirkung kehrt sich um).
+ */
+export async function updateStockMovement(
+  id: number,
+  input: { direction: "in" | "out"; projectRelativeId: number | null; projectName: string | null }
+): Promise<boolean> {
+  if (!Number.isFinite(id) || id <= 0) return false;
+  const pool = getPool();
+  const [rows] = await pool.query<RowDataPacket[]>(
+    "SELECT material_id, delta FROM stock_movements WHERE id = ? LIMIT 1",
+    [id]
+  );
+  const row = rows[0];
+  if (!row) return false;
+  const materialId = row.material_id as number;
+  const oldDelta = num(row.delta);
+  const mag = Math.abs(oldDelta);
+  const newDelta = input.direction === "in" ? mag : -mag;
+  if (newDelta !== oldDelta) {
+    // Bestand um die Differenz korrigieren (alte Wirkung raus, neue rein).
+    await pool.query("UPDATE materials SET quantity = quantity + ? WHERE id = ?", [newDelta - oldDelta, materialId]);
+  }
+  await pool.query(
+    "UPDATE stock_movements SET delta = ?, direction = ?, project_relative_id = ?, project_name = ? WHERE id = ?",
+    [newDelta, input.direction, input.projectRelativeId, input.projectName, id]
+  );
+  return true;
+}
+
 export interface StockOutItem {
   date: string | null;
   materialName: string;
