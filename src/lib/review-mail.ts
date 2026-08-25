@@ -66,7 +66,11 @@ export interface SendReviewMailResult {
  * Baut und versendet die Google-Bewertungs-Mail an eine Adresse.
  * Prüft NICHT auf Doppelversand – das übernimmt der Aufrufer.
  */
-export async function sendReviewMail(email: string, name: string | null): Promise<SendReviewMailResult> {
+export async function sendReviewMail(
+  email: string,
+  name: string | null,
+  sender?: { fromName?: string; replyTo?: string }
+): Promise<SendReviewMailResult> {
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
     return { ok: false, error: "Ungültige E-Mail-Adresse." };
   }
@@ -88,7 +92,7 @@ export async function sendReviewMail(email: string, name: string | null): Promis
   const html = buildReviewEmailHtml(anrede, url, `${base}/logo.png`);
 
   try {
-    const ok = await sendMail(email, subject, text, html);
+    const ok = await sendMail(email, subject, text, html, sender);
     if (!ok) return { ok: false, error: "E-Mail konnte nicht gesendet werden (SMTP prüfen)." };
     return { ok: true };
   } catch (e) {

@@ -22,12 +22,36 @@ export interface MailResult {
   error?: string;
 }
 
+/**
+ * Optionen für nutzerausgelöste Mails: Anzeigename des handelnden Benutzers (die
+ * Absender-ADRESSE bleibt immer das Versand-Konto – wichtig für Office 365) und
+ * Reply-To, damit Antworten beim Benutzer landen.
+ */
+export interface MailFromOptions {
+  fromName?: string;
+  replyTo?: string;
+}
+
 /** Sendet eine E-Mail und liefert eine Fehlermeldung zurück (für Setup/Tests). */
-export async function sendMailResult(to: string, subject: string, text: string, html?: string): Promise<MailResult> {
+export async function sendMailResult(
+  to: string,
+  subject: string,
+  text: string,
+  html?: string,
+  opts?: MailFromOptions
+): Promise<MailResult> {
   const b = await buildTransport();
   if (!b) return { ok: false, error: "SMTP ist nicht konfiguriert (Host, Benutzer oder Passwort fehlt)." };
   try {
-    await b.t.sendMail({ from: b.from, to, subject, text, html });
+    await b.t.sendMail({
+      // Adresse bleibt das Auth-Konto; nur der Anzeigename wird ggf. gesetzt.
+      from: opts?.fromName ? { name: opts.fromName, address: b.from } : b.from,
+      to,
+      subject,
+      text,
+      html,
+      ...(opts?.replyTo ? { replyTo: opts.replyTo } : {}),
+    });
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Sendefehler." };
@@ -38,8 +62,14 @@ export async function sendMailResult(to: string, subject: string, text: string, 
  * Sendet eine E-Mail. Returns true on success, false if SMTP is not configured or
  * sending failed (never throws – notifications must not break the main action).
  */
-export async function sendMail(to: string, subject: string, text: string, html?: string): Promise<boolean> {
-  const r = await sendMailResult(to, subject, text, html);
+export async function sendMail(
+  to: string,
+  subject: string,
+  text: string,
+  html?: string,
+  opts?: MailFromOptions
+): Promise<boolean> {
+  const r = await sendMailResult(to, subject, text, html, opts);
   if (!r.ok && r.error) console.error("[mail] Versand fehlgeschlagen:", r.error);
   return r.ok;
 }
@@ -62,7 +92,8 @@ export async function sendMailWithAttachments(
   subject: string,
   text: string,
   html: string,
-  attachments: MailAttachment[]
+  attachments: MailAttachment[],
+  opts?: MailFromOptions
 ): Promise<boolean> {
   const b = await buildTransport();
   if (!b) {
@@ -70,7 +101,15 @@ export async function sendMailWithAttachments(
     return false;
   }
   try {
-    await b.t.sendMail({ from: b.from, to, subject, text, html, attachments });
+    await b.t.sendMail({
+      from: opts?.fromName ? { name: opts.fromName, address: b.from } : b.from,
+      to,
+      subject,
+      text,
+      html,
+      attachments,
+      ...(opts?.replyTo ? { replyTo: opts.replyTo } : {}),
+    });
     return true;
   } catch (e) {
     console.error("[mail] Versand fehlgeschlagen:", e instanceof Error ? e.message : e);

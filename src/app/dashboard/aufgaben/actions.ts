@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getSession } from "@/lib/session";
-import { getUserByUsername, getUsersForNotification, listUsers, type AppUser } from "@/lib/users";
+import { getUserByUsername, getUsersForNotification, listUsers, userEmail, type AppUser } from "@/lib/users";
 import { sendMail } from "@/lib/mailer";
 import { sendPushToUsers } from "@/lib/push";
 import { getGoogleReviewUrl } from "@/lib/settings";
@@ -79,6 +79,8 @@ async function notifyAssignees(
     dueDate: string | null;
     projectLabel: string | null;
     fromName: string;
+    /** E-Mail des handelnden Benutzers → Absender-Anzeigename + Reply-To. */
+    fromEmail?: string | null;
   }
 ): Promise<void> {
   const recipients = await getUsersForNotification(userIds);
@@ -98,7 +100,10 @@ async function notifyAssignees(
           `Von: ${opts.fromName}\n` +
           link +
           `\n\n— FLOORTEC Dashboard`;
-        return sendMail(r.email as string, `${opts.subject}: ${opts.title}`, text);
+        return sendMail(r.email as string, `${opts.subject}: ${opts.title}`, text, undefined, {
+          fromName: opts.fromName,
+          replyTo: opts.fromEmail ?? undefined,
+        });
       })
   );
 }
@@ -110,7 +115,7 @@ async function notifyAssignees(
 async function notifyCreator(
   task: Task,
   actorId: number,
-  opts: { subject: string; eventLine: string; note?: string | null; fromName: string }
+  opts: { subject: string; eventLine: string; note?: string | null; fromName: string; fromEmail?: string | null }
 ): Promise<void> {
   if (task.createdById === actorId) return;
   const recipients = await getUsersForNotification([task.createdById]);
@@ -133,7 +138,10 @@ async function notifyCreator(
           `Fällig: ${formatDueDate(task.dueDate)}\n` +
           link +
           `\n\n— FLOORTEC Dashboard`;
-        return sendMail(r.email as string, `${opts.subject}: ${task.title}`, text);
+        return sendMail(r.email as string, `${opts.subject}: ${task.title}`, text, undefined, {
+          fromName: opts.fromName,
+          replyTo: opts.fromEmail ?? undefined,
+        });
       })
   );
 
@@ -220,6 +228,7 @@ export async function createTaskAction(
       ? `${projectRelativeId != null ? `#${projectRelativeId} ` : ""}${projectName}`
       : null,
     fromName: me.displayName || me.username,
+    fromEmail: userEmail(me),
   });
   // Push an die zugewiesenen Mitarbeiter.
   await sendPushToUsers(assignedTo, {
@@ -290,6 +299,7 @@ export async function setStatusAction(formData: FormData): Promise<{ error?: str
     eventLine: `Status geändert auf „${taskStatusLabel(status)}".`,
     note,
     fromName: me.displayName || me.username,
+    fromEmail: userEmail(me),
   });
 
   revalidatePath(PATH);
@@ -319,6 +329,7 @@ export async function addNoteAction(formData: FormData): Promise<void> {
     eventLine: "Es wurde eine Notiz hinzugefügt.",
     note,
     fromName: me.displayName || me.username,
+    fromEmail: userEmail(me),
   });
 
   revalidatePath(PATH);
@@ -355,6 +366,7 @@ export async function forwardAction(formData: FormData): Promise<void> {
       ? `${task.projectRelativeId != null ? `#${task.projectRelativeId} ` : ""}${task.projectName}`
       : null,
     fromName: me.displayName || me.username,
+    fromEmail: userEmail(me),
   });
   // Push an die Person, an die weitergeleitet wurde.
   await sendPushToUsers([toUserId], {
@@ -377,6 +389,7 @@ export async function forwardAction(formData: FormData): Promise<void> {
     subject: "Aufgabe weitergeleitet",
     eventLine: `Weitergeleitet an ${toName}.`,
     fromName: me.displayName || me.username,
+    fromEmail: userEmail(me),
   });
 
   revalidatePath(PATH);
@@ -436,6 +449,7 @@ export async function taskButtonAction(formData: FormData): Promise<{ error?: st
     eventLine: `Antwort: „${label}" – Aufgabe erledigt.`,
     note,
     fromName: me.displayName || me.username,
+    fromEmail: userEmail(me),
   });
   revalidatePath(PATH);
 }
@@ -533,7 +547,10 @@ export async function sendReviewEmailAction(formData: FormData): Promise<SendRev
   const html = buildReviewEmailHtml(anrede, url, `${base}/logo.png`);
 
   try {
-    const ok = await sendMail(email, subject, text, html);
+    const ok = await sendMail(email, subject, text, html, {
+      fromName: user.displayName || user.username,
+      replyTo: userEmail(user) ?? undefined,
+    });
     if (!ok) return { ok: false, error: "E-Mail konnte nicht gesendet werden (SMTP prüfen)." };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Sendefehler." };

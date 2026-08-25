@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getSession } from "@/lib/session";
-import { getUserByUsername } from "@/lib/users";
+import { getUserByUsername, userEmail } from "@/lib/users";
 import { getAllowedModules } from "@/lib/role-store";
 import { sendReviewMail } from "@/lib/review-mail";
 import { createTaskAction } from "@/app/dashboard/aufgaben/actions";
@@ -50,7 +50,10 @@ export async function sendReviewToCustomerAction(input: {
     return { ok: false, alreadySent: true, error: "Dieser Kunde hat bereits eine Bewertungsmail erhalten." };
   }
 
-  const res = await sendReviewMail(email, name || null);
+  const res = await sendReviewMail(email, name || null, {
+    fromName: user.displayName || user.username,
+    replyTo: userEmail(user) ?? undefined,
+  });
   if (!res.ok) return { ok: false, error: res.error };
 
   try {
@@ -160,7 +163,10 @@ export async function sendReviewBulkAction(
       skipped++;
       continue;
     }
-    const res = await sendReviewMail(email, name || null);
+    const res = await sendReviewMail(email, name || null, {
+    fromName: user.displayName || user.username,
+    replyTo: userEmail(user) ?? undefined,
+  });
     if (!res.ok) {
       failed++;
       failedNames.push(name || email);
