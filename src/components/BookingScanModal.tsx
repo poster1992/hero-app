@@ -19,6 +19,8 @@ interface ProjectOption {
   id: number;
   relativeId: number | null;
   name: string;
+  /** Projekt ist „In Umsetzung" – nur solche dürfen ausgebucht werden. */
+  inImplementation?: boolean;
 }
 
 interface CartRow {
@@ -101,14 +103,16 @@ export default function BookingScanModal({
   const projectMatches = useMemo(() => {
     const q = projectQuery.trim().toLowerCase();
     if (!q || project) return [];
-    return projects
+    // Beim Ausbuchen nur Projekte „In Umsetzung" zulassen.
+    const base = direction === "out" ? projects.filter((p) => p.inImplementation) : projects;
+    return base
       .filter(
         (p) =>
           p.name.toLowerCase().includes(q) ||
           (p.relativeId != null && String(p.relativeId).includes(q))
       )
       .slice(0, 8);
-  }, [projectQuery, project, projects]);
+  }, [projectQuery, project, projects, direction]);
 
   const ready = direction != null && project != null;
 
@@ -186,6 +190,10 @@ export default function BookingScanModal({
 
   async function handleSubmit() {
     if (!direction || !project) return;
+    if (direction === "out" && !project.inImplementation) {
+      setError("Ausbuchen ist nur auf Projekte „In Umsetzung“ möglich.");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     const res = await submitBooking({
@@ -289,7 +297,14 @@ export default function BookingScanModal({
               </button>
               <button
                 type="button"
-                onClick={() => setDirection("out")}
+                onClick={() => {
+                  setDirection("out");
+                  // Bereits gewähltes Projekt verwerfen, wenn es nicht „In Umsetzung" ist.
+                  if (project && !project.inImplementation) {
+                    setProject(null);
+                    setProjectQuery("");
+                  }
+                }}
                 className={`rounded-lg border py-3 text-sm font-semibold transition-colors ${
                   direction === "out"
                     ? "border-rose-500 bg-rose-50 text-rose-700 ring-2 ring-rose-500/30"
@@ -304,6 +319,11 @@ export default function BookingScanModal({
           {/* 2. Projekt */}
           <div className="mb-4">
             <p className="mb-1.5 text-sm font-medium text-gray-700">2. Projekt</p>
+            {direction === "out" && (
+              <p className="mb-1.5 text-xs text-amber-700">
+                Ausbuchen nur auf Projekte „In Umsetzung".
+              </p>
+            )}
             {project ? (
               <div className="flex items-center justify-between rounded-lg border border-gray-300 bg-gray-50 px-3 py-2.5 text-sm">
                 <span className="min-w-0 truncate font-medium text-gray-900">

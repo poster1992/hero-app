@@ -28,6 +28,8 @@ export interface LagerProjectOption {
   id: number;
   relativeId: number | null;
   name: string;
+  /** Projekt ist in der Pipeline-Phase „In Umsetzung" (Ausbuchen nur dann erlaubt). */
+  inImplementation?: boolean;
 }
 
 export interface StockMovement {

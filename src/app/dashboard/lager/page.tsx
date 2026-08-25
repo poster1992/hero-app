@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
-import { getProjects } from "@/lib/hero-api";
+import { getProjects, getProjectPipeline } from "@/lib/hero-api";
 import LagerHero from "@/components/LagerHero";
 import type { LagerItem, LagerProjectOption } from "@/lib/material-types";
 import { loadLagerItems } from "./shared";
@@ -13,9 +13,24 @@ export default async function LagerPage() {
   let projects: LagerProjectOption[] = [];
   let error: string | null = null;
   try {
-    const [loaded, projs] = await Promise.all([loadLagerItems(), getProjects()]);
+    const [loaded, projs, pipeline] = await Promise.all([
+      loadLagerItems(),
+      getProjects(),
+      getProjectPipeline().catch(() => null),
+    ]);
     items = loaded;
-    projects = projs.map((p) => ({ id: p.id, relativeId: p.relativeId, name: p.name }));
+    // Projekte in der Pipeline-Phase „In Umsetzung" (phaseCode 1111) markieren –
+    // Ausbuchen ist nur auf diese Projekte erlaubt.
+    const inUmsetzung = new Set<number>();
+    for (const st of pipeline?.stages ?? []) {
+      if (st.phaseCode === 1111) for (const pr of st.projects) inUmsetzung.add(pr.id);
+    }
+    projects = projs.map((p) => ({
+      id: p.id,
+      relativeId: p.relativeId,
+      name: p.name,
+      inImplementation: inUmsetzung.has(p.id),
+    }));
   } catch (e) {
     error = e instanceof Error ? e.message : "Lager konnte nicht geladen werden.";
   }
