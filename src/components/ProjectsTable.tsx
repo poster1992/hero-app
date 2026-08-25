@@ -21,6 +21,8 @@ export interface ProjectRow {
   calcHours: number;
   calcMaterial: number;
   sollLabor: number;
+  /** Datenbasis: Auftrag (AB vorhanden), nur Angebot (Fallback), oder keine. */
+  basis?: "auftrag" | "angebot" | "keine";
 }
 
 const hoursFormatter = new Intl.NumberFormat("de-DE", {

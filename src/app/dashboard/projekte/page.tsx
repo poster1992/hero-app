@@ -2,9 +2,11 @@ import ProjectsTable, { type ProjectRow } from "@/components/ProjectsTable";
 import {
   getProjects,
   getConfirmationNetByProject,
+  getOfferNetByProject,
   getInvoiceNetByProject,
   getHoursByProject,
   getCalculatedByProject,
+  getOfferCalculatedByProject,
 } from "@/lib/hero-api";
 import { getCostNetByProject } from "@/lib/invoices";
 import { getBookedStockTotalsByProject } from "@/lib/materials";
@@ -27,28 +29,49 @@ export default async function ProjektePage() {
   let rows: ProjectRow[] | null = null;
   let error: string | null = null;
   try {
-    const [projects, confirmationNet, invoiceNet, costNet, hours, calc, stockByProject] =
-      await Promise.all([
-        getProjects(),
-        getConfirmationNetByProject(),
-        getInvoiceNetByProject(),
-        getCostNetByProject(),
-        getHoursByProject(),
-        getCalculatedByProject(),
-        getBookedStockTotalsByProject().catch(() => new Map<number, number>()),
-      ]);
-    rows = projects.map((p) => ({
-      ...p,
-      confirmationNet: confirmationNet.get(p.id)?.net ?? 0,
-      confirmationDate: confirmationNet.get(p.id)?.date ?? null,
-      invoiceNet: invoiceNet.get(p.id) ?? 0,
-      costNet: costNet.get(p.id) ?? 0,
-      stockNet: p.relativeId != null ? stockByProject.get(p.relativeId) ?? 0 : 0,
-      hours: hours.get(p.id) ?? 0,
-      calcHours: calc.get(p.id)?.hours ?? 0,
-      calcMaterial: calc.get(p.id)?.material ?? 0,
-      sollLabor: calc.get(p.id)?.laborCost ?? 0,
-    }));
+    const [
+      projects,
+      confirmationNet,
+      offerNet,
+      invoiceNet,
+      costNet,
+      hours,
+      calc,
+      offerCalc,
+      stockByProject,
+    ] = await Promise.all([
+      getProjects(),
+      getConfirmationNetByProject(),
+      getOfferNetByProject(),
+      getInvoiceNetByProject(),
+      getCostNetByProject(),
+      getHoursByProject(),
+      getCalculatedByProject(),
+      getOfferCalculatedByProject(),
+      getBookedStockTotalsByProject().catch(() => new Map<number, number>()),
+    ]);
+    rows = projects.map((p) => {
+      // Gibt es eine Auftragsbestätigung? Dann Auftrag; sonst Fallback auf das Angebot.
+      const hasAB = confirmationNet.has(p.id);
+      const hasOffer = offerNet.has(p.id);
+      const basis: "auftrag" | "angebot" | "keine" = hasAB ? "auftrag" : hasOffer ? "angebot" : "keine";
+      // Netto/Datum und Kalkulation aus der passenden Quelle (AB oder Angebot).
+      const netInfo = hasAB ? confirmationNet.get(p.id) : offerNet.get(p.id);
+      const c = hasAB ? calc.get(p.id) : offerCalc.get(p.id);
+      return {
+        ...p,
+        basis,
+        confirmationNet: netInfo?.net ?? 0,
+        confirmationDate: netInfo?.date ?? null,
+        invoiceNet: invoiceNet.get(p.id) ?? 0,
+        costNet: costNet.get(p.id) ?? 0,
+        stockNet: p.relativeId != null ? stockByProject.get(p.relativeId) ?? 0 : 0,
+        hours: hours.get(p.id) ?? 0,
+        calcHours: c?.hours ?? 0,
+        calcMaterial: c?.material ?? 0,
+        sollLabor: c?.laborCost ?? 0,
+      };
+    });
     // Ohne Finanz-Recht: sensible Kostenwerte gar nicht erst zum Client senden.
     // (Auftrag/Rechnungen/Offen und Stunden bleiben; Material-Kosten, Lohn,
     // Lagerware und der daraus abgeleitete Ertrag entfallen.)

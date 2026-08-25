@@ -2413,7 +2413,9 @@ export interface ProjectCalculation {
 }
 
 /** Calculated (planned) hours and material cost per project, from the Auftragsbestätigung drafts. */
-export async function getCalculatedByProject(): Promise<Map<number, ProjectCalculation>> {
+export async function getCalculatedByProject(
+  docTypeId: number = CONFIRMATION_DOCUMENT_TYPE_ID
+): Promise<Map<number, ProjectCalculation>> {
   const pageSize = HERO_PAGE_SIZE;
   const maxPages = HERO_MAX_PAGES;
   const byProject = new Map<number, ProjectCalculation>();
@@ -2433,7 +2435,7 @@ export async function getCalculatedByProject(): Promise<Map<number, ProjectCalcu
           published_customer_document_draft { data }
         }
       }`,
-      { ids: [CONFIRMATION_DOCUMENT_TYPE_ID], first: pageSize, offset }
+      { ids: [docTypeId], first: pageSize, offset }
     );
     const docs = data.customer_documents ?? [];
     for (const d of docs) {
@@ -2631,7 +2633,9 @@ export interface ConfirmationInfo {
   date: string | null;
 }
 
-export async function getConfirmationNetByProject(): Promise<Map<number, ConfirmationInfo>> {
+export async function getConfirmationNetByProject(
+  docTypeId: number = CONFIRMATION_DOCUMENT_TYPE_ID
+): Promise<Map<number, ConfirmationInfo>> {
   const pageSize = HERO_PAGE_SIZE;
   const maxPages = HERO_MAX_PAGES;
   const byProject = new Map<number, ConfirmationInfo>();
@@ -2653,7 +2657,7 @@ export async function getConfirmationNetByProject(): Promise<Map<number, Confirm
           date
         }
       }`,
-      { ids: [CONFIRMATION_DOCUMENT_TYPE_ID], first: pageSize, offset }
+      { ids: [docTypeId], first: pageSize, offset }
     );
     const docs = data.customer_documents ?? [];
     for (const d of docs) {
@@ -2669,6 +2673,16 @@ export async function getConfirmationNetByProject(): Promise<Map<number, Confirm
 
   for (const [k, v] of byProject) byProject.set(k, { ...v, net: Math.round(v.net * 100) / 100 });
   return byProject;
+}
+
+/** Netto-Summe + Datum der ANGEBOTE je Projekt (Fallback, wenn keine Auftragsbestätigung existiert). */
+export function getOfferNetByProject(): Promise<Map<number, ConfirmationInfo>> {
+  return getConfirmationNetByProject(OFFER_DOCUMENT_TYPE_ID);
+}
+
+/** Kalkulation (Soll: Stunden/Material/Lohn) je Projekt aus den ANGEBOTS-Entwürfen. */
+export function getOfferCalculatedByProject(): Promise<Map<number, ProjectCalculation>> {
+  return getCalculatedByProject(OFFER_DOCUMENT_TYPE_ID);
 }
 
 /** Fetches all projects (project_matches of type "project"), paginated. */

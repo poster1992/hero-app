@@ -557,11 +557,33 @@ export default function ProjectDetailModal({
             <p className="text-xs uppercase tracking-wide text-gray-500">
               Projekt{p.relativeId != null ? ` · Nr. ${p.relativeId}` : ""}
             </p>
-            <h2 className="text-xl font-semibold text-gray-900">{p.name}</h2>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-xl font-semibold text-gray-900">{p.name}</h2>
+              {p.basis === "auftrag" && (
+                <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-500/30">
+                  ✅ Auftrag
+                </span>
+              )}
+              {p.basis === "angebot" && (
+                <span
+                  className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-800 ring-1 ring-amber-500/40"
+                  title="Noch keine Auftragsbestätigung – Kalkulationsdaten stammen aus dem Angebot."
+                >
+                  📄 Nur Angebot
+                </span>
+              )}
+              {p.basis === "keine" && (
+                <span className="rounded-full bg-gray-200 px-2.5 py-0.5 text-xs font-semibold text-gray-600">
+                  Kein Auftrag/Angebot
+                </span>
+              )}
+            </div>
             <p className="mt-0.5 text-sm text-gray-600">
               {p.customerName ?? "—"}
               {p.status ? ` · ${p.status}` : ""}
-              {p.confirmationDate ? ` · AB ${dateFmt.format(new Date(p.confirmationDate))}` : ""}
+              {p.confirmationDate
+                ? ` · ${p.basis === "angebot" ? "Angebot" : "Auftrag"} ${dateFmt.format(new Date(p.confirmationDate))}`
+                : ""}
             </p>
           </div>
           <div className="no-print flex shrink-0 flex-wrap items-center gap-2">
@@ -607,7 +629,7 @@ export default function ProjectDetailModal({
           {/* Kennzahlen */}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {([
-              ["Auftrag (netto)", euro.format(p.confirmationNet)],
+              [p.basis === "angebot" ? "Angebot (netto)" : "Auftrag (netto)", euro.format(p.confirmationNet)],
               ["Rechnungen (netto)", euro.format(p.invoiceNet)],
               ["Offen", euro.format(open)],
               ...(canFinance
