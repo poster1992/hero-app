@@ -6,9 +6,11 @@ services:
     environment:
       - BELEGE_DIR=/app/data/belege
       - FAHRZEUG_DIR=/app/data/fahrzeuge
+      - VERSICHERUNG_DIR=/app/data/versicherungen
     volumes:
       - belege:/app/data/belege
       - fahrzeuge:/app/data/fahrzeuge
+      - versicherungen:/app/data/versicherungen
     expose:
       - "3000"
 
@@ -31,5 +33,6 @@ services:
 volumes:
   belege:
   fahrzeuge:
+  versicherungen:
   caddy_data:
   caddy_config:
