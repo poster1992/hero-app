@@ -36,12 +36,12 @@ export default function OfferOrderPanel({
     <>
       <div
         onClick={() => hasMonthly && setOpen(true)}
-        className={`rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10 ${
+        className={`border border-line bg-white p-5 ${
           hasMonthly ? "cursor-pointer transition-colors hover:border-brand-red/50" : ""
         }`}
       >
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-medium text-gray-900">Angebote &amp; Aufträge {year}</h2>
+          <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">Angebote &amp; Aufträge {year}</h2>
           {hasMonthly && <span className="text-xs text-gray-400">Monatsdetails →</span>}
         </div>
 

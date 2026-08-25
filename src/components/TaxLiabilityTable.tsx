@@ -17,9 +17,9 @@ export default function TaxLiabilityTable({
   const liabilityTotal = incomeTaxTotal - outputTaxTotal;
 
   return (
-    <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
+    <div className="border border-line bg-white p-5">
       <div className="mb-4 flex items-baseline justify-between gap-2">
-        <h2 className="text-lg font-medium text-gray-900">Steuerlast {year}</h2>
+        <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">Steuerlast {year}</h2>
         <span className="text-xs text-gray-500">Beträge in € (USt / Vorsteuer)</span>
       </div>
       <div className="overflow-x-auto">

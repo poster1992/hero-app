@@ -105,7 +105,7 @@ export default function OpenItemsPanel({
           onClick={close}
         >
           <div
-            className="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-gray-300 bg-white p-6 shadow-2xl"
+            className="max-h-[85vh] w-full max-w-2xl overflow-y-auto border border-line bg-white p-6 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-4 flex items-center justify-between gap-2">

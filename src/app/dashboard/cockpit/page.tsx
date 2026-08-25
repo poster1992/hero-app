@@ -14,7 +14,6 @@ import { getStockOutboundReport } from "@/lib/materials";
 import { listOpenChecklistByMonth } from "@/lib/belege-checklist";
 import CustomerMapPanel from "@/components/CustomerMapPanel";
 import MonthlyChart from "@/components/MonthlyChart";
-import DashboardTitle from "@/components/DashboardTitle";
 import YearSelector from "@/components/YearSelector";
 import ConfirmationEvalButton from "@/components/ConfirmationEvalButton";
 import TaxLiabilityTable from "@/components/TaxLiabilityTable";
@@ -142,60 +141,62 @@ export default async function DashboardPage({
 
   return (
     <div className="mx-auto flex w-full max-w-[1600px] flex-1 flex-col gap-6 px-4 py-8">
-      <header className="flex flex-col items-center gap-3 sm:relative sm:flex-row sm:justify-center sm:gap-4">
-        <DashboardTitle text="Unternehmensübersicht" />
-        <div className="flex flex-col items-center gap-2 sm:absolute sm:right-0 sm:items-end">
-          <YearSelector year={year} basePath="/dashboard/cockpit" />
-          <ConfirmationEvalButton defaultYear={year} />
+      <header className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <div className="font-mono text-[11px] uppercase tracking-[0.08em] text-faint">
+              Cockpit / Unternehmensübersicht
+            </div>
+            <h1 className="mt-1 text-3xl font-extrabold tracking-tight text-ink">Unternehmensübersicht</h1>
+          </div>
+          <div className="flex flex-col items-end gap-2">
+            <YearSelector year={year} basePath="/dashboard/cockpit" />
+            <ConfirmationEvalButton defaultYear={year} />
+          </div>
         </div>
+        <div className="h-[3px] bg-brand-red" />
       </header>
 
       {error && (
-        <div className="rounded-md border border-brand-red/30 bg-brand-red/10 p-4 text-sm text-red-300">
+        <div className="border border-brand-red/40 bg-brand-red/10 p-4 text-sm text-brand-red-dark">
           Fehler beim Laden der Daten von HERO: {error}
         </div>
       )}
 
       {/* Kennzahlen: versendete Umfragen + erhaltene Google-Rezensionen */}
-      <div className="flex flex-wrap gap-4">
-        <div className="flex min-w-[220px] items-center gap-4 rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
-          <span className="text-3xl" aria-hidden>✉️</span>
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Zufriedenheitsumfragen versendet</p>
-            <p className="text-2xl font-semibold text-gray-900">
-              {reviewsSentTotal}
-              <span className="ml-2 text-sm font-normal text-gray-500">gesamt</span>
-            </p>
-            <p className="text-xs text-gray-500">davon {reviewsSentYear} in {year}</p>
-          </div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:max-w-3xl">
+        <div className="border border-line bg-white p-5">
+          <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-faint">Zufriedenheitsumfragen versendet</p>
+          <p className="mt-2 text-3xl font-extrabold tracking-tight tabular-nums text-ink">
+            {reviewsSentTotal}
+            <span className="ml-2 font-mono text-sm font-normal text-muted">gesamt</span>
+          </p>
+          <p className="mt-1 font-mono text-[11px] text-muted">davon {reviewsSentYear} in {year}</p>
         </div>
-        <div className="flex min-w-[220px] items-center gap-4 rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
-          <span className="text-3xl" aria-hidden>⭐</span>
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Google-Rezensionen</p>
-            {googleStats.configured && googleStats.count != null ? (
-              <>
-                <p className="text-2xl font-semibold text-gray-900">
-                  {googleStats.count}
-                  <span className="ml-2 text-sm font-normal text-gray-500">Rezensionen</span>
+        <div className="border border-line bg-white p-5">
+          <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-faint">Google-Rezensionen</p>
+          {googleStats.configured && googleStats.count != null ? (
+            <>
+              <p className="mt-2 text-3xl font-extrabold tracking-tight tabular-nums text-ink">
+                {googleStats.count}
+                <span className="ml-2 font-mono text-sm font-normal text-muted">Rezensionen</span>
+              </p>
+              <p className="mt-1 font-mono text-[11px] text-muted">
+                {googleStats.rating != null ? `Ø ${googleStats.rating.toLocaleString("de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} ★` : "—"}
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="mt-2 text-3xl font-extrabold tracking-tight text-faint">—</p>
+              {googleStats.configured && googleStats.error ? (
+                <p className="mt-1 max-w-[220px] font-mono text-[11px] text-brand-red" title={googleStats.error}>
+                  {googleStats.error}
                 </p>
-                <p className="text-xs text-gray-500">
-                  {googleStats.rating != null ? `Ø ${googleStats.rating.toLocaleString("de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} ★` : "—"}
-                </p>
-              </>
-            ) : (
-              <>
-                <p className="text-2xl font-semibold text-gray-400">—</p>
-                {googleStats.configured && googleStats.error ? (
-                  <p className="max-w-[220px] text-xs text-red-500" title={googleStats.error}>
-                    {googleStats.error}
-                  </p>
-                ) : (
-                  <p className="text-xs text-gray-400">unter Einstellungen konfigurieren</p>
-                )}
-              </>
-            )}
-          </div>
+              ) : (
+                <p className="mt-1 font-mono text-[11px] text-faint">unter Einstellungen konfigurieren</p>
+              )}
+            </>
+          )}
         </div>
       </div>
 
@@ -211,8 +212,8 @@ export default async function DashboardPage({
             return (
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                 {/* Diagramm: Umsatz / Belege / Saldo */}
-                <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
-                  <h2 className="mb-4 text-lg font-medium text-gray-900">
+                <div className="border border-line bg-white p-5">
+                  <h2 className="mb-4 font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
                     Unternehmensübersicht {data.year}
                   </h2>
                   <div className="flex flex-col gap-4">
@@ -289,8 +290,8 @@ export default async function DashboardPage({
             />
           )}
 
-          <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
-            <h2 className="mb-4 text-lg font-medium text-gray-900">
+          <div className="border border-line bg-white p-5">
+            <h2 className="mb-4 font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
               Einnahmen / Ausgaben {data.year}
             </h2>
             <MonthlyChart
@@ -314,7 +315,7 @@ export default async function DashboardPage({
           <ChecklistOverview year={data.year} months={checklistMonths} />
 
           {locations.length > 0 && (
-            <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
+            <div className="border border-line bg-white p-5">
               <h2 className="mb-1 text-lg font-medium text-gray-900">Einsatzorte in Luxemburg</h2>
               <p className="mb-4 text-sm text-gray-600">
                 {locations.length} Projektadressen · wo wir überall arbeiten
@@ -324,8 +325,8 @@ export default async function DashboardPage({
           )}
 
           {projectPipeline && (
-            <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
-              <h2 className="mb-4 text-lg font-medium text-gray-900">Projekt-Pipeline</h2>
+            <div className="border border-line bg-white p-5">
+              <h2 className="mb-4 font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">Projekt-Pipeline</h2>
               <ProjectPipelines pipeline={projectPipeline} />
             </div>
           )}

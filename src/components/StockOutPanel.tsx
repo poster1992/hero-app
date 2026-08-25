@@ -58,9 +58,9 @@ export default function StockOutPanel({ report }: { report: StockOutReport }) {
         : "Ohne Projekt";
 
   return (
-    <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
+    <div className="border border-line bg-white p-5">
       <div className="mb-4 flex items-baseline justify-between gap-2">
-        <h2 className="text-lg font-medium text-gray-900">Lagerausgang (Warenwert EK)</h2>
+        <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">Lagerausgang (Warenwert EK)</h2>
         <button
           type="button"
           onClick={() => setCompare("week")}
@@ -94,7 +94,7 @@ export default function StockOutPanel({ report }: { report: StockOutReport }) {
           onClick={close}
         >
           <div
-            className="max-h-[85vh] w-full max-w-3xl overflow-y-auto rounded-xl border border-gray-300 bg-white p-6 shadow-2xl"
+            className="max-h-[85vh] w-full max-w-3xl overflow-y-auto border border-line bg-white p-6 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-4 flex items-center justify-between gap-2">
@@ -176,7 +176,7 @@ export default function StockOutPanel({ report }: { report: StockOutReport }) {
           onClick={close}
         >
           <div
-            className="max-h-[85vh] w-full max-w-xl overflow-y-auto rounded-xl border border-gray-300 bg-white p-6 shadow-2xl"
+            className="max-h-[85vh] w-full max-w-xl overflow-y-auto border border-line bg-white p-6 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-4 flex items-center justify-between gap-2">

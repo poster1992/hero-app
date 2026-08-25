@@ -41,9 +41,9 @@ export default function GuvTable({ guv, year }: { guv: GuvData; year: number }) 
     "w-full rounded px-1 text-right tabular-nums transition-colors hover:bg-brand-red/10 hover:text-gray-900";
 
   return (
-    <div className="rounded-xl border border-gray-300 bg-white p-5 shadow-lg shadow-black/10">
+    <div className="border border-line bg-white p-5">
       <div className="mb-4 flex items-baseline justify-between gap-2">
-        <h2 className="text-lg font-medium text-gray-900">Gewinn- und Verlustrechnung {year}</h2>
+        <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">Gewinn- und Verlustrechnung {year}</h2>
         <span className="text-xs text-gray-500">
           Beträge netto in €, nach Buchungskonto · Wert anklicken für Belege
         </span>
@@ -256,7 +256,7 @@ function GuvDetailModal({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-3xl rounded-xl border border-gray-300 bg-white shadow-2xl"
+        className="w-full max-w-3xl border border-line bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-2 border-b border-gray-200 px-5 py-4">
