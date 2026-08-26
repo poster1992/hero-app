@@ -13,6 +13,40 @@ services:
       - versicherungen:/app/data/versicherungen
     expose:
       - "3000"
+    # Am Proxy-Netz (default, für caddy/finanz-hub/hyrox) UND am internen DB-Netz.
+    networks:
+      - default
+      - internal
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # Lokale Datenbank auf dem Hetzner-Server (löst die externe All-Inkl-DB ab).
+  # Nur im internen Netz – für andere Projekte am Proxy-Netz nicht erreichbar.
+  db:
+    image: mariadb:11.4
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --innodb-buffer-pool-size=192M
+      - --performance-schema=0
+    environment:
+      MARIADB_DATABASE: ${MARIADB_DATABASE:-heroapp}
+      MARIADB_USER: ${MARIADB_USER:-heroapp}
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD:?MARIADB_PASSWORD fehlt in .env}
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:?MARIADB_ROOT_PASSWORD fehlt in .env}
+      TZ: ${TZ:-Europe/Luxembourg}
+    volumes:
+      - hero-dbdata:/var/lib/mysql
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 20s
 
   caddy:
     image: caddy:2
@@ -30,9 +64,13 @@ services:
     depends_on:
       - app
 
+networks:
+  internal:
+
 volumes:
   belege:
   fahrzeuge:
   versicherungen:
+  hero-dbdata:
   caddy_data:
   caddy_config:
