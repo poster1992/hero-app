@@ -63,6 +63,14 @@ export default function BookingScanModal({
     if (toastTimer.current) clearTimeout(toastTimer.current);
   }, []);
 
+  // Barcode-Bibliothek (@zxing) schon beim Öffnen des Dialogs im Hintergrund laden,
+  // damit „Artikel scannen" auf Mobilgeräten ohne Download-Verzögerung startet.
+  useEffect(() => {
+    if (!open) return;
+    import("@zxing/browser").catch(() => {});
+    import("@zxing/library").catch(() => {});
+  }, [open]);
+
   // Zuletzt genutzten Mitarbeiternamen vorbelegen (spart Tippen bei jeder Buchung).
   useEffect(() => {
     if (!open) return;
