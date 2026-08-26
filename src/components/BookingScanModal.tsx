@@ -198,10 +198,6 @@ export default function BookingScanModal({
 
   async function handleSubmit() {
     if (!direction || !project) return;
-    if (direction === "out" && !project.inImplementation) {
-      setError("Ausbuchen ist nur auf Projekte „In Umsetzung“ möglich.");
-      return;
-    }
     setSubmitting(true);
     setError(null);
     const res = await submitBooking({
@@ -327,11 +323,6 @@ export default function BookingScanModal({
           {/* 2. Projekt */}
           <div className="mb-4">
             <p className="mb-1.5 text-sm font-medium text-gray-700">2. Projekt</p>
-            {direction === "out" && (
-              <p className="mb-1.5 text-xs text-amber-700">
-                Ausbuchen nur auf Projekte „In Umsetzung".
-              </p>
-            )}
             {project ? (
               <div className="flex items-center justify-between rounded-lg border border-gray-300 bg-gray-50 px-3 py-2.5 text-sm">
                 <span className="min-w-0 truncate font-medium text-gray-900">

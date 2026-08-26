@@ -101,27 +101,22 @@ export async function submitBooking(input: BookingInput): Promise<BookingResult>
   );
   if (items.length === 0) return { ok: false, error: "Keine Artikel erfasst." };
 
-  // Projekt-Regeln serverseitig erzwingen:
-  //  - abgeschlossene Projekte (phaseCode 2000) sind gar nicht buchbar
-  //  - Ausbuchen nur auf Projekte „In Umsetzung" (phaseCode 1111)
+  // Projekt-Regel serverseitig erzwingen: alle Pipeline-Projekte sind buchbar,
+  // NUR abgeschlossene Projekte (phaseCode 2000) sind gesperrt. Ausbuchen braucht
+  // ein Projekt.
   const rel = input.project?.relativeId ?? null;
   if (input.direction === "out" && rel == null) {
-    return { ok: false, error: "Ausbuchen nur auf ein Projekt in Umsetzung möglich." };
+    return { ok: false, error: "Ausbuchen nur auf ein Projekt möglich." };
   }
-  if (rel != null || input.direction === "out") {
+  if (rel != null) {
     try {
       const pipeline = await getProjectPipeline();
-      const inUmsetzung = new Set<number>();
       const closed = new Set<number>();
       for (const st of pipeline.stages) {
-        if (st.phaseCode === 1111) for (const pr of st.projects) if (pr.relativeId != null) inUmsetzung.add(pr.relativeId);
         if (st.phaseCode === 2000) for (const pr of st.projects) if (pr.relativeId != null) closed.add(pr.relativeId);
       }
-      if (rel != null && closed.has(rel)) {
+      if (closed.has(rel)) {
         return { ok: false, error: "Auf abgeschlossene Projekte kann nicht mehr gebucht werden." };
-      }
-      if (input.direction === "out" && (rel == null || !inUmsetzung.has(rel))) {
-        return { ok: false, error: "Ausbuchen ist nur auf Projekte „In Umsetzung“ möglich." };
       }
     } catch {
       // Pipeline nicht abrufbar → aus Sicherheitsgründen blockieren.

@@ -19,12 +19,10 @@ export default async function LagerPage() {
       getProjectPipeline().catch(() => null),
     ]);
     items = loaded;
-    // Pipeline-Phasen: 1111 = „In Umsetzung" (Ausbuchen nur hier), 2000 = „Abgeschlossen"
-    // (gar nicht buchbar → aus der Auswahl entfernen).
-    const inUmsetzung = new Set<number>();
+    // Alle Pipeline-Projekte sind buchbar – NUR „Abgeschlossen" (phaseCode 2000)
+    // wird ausgeschlossen (unabhängig von der konkreten Phase).
     const closed = new Set<number>();
     for (const st of pipeline?.stages ?? []) {
-      if (st.phaseCode === 1111) for (const pr of st.projects) inUmsetzung.add(pr.id);
       if (st.phaseCode === 2000) for (const pr of st.projects) closed.add(pr.id);
     }
     projects = projs
@@ -33,7 +31,7 @@ export default async function LagerPage() {
         id: p.id,
         relativeId: p.relativeId,
         name: p.name,
-        inImplementation: inUmsetzung.has(p.id),
+        inImplementation: true, // jedes nicht-abgeschlossene Pipeline-Projekt ist buchbar
       }));
   } catch (e) {
     error = e instanceof Error ? e.message : "Lager konnte nicht geladen werden.";
