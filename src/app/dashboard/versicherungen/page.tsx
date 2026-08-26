@@ -29,8 +29,8 @@ export default async function VersicherungenPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-[1400px] flex-1 flex-col gap-6 px-4 py-8">
-      <header>
-        <h1 className="text-2xl font-semibold text-gray-900">Versicherungen</h1>
+      <header className="border-b-2 border-brand-red pb-2.5">
+        <h1 className="text-2xl font-extrabold tracking-tight text-ink">Versicherungen</h1>
         <p className="mt-1 text-sm text-gray-600">
           Versicherungsunterlagen ablegen und verwalten – Flottenverträge, Haftpflicht-, Gebäude- und weitere
           Policen. Dokumente werden nach Kategorie gruppiert.

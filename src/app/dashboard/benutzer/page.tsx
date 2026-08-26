@@ -12,8 +12,8 @@ export default async function BenutzerPage() {
   if (session.role !== "administrator") {
     return (
       <div className="flex w-full max-w-full flex-1 flex-col gap-6 px-6 py-8">
-        <header>
-          <h1 className="text-2xl font-semibold text-gray-900">Benutzer</h1>
+        <header className="border-b-2 border-brand-red pb-2.5">
+          <h1 className="text-2xl font-extrabold tracking-tight text-ink">Benutzer</h1>
         </header>
         <div className="rounded-md border border-brand-red/30 bg-brand-red/10 p-4 text-sm text-brand-red-dark">
           Kein Zugriff – diese Seite ist nur für Administratoren.
@@ -35,8 +35,8 @@ export default async function BenutzerPage() {
 
   return (
     <div className="flex w-full max-w-full flex-1 flex-col gap-6 px-6 py-8">
-      <header>
-        <h1 className="text-2xl font-semibold text-gray-900">Konfiguration</h1>
+      <header className="border-b-2 border-brand-red pb-2.5">
+        <h1 className="text-2xl font-extrabold tracking-tight text-ink">Konfiguration</h1>
         <p className="mt-1 text-sm text-gray-600">Mitarbeiter-Zugänge anlegen und verwalten.</p>
       </header>
 

@@ -37,8 +37,8 @@ export default async function BaustelleBelegePage({
 
   return (
     <div className="flex w-full max-w-none flex-1 flex-col gap-6 px-6 py-8">
-      <header>
-        <h1 className="text-2xl font-semibold text-gray-900">{baustelle.label} · Belege</h1>
+      <header className="border-b-2 border-brand-red pb-2.5">
+        <h1 className="text-2xl font-extrabold tracking-tight text-ink">{baustelle.label} · Belege</h1>
         <p className="mt-1 text-sm text-gray-600">
           Eigene Belege dieser Baustelle mit Volltext-OCR – getrennt von HERO und den normalen Belegen.
         </p>

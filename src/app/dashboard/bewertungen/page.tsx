@@ -79,8 +79,8 @@ export default async function BewertungenPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-[1600px] flex-1 flex-col gap-6 px-4 py-8">
-      <header>
-        <h1 className="text-2xl font-semibold text-gray-900">Kundenbewertungen</h1>
+      <header className="border-b-2 border-brand-red pb-2.5">
+        <h1 className="text-2xl font-extrabold tracking-tight text-ink">Kundenbewertungen</h1>
         <p className="mt-1 text-sm text-gray-600">
           Google-Bewertungs-Anfragen an Kunden versenden. Jeder Kunde erhält nur einmal eine
           Anfrage – bereits kontaktierte Kunden sind markiert und werden beim Sammelversand
@@ -98,7 +98,7 @@ export default async function BewertungenPage() {
             <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
               Zufriedenheitsumfragen versendet
             </p>
-            <p className="text-2xl font-semibold text-gray-900">
+            <p className="text-2xl font-extrabold tracking-tight text-ink">
               {sentTotal}
               <span className="ml-2 text-sm font-normal text-gray-500">gesamt</span>
             </p>

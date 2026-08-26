@@ -21,7 +21,7 @@ export default async function EinstellungenPage() {
   if (session.role !== "administrator") {
     return (
       <div className="flex w-full max-w-full flex-1 flex-col gap-6 px-6 py-8">
-        <h1 className="text-2xl font-semibold text-gray-900">Einstellungen</h1>
+        <h1 className="text-2xl font-extrabold tracking-tight text-ink">Einstellungen</h1>
         <p className="text-sm text-gray-500">Nur für Administratoren.</p>
       </div>
     );
@@ -62,8 +62,8 @@ export default async function EinstellungenPage() {
 
   return (
     <div className="flex w-full max-w-full flex-1 flex-col gap-6 px-6 py-8">
-      <header>
-        <h1 className="text-2xl font-semibold text-gray-900">Einstellungen</h1>
+      <header className="border-b-2 border-brand-red pb-2.5">
+        <h1 className="text-2xl font-extrabold tracking-tight text-ink">Einstellungen</h1>
         <p className="mt-1 text-sm text-gray-600">Allgemeine Konfiguration des Dashboards.</p>
       </header>
       <SettingsForm googleReviewUrl={googleReviewUrl} smtp={smtp} places={places} />

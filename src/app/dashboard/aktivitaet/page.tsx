@@ -17,8 +17,8 @@ export default async function AktivitaetPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-[1200px] flex-1 flex-col gap-6 px-4 py-8">
-      <header>
-        <h1 className="text-2xl font-semibold text-gray-900">Aktivitäts-Logbuch</h1>
+      <header className="border-b-2 border-brand-red pb-2.5">
+        <h1 className="text-2xl font-extrabold tracking-tight text-ink">Aktivitäts-Logbuch</h1>
         <p className="mt-1 text-sm text-gray-600">
           Alles, was projekt- und dokumentübergreifend passiert – Termine, Zuweisungen, Dokumente,
           Kommentare, Zeiten … (neueste zuerst).

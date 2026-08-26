@@ -41,8 +41,8 @@ export default async function LagerPage() {
 
   return (
     <div className="flex w-full max-w-full flex-1 flex-col gap-6 px-6 py-8">
-      <header>
-        <h1 className="text-2xl font-semibold text-gray-900">Lager · Ein-/Ausbuchen</h1>
+      <header className="border-b-2 border-brand-red pb-2.5">
+        <h1 className="text-2xl font-extrabold tracking-tight text-ink">Lager · Ein-/Ausbuchen</h1>
         <p className="mt-1 text-sm text-gray-600">
           Artikel aus HERO · Bestände werden lokal geführt (ein- und abbuchen).
         </p>

@@ -19,7 +19,7 @@ export default async function AgentenPage() {
   if (session.role !== "administrator") {
     return (
       <div className="flex w-full max-w-full flex-1 flex-col gap-6 px-6 py-8">
-        <h1 className="text-2xl font-semibold text-gray-900">Agenten</h1>
+        <h1 className="text-2xl font-extrabold tracking-tight text-ink">Agenten</h1>
         <p className="text-sm text-gray-500">Nur für Administratoren.</p>
       </div>
     );
@@ -73,7 +73,7 @@ export default async function AgentenPage() {
         />
       ) : (
         <>
-          <h1 className="text-2xl font-semibold text-gray-900">Agenten</h1>
+          <h1 className="text-2xl font-extrabold tracking-tight text-ink">Agenten</h1>
           <p className="text-sm text-gray-500">Konfiguration konnte nicht geladen werden.</p>
         </>
       )}

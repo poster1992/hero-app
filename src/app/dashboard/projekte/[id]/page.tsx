@@ -59,12 +59,12 @@ export default async function ProjektPage({
         >
           ← Zurück zur Projektübersicht
         </Link>
-        <header className="mt-2 flex flex-wrap items-center justify-between gap-4">
+        <header className="border-b-2 border-brand-red pb-2.5 mt-2 flex flex-wrap items-center justify-between gap-4">
           <div>
             <p className="text-xs uppercase tracking-wide text-gray-500">
               Projekt{projectNr ? ` · Nr. ${projectNr}` : ""}
             </p>
-            <h1 className="text-2xl font-semibold text-gray-900">{projectName}</h1>
+            <h1 className="text-2xl font-extrabold tracking-tight text-ink">{projectName}</h1>
           </div>
           <YearSelector
             year={year}

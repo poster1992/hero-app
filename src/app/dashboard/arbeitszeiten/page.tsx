@@ -79,8 +79,8 @@ export default async function ArbeitszeitenPage({
 
   return (
     <div className="flex w-full max-w-none flex-1 flex-col gap-6 px-6 py-8">
-      <header className="flex flex-wrap items-center justify-between gap-4">
-        <h1 className="text-2xl font-semibold text-gray-900">Arbeitszeiten</h1>
+      <header className="border-b-2 border-brand-red pb-2.5 flex flex-wrap items-center justify-between gap-4">
+        <h1 className="text-2xl font-extrabold tracking-tight text-ink">Arbeitszeiten</h1>
         <YearSelector year={year} basePath={BASE_PATH} extraParams={{ month: String(month) }} />
       </header>
 
@@ -97,17 +97,17 @@ export default async function ArbeitszeitenPage({
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div className="border border-line bg-white p-5">
               <p className="text-sm text-gray-600">Gesamtstunden</p>
-              <p className="mt-2 text-2xl font-semibold text-gray-900">
+              <p className="mt-2 text-2xl font-extrabold tracking-tight text-ink">
                 {hoursFormatter.format(totalHours)} h
               </p>
             </div>
             <div className="border border-line bg-white p-5">
               <p className="text-sm text-gray-600">Mitarbeiter</p>
-              <p className="mt-2 text-2xl font-semibold text-gray-900">{rows.length}</p>
+              <p className="mt-2 text-2xl font-extrabold tracking-tight text-ink">{rows.length}</p>
             </div>
             <div className="border border-line bg-white p-5">
               <p className="text-sm text-gray-600">Einträge</p>
-              <p className="mt-2 text-2xl font-semibold text-gray-900">{entries.length}</p>
+              <p className="mt-2 text-2xl font-extrabold tracking-tight text-ink">{entries.length}</p>
             </div>
           </div>
 

@@ -15,9 +15,9 @@ export default async function BelegPosteingangPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-[1100px] flex-1 flex-col gap-6 px-6 py-8">
-      <header className="flex flex-wrap items-start justify-between gap-3">
+      <header className="border-b-2 border-brand-red pb-2.5 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Beleg-Posteingang</h1>
+          <h1 className="text-2xl font-extrabold tracking-tight text-ink">Beleg-Posteingang</h1>
           <p className="mt-1 text-sm text-gray-600">
             Mehrere Belege auf einmal ablegen – sie werden automatisch erkannt und als manuelle Belege erfasst.
           </p>

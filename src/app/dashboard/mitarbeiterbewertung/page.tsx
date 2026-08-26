@@ -34,9 +34,9 @@ export default async function MitarbeiterbewertungPage({
 
   return (
     <div className="mx-auto flex w-full max-w-[1600px] flex-1 flex-col gap-6 px-4 py-8">
-      <header className="relative flex items-center justify-between gap-4">
+      <header className="border-b-2 border-brand-red pb-2.5 relative flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Mitarbeiterbewertung</h1>
+          <h1 className="text-2xl font-extrabold tracking-tight text-ink">Mitarbeiterbewertung</h1>
           <p className="mt-1 text-sm text-gray-600">
             Bewertung am Gewinn der {year} abgeschlossenen Projekte (inkl. Projekte in
             Nachkalkulation): Projektgewinn (Ist-Ertrag aus der Projektliste) anteilig nach
