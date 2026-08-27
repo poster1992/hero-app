@@ -30,6 +30,72 @@ export default function PipelineNode({
   const offerTotal = projects.reduce((s, p) => s + p.offerSum, 0);
   const pathname = usePathname();
 
+  // Auswahl für den E-Mail-Export der offenen Angebote (nur in Angebots-Stufen).
+  const [sel, setSel] = useState<Set<number>>(new Set());
+  const [copied, setCopied] = useState(false);
+  const selectedProjects = projects.filter((p) => sel.has(p.id));
+  const allSelected = projects.length > 0 && selectedProjects.length === projects.length;
+  const toggle = (id: number) =>
+    setSel((prev) => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  const toggleAll = () =>
+    setSel((prev) => (prev.size === projects.length ? new Set() : new Set(projects.map((p) => p.id))));
+
+  // Auswahl beim Schließen zurücksetzen.
+  useEffect(() => {
+    if (!open) {
+      setSel(new Set());
+      setCopied(false);
+    }
+  }, [open]);
+
+  /** Gruppiert die ausgewählten Angebote nach Kunde und baut den E-Mail-Text. */
+  const buildList = (): string => {
+    const byCust = new Map<string, PipelineProjectRef[]>();
+    for (const p of selectedProjects) {
+      const c = p.customerName || "Ohne Kunde";
+      const arr = byCust.get(c) ?? [];
+      arr.push(p);
+      byCust.set(c, arr);
+    }
+    const custs = [...byCust.keys()].sort((a, b) => a.localeCompare(b, "de"));
+    const lines: string[] = ["Offene Angebote – nachfassen", ""];
+    let total = 0;
+    for (const c of custs) {
+      lines.push(`${c}:`);
+      for (const p of byCust.get(c)!) {
+        total += p.offerSum;
+        const nr = p.relativeId != null ? `#${p.relativeId} ` : "";
+        const sum = p.offerSum ? currencyFormatter.format(p.offerSum) : "—";
+        const dat = p.offerDate ? `versendet ${dateFormatter.format(new Date(p.offerDate))}` : "nicht versendet";
+        lines.push(`  - ${nr}${p.name} · ${sum} · ${dat}`);
+      }
+      lines.push("");
+    }
+    lines.push(`Summe (${selectedProjects.length} Angebote): ${currencyFormatter.format(total)}`);
+    return lines.join("\n");
+  };
+
+  const onEmail = () => {
+    if (selectedProjects.length === 0) return;
+    const body = buildList();
+    window.location.href = `mailto:?subject=${encodeURIComponent("Offene Angebote nachfassen")}&body=${encodeURIComponent(body)}`;
+  };
+  const onCopy = async () => {
+    if (selectedProjects.length === 0) return;
+    try {
+      await navigator.clipboard.writeText(buildList());
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* Clipboard evtl. nicht verfügbar */
+    }
+  };
+
   useEffect(() => setMounted(true), []);
 
   useEffect(() => {
@@ -71,6 +137,33 @@ export default function PipelineNode({
             Schließen
           </button>
         </div>
+        {showOffer && projects.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 border-b border-gray-800 bg-gray-900/60 px-5 py-2">
+            <label className="flex items-center gap-1.5 text-xs text-gray-300">
+              <input type="checkbox" checked={allSelected} onChange={toggleAll} />
+              Alle
+            </label>
+            <span className="text-xs text-gray-500">{selectedProjects.length} ausgewählt</span>
+            <div className="ml-auto flex items-center gap-2">
+              <button
+                type="button"
+                onClick={onCopy}
+                disabled={selectedProjects.length === 0}
+                className="rounded-md border border-gray-700 px-3 py-1.5 text-xs font-medium text-gray-300 transition-colors hover:border-gray-500 hover:text-gray-100 disabled:opacity-40"
+              >
+                {copied ? "Kopiert ✓" : "Liste kopieren"}
+              </button>
+              <button
+                type="button"
+                onClick={onEmail}
+                disabled={selectedProjects.length === 0}
+                className="rounded-md bg-brand-red px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+              >
+                📧 Als E-Mail
+              </button>
+            </div>
+          </div>
+        )}
         <div className="overflow-y-auto">
           {projects.length === 0 ? (
             <p className="px-5 py-8 text-center text-sm text-gray-500">Keine Projekte.</p>
@@ -78,11 +171,21 @@ export default function PipelineNode({
             <ul className="divide-y divide-gray-800/60">
               {projects.map((p) => (
                 <li key={p.id} className="flex items-center transition-colors hover:bg-gray-800/40">
+                  {showOffer && (
+                    <label className="flex shrink-0 items-center self-stretch pl-4 pr-1">
+                      <input
+                        type="checkbox"
+                        checked={sel.has(p.id)}
+                        onChange={() => toggle(p.id)}
+                        aria-label="Angebot für E-Mail-Liste auswählen"
+                      />
+                    </label>
+                  )}
                   {/* Projektnummer → Projekt-Popup öffnen */}
                   <Link
                     href={`/dashboard/projekte?open=${p.id}&back=${encodeURIComponent(pathname ?? "/dashboard/cockpit")}`}
                     title="Projekt-Details öffnen"
-                    className="flex w-16 shrink-0 items-center self-stretch py-3 pl-5 text-xs font-medium text-gray-500 transition-colors hover:text-brand-red"
+                    className={`flex w-16 shrink-0 items-center self-stretch py-3 text-xs font-medium text-gray-500 transition-colors hover:text-brand-red ${showOffer ? "pl-2" : "pl-5"}`}
                   >
                     {p.relativeId ?? "—"}
                   </Link>
