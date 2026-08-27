@@ -87,10 +87,16 @@ export default function BelegDetailModal({
               suppliers={suppliers}
               receipt={receipt}
               formClassName="grid grid-cols-1 gap-3"
-              // Nach dem Speichern die zugrunde liegenden Daten neu laden, damit
-              // die Änderung in Liste/Aufgabe sofort sichtbar ist (sonst wirkt sie
-              // trotz „✓ Gespeichert" nicht übernommen).
-              onSuccess={() => router.refresh()}
+              // Nach dem Speichern das Fenster schließen UND die Daten neu laden.
+              // Wichtig: React 19 setzt das Formular nach der Server-Action auf die
+              // (alten) defaultValues zurück – bliebe das Fenster offen, sprängen
+              // bearbeitete Felder (z. B. Skontozahlbetrag) sichtbar auf den alten
+              // Wert zurück, obwohl die DB den neuen Wert längst hat. Schließen +
+              // router.refresh() zeigt beim erneuten Öffnen die frischen Werte.
+              onSuccess={() => {
+                router.refresh();
+                onClose();
+              }}
             />
           </div>
         </div>
