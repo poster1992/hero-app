@@ -590,6 +590,10 @@ export default function ManualBelegeTable({
     return [...arr].sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""));
   }, [heroRows, text, status]);
 
+  // Gesamt-Zähler: manuelle + HERO-Belege zusammen (Anzahl + Bruttosumme).
+  const heroTotal = heroFiltered.reduce((s, h) => s + (h.gross || 0), 0);
+  const totalCount = filtered.length + heroFiltered.length;
+
   // --- Steuerberater-Export (alle angezeigten Belege) ---
   const withFileCount = filtered.filter((r) => r.hasFile).length;
   const heroWithFileCount = heroFiltered.filter((h) => h.docUrl).length;
@@ -902,10 +906,13 @@ export default function ManualBelegeTable({
         <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">Erfasste Belege {periodLabel}</h2>
         <div className="flex flex-wrap items-center gap-3">
           <p className="text-sm text-gray-600">
-            {filtered.length} {filtered.length === 1 ? "Beleg" : "Belege"} · {currencyFormatter.format(total)}
+            <span className="font-semibold text-gray-900">{totalCount}</span>{" "}
+            {totalCount === 1 ? "Beleg" : "Belege"}
             {heroFiltered.length > 0 && (
-              <span className="text-gray-500"> · +{heroFiltered.length} HERO</span>
+              <span className="text-gray-500"> ({filtered.length} manuell · {heroFiltered.length} HERO)</span>
             )}
+            {" · "}
+            {currencyFormatter.format(total + heroTotal)}
           </p>
           {sepaError && <span className="text-sm text-rose-600">{sepaError}</span>}
           <button
