@@ -627,7 +627,9 @@ export default function ManualBelegeTable({
             const ext = fileExt(r);
             const label = (r.invoiceNumber || `Beleg-${r.id}`).toString();
             const safeParty = (r.supplier ?? "").replace(/[^\wäöüÄÖÜß .-]/g, "_").slice(0, 40);
-            let name = `${label}_${safeParty}${ext}`.replace(/\s+/g, " ").trim();
+            // Schrägstriche (z. B. in Belegnummern „RE/2026/123") entfernen –
+            // sonst legt die ZIP daraus ungewollte Unterordner an.
+            let name = `${label}_${safeParty}${ext}`.replace(/\s+/g, " ").trim().replace(/[\\/]+/g, "-");
             let i = 2;
             while (used.has(name)) name = name.replace(ext, ` (${i++})${ext}`);
             used.add(name);
@@ -646,7 +648,7 @@ export default function ManualBelegeTable({
           if (res.ok) {
             const blob = await res.blob();
             const raw = (a.filename || `Zahlungsavis-${a.id}`).replace(/[^\wäöüÄÖÜß .()-]/g, "_").trim();
-            let name = raw || `Zahlungsavis-${a.id}`;
+            let name = (raw || `Zahlungsavis-${a.id}`).replace(/[\\/]+/g, "-");
             let i = 2;
             const dot = name.lastIndexOf(".");
             const base = dot > 0 ? name.slice(0, dot) : name;
@@ -668,7 +670,7 @@ export default function ManualBelegeTable({
           if (res.ok) {
             const blob = await res.blob();
             const safeParty = (h.supplier ?? "").replace(/[^\wäöüÄÖÜß .-]/g, "_").slice(0, 40);
-            let name = `${h.number || `HERO-${h.id}`}_${safeParty}.pdf`.replace(/\s+/g, " ").trim();
+            let name = `${h.number || `HERO-${h.id}`}_${safeParty}.pdf`.replace(/\s+/g, " ").trim().replace(/[\\/]+/g, "-");
             let i = 2;
             while (used.has(name)) name = name.replace(".pdf", ` (${i++}).pdf`);
             used.add(name);

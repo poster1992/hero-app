@@ -206,7 +206,7 @@ export default function MonthlyOverviewTable({
           if (!res.ok) continue;
           const blob = await res.blob();
           const safeEmp = f.employee.replace(/[^\wäöüÄÖÜß .-]/g, "_").slice(0, 40);
-          let name = `${safeEmp}_${f.fileName}`.replace(/\s+/g, " ").trim();
+          let name = `${safeEmp}_${f.fileName}`.replace(/\s+/g, " ").trim().replace(/[\\/]+/g, "-");
           let i = 2;
           const base = name.replace(/(\.[a-z0-9]+)?$/i, "");
           const ext = name.slice(base.length);

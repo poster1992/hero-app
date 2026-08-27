@@ -392,7 +392,7 @@ export default function ReceiptsTableClient({
             const blob = await res.blob();
             const ext = (r.file!.filename.match(/\.[a-z0-9]+$/i)?.[0] ?? ".pdf").toLowerCase();
             const safeParty = r.party.replace(/[^\wäöüÄÖÜß .-]/g, "_").slice(0, 40);
-            let name = `${r.number || "Beleg"}_${safeParty}${ext}`.replace(/\s+/g, " ").trim();
+            let name = `${r.number || "Beleg"}_${safeParty}${ext}`.replace(/\s+/g, " ").trim().replace(/[\\/]+/g, "-");
             let i = 2;
             while (used.has(name)) name = name.replace(ext, ` (${i++})${ext}`);
             used.add(name);
