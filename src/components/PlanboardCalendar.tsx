@@ -99,11 +99,11 @@ export default function PlanboardCalendar({ week, backUrl }: { week: PlanboardWe
         Tipp: Rechtsklick auf einen Tag zeigt Plan- und Ist-Stunden des Mitarbeiters.
       </p>
 
-      <div className="overflow-x-auto border border-line bg-white">
+      <div className="max-h-[70vh] overflow-auto border border-line bg-white">
         <div className="min-w-[900px]">
           {/* Header: corner + day labels + Tages-Summe */}
           <div className={`sticky top-0 z-20 grid ${cols} border-b border-line bg-paper-2`}>
-            <div className="sticky left-0 z-10 bg-paper-2 px-3 py-2.5 font-mono text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
+            <div className="sticky left-0 z-30 bg-paper-2 px-3 py-2.5 font-mono text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
               Mitarbeiter
             </div>
             {days.map((d, i) => (
@@ -208,9 +208,9 @@ export default function PlanboardCalendar({ week, backUrl }: { week: PlanboardWe
             </div>
           ))}
 
-          {/* Summen-Fußzeile: Σ je Tag + Wochensumme */}
-          <div className={`grid ${cols} border-t-2 border-line bg-paper-2`}>
-            <div className="sticky left-0 z-10 flex items-baseline justify-between gap-2 bg-paper-2 px-3 py-2">
+          {/* Summen-Fußzeile: Σ je Tag + Wochensumme (bleibt unten sichtbar) */}
+          <div className={`sticky bottom-0 z-10 grid ${cols} border-t-2 border-line bg-paper-2`}>
+            <div className="sticky left-0 z-20 flex items-baseline justify-between gap-2 bg-paper-2 px-3 py-2">
               <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">Σ Geplant</span>
               <span className="font-mono text-xs font-semibold tabular-nums text-brand-red">{hoursFmt(grandPlanned)}</span>
             </div>
