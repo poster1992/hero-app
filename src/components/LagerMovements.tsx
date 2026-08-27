@@ -188,8 +188,12 @@ export default function LagerMovements({
         <ul className="divide-y divide-gray-100">
           {filtered.map((mv) => (
             <li key={mv.id} className="flex items-center justify-between gap-3 py-2 text-sm">
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <span className="font-medium text-gray-900">{mv.materialName}</span>
+                <span className={`ml-2 font-semibold tabular-nums ${mv.delta >= 0 ? "text-emerald-700" : "text-rose-600"}`}>
+                  {mv.delta >= 0 ? "+" : ""}
+                  {numberFmt.format(mv.delta)}
+                </span>
                 {mv.projectName ? (
                   <span className="text-gray-500">
                     {" · "}
@@ -206,10 +210,6 @@ export default function LagerMovements({
                 </span>
               </div>
               <div className="flex shrink-0 items-center gap-2">
-                <span className={`font-semibold ${mv.delta >= 0 ? "text-emerald-700" : "text-rose-600"}`}>
-                  {mv.delta >= 0 ? "+" : ""}
-                  {numberFmt.format(mv.delta)}
-                </span>
                 {isAdmin && (
                   <button
                     type="button"
