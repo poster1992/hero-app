@@ -612,3 +612,55 @@ export async function listMovementsOn(dayIso: string): Promise<StockMovement[]> 
   }));
 }
 
+/** Eine Zeile der Ausbuchungs-Statistik: pro Artikel + lokalem Tag. */
+export interface OutboundStatRow {
+  name: string;
+  unit: string;
+  /** Lokaler Tag (Europe/Luxembourg) als YYYY-MM-DD. */
+  day: string;
+  /** Ausgebuchte Menge (positiv). */
+  qty: number;
+  /** EK-Wert der Ausbuchung. */
+  value: number;
+  /** Anzahl Buchungen. */
+  bookings: number;
+}
+
+interface OutStatRow extends RowDataPacket {
+  created_at: string | null;
+  name: string;
+  unit: string | null;
+  qty: string | number;
+  ek_price: string | number | null;
+}
+
+/**
+ * Ausbuchungs-Statistik über ALLE Ausbuchungen (delta < 0), aggregiert je
+ * Artikel und lokalem Tag (Europe/Luxembourg). Der Client bildet daraus die
+ * Gesamt-Sicht (über alle Tage) und die Tages-Sicht.
+ */
+export async function getArticleOutboundStats(): Promise<OutboundStatRow[]> {
+  const [rows] = await getPool().query<OutStatRow[]>(
+    `SELECT mv.created_at, m.name, m.unit, -mv.delta AS qty, mv.ek_price
+       FROM stock_movements mv
+       JOIN materials m ON m.id = mv.material_id
+      WHERE mv.delta < 0
+      ORDER BY mv.created_at DESC`
+  );
+  const map = new Map<string, OutboundStatRow>();
+  for (const r of rows) {
+    if (!r.created_at) continue;
+    const d = luxLocal(new Date(r.created_at));
+    const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const qty = num(r.qty);
+    const value = round2(qty * num(r.ek_price ?? 0));
+    const key = `${r.name} ${day}`;
+    const e = map.get(key) ?? { name: r.name, unit: r.unit ?? "", day, qty: 0, value: 0, bookings: 0 };
+    e.qty = round2(e.qty + qty);
+    e.value = round2(e.value + value);
+    e.bookings += 1;
+    map.set(key, e);
+  }
+  return [...map.values()];
+}
+

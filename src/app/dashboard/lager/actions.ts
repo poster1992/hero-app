@@ -10,6 +10,8 @@ import {
   setMaterialMinMaxByArticle,
   deleteStockMovement,
   updateStockMovement,
+  getArticleOutboundStats,
+  type OutboundStatRow,
 } from "@/lib/materials";
 import { createEkPriceRequest, completeEkPriceRequests } from "@/lib/tasks";
 import { getProjectPipeline } from "@/lib/hero-api";
@@ -187,6 +189,21 @@ export async function deleteMovementAction(id: number): Promise<{ ok: boolean; e
   const ok = await deleteStockMovement(id).catch(() => false);
   if (ok) revalidatePath(PATH);
   return ok ? { ok: true } : { ok: false, error: "Löschen fehlgeschlagen." };
+}
+
+/** Lager-Statistik (Ausbuchungen je Artikel/Tag) – nur mit Recht „lager_statistik". */
+export async function getOutboundStatsAction(): Promise<OutboundStatRow[]> {
+  const session = await getSession();
+  if (!session) return [];
+  const user = await getUserByUsername(session.username);
+  if (!user) return [];
+  const allowed = await getAllowedModules(user.role);
+  if (!allowed.includes("lager_statistik")) return [];
+  try {
+    return await getArticleOutboundStats();
+  } catch {
+    return [];
+  }
 }
 
 /** Admin: setzt den EK-Preis eines Artikels und schließt offene Preis-Aufgaben. */

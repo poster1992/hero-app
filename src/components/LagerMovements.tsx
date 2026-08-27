@@ -4,7 +4,8 @@ import { useMemo, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import type { StockMovement } from "@/lib/material-types";
-import { deleteMovementAction, updateMovementAction } from "@/app/dashboard/lager/actions";
+import type { OutboundStatRow } from "@/lib/materials";
+import { deleteMovementAction, updateMovementAction, getOutboundStatsAction } from "@/app/dashboard/lager/actions";
 
 export interface MovementProjectOption {
   relativeId: number | null;
@@ -12,6 +13,7 @@ export interface MovementProjectOption {
 }
 
 const numberFmt = new Intl.NumberFormat("de-DE", { maximumFractionDigits: 2 });
+const currencyFmt = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
 
 function formatDateTime(s: string | null): string {
   if (!s) return "";
@@ -32,10 +34,13 @@ type Filter = "all" | "in" | "out";
 export default function LagerMovements({
   movements,
   isAdmin = false,
+  canStats = false,
   projects = [],
 }: {
   movements: StockMovement[];
   isAdmin?: boolean;
+  /** Recht „lager_statistik": zeigt den Button „Lagerstatistik". */
+  canStats?: boolean;
   projects?: MovementProjectOption[];
 }) {
   const [filter, setFilter] = useState<Filter>("all");
@@ -105,6 +110,51 @@ export default function LagerMovements({
     });
   };
 
+  // --- Lagerstatistik (Ausbuchungen) ---
+  const [statsOpen, setStatsOpen] = useState(false);
+  const [statsRows, setStatsRows] = useState<OutboundStatRow[] | null>(null);
+  const [statsLoading, startStats] = useTransition();
+  const [statsMode, setStatsMode] = useState<"total" | "day">("total");
+  const [statsDay, setStatsDay] = useState("");
+
+  const openStats = () => {
+    setStatsOpen(true);
+    if (statsRows == null) {
+      startStats(async () => {
+        const rows = await getOutboundStatsAction();
+        setStatsRows(rows);
+        const days = [...new Set(rows.map((r) => r.day))].sort((a, b) => b.localeCompare(a));
+        if (days[0]) setStatsDay(days[0]);
+      });
+    }
+  };
+
+  const statsDays = useMemo(
+    () => [...new Set((statsRows ?? []).map((r) => r.day))].sort((a, b) => b.localeCompare(a)),
+    [statsRows]
+  );
+
+  // Aggregiert eine Zeilenmenge je Artikel (Menge/Wert/Buchungen), absteigend nach Menge.
+  const aggregate = (rows: OutboundStatRow[]) => {
+    const m = new Map<string, { name: string; unit: string; qty: number; value: number; bookings: number }>();
+    for (const r of rows) {
+      const e = m.get(r.name) ?? { name: r.name, unit: r.unit, qty: 0, value: 0, bookings: 0 };
+      e.qty = Math.round((e.qty + r.qty) * 100) / 100;
+      e.value = Math.round((e.value + r.value) * 100) / 100;
+      e.bookings += r.bookings;
+      m.set(r.name, e);
+    }
+    return [...m.values()].sort((a, b) => b.qty - a.qty);
+  };
+
+  const statsTotal = useMemo(() => aggregate(statsRows ?? []), [statsRows]);
+  const statsForDay = useMemo(
+    () => aggregate((statsRows ?? []).filter((r) => r.day === statsDay)),
+    [statsRows, statsDay]
+  );
+  const statsRowsShown = statsMode === "day" ? statsForDay : statsTotal;
+  const statsSum = statsRowsShown.reduce((s, r) => s + r.value, 0);
+
   const counts = useMemo(
     () => ({
       all: movements.length,
@@ -150,7 +200,18 @@ export default function LagerMovements({
   return (
     <div className="border border-line bg-white p-5">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-semibold text-gray-900">Letzte Buchungen</h2>
+        <div className="flex flex-wrap items-center gap-3">
+          <h2 className="text-lg font-semibold text-gray-900">Letzte Buchungen</h2>
+          {canStats && (
+            <button
+              type="button"
+              onClick={openStats}
+              className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900"
+            >
+              📊 Lagerstatistik
+            </button>
+          )}
+        </div>
         <div className="flex flex-wrap gap-1.5">
           {tabs.map((t) => {
             const active = filter === t.key;
@@ -238,6 +299,104 @@ export default function LagerMovements({
           ))}
         </ul>
       )}
+
+      {statsOpen &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[130] flex items-start justify-center overflow-y-auto bg-black/60 p-4 sm:items-center"
+            onClick={() => setStatsOpen(false)}
+          >
+            <div
+              className="my-8 w-full max-w-xl border border-line bg-white p-5 shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <h2 className="text-lg font-semibold text-gray-900">Lagerstatistik · Ausbuchungen</h2>
+                <button type="button" onClick={() => setStatsOpen(false)} className="text-gray-400 hover:text-gray-700" aria-label="Schließen">
+                  ✕
+                </button>
+              </div>
+
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                <div className="inline-flex rounded-md border border-gray-300 p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setStatsMode("total")}
+                    className={statsMode === "total" ? "rounded bg-brand-red px-3 py-1 text-sm font-medium text-white" : "px-3 py-1 text-sm text-gray-600"}
+                  >
+                    Gesamt
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStatsMode("day")}
+                    className={statsMode === "day" ? "rounded bg-brand-red px-3 py-1 text-sm font-medium text-white" : "px-3 py-1 text-sm text-gray-600"}
+                  >
+                    Nach Tag
+                  </button>
+                </div>
+                {statsMode === "day" && (
+                  <select
+                    value={statsDay}
+                    onChange={(e) => setStatsDay(e.target.value)}
+                    className="rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+                  >
+                    {statsDays.length === 0 ? (
+                      <option value="">—</option>
+                    ) : (
+                      statsDays.map((d) => (
+                        <option key={d} value={d}>
+                          {d.split("-").reverse().join(".")}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                )}
+              </div>
+
+              {statsLoading && statsRows == null ? (
+                <p className="py-6 text-center text-sm text-gray-500">Wird geladen …</p>
+              ) : statsRowsShown.length === 0 ? (
+                <p className="py-6 text-center text-sm text-gray-500">
+                  Keine Ausbuchungen{statsMode === "day" ? " an diesem Tag" : ""}.
+                </p>
+              ) : (
+                <div className="max-h-[55vh] overflow-y-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-300 text-xs uppercase tracking-wide text-gray-500">
+                        <th className="py-2 pr-3 text-left font-medium">Artikel</th>
+                        <th className="py-2 px-3 text-right font-medium">Menge raus</th>
+                        <th className="py-2 px-3 text-right font-medium">Wert (EK)</th>
+                        <th className="py-2 pl-3 text-right font-medium">Buchungen</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {statsRowsShown.map((r) => (
+                        <tr key={r.name} className="border-b border-gray-100">
+                          <td className="py-1.5 pr-3 text-gray-800">{r.name}</td>
+                          <td className="whitespace-nowrap py-1.5 px-3 text-right font-medium tabular-nums text-rose-600">
+                            {numberFmt.format(r.qty)}{r.unit ? ` ${r.unit}` : ""}
+                          </td>
+                          <td className="py-1.5 px-3 text-right tabular-nums text-gray-700">{currencyFmt.format(r.value)}</td>
+                          <td className="py-1.5 pl-3 text-right tabular-nums text-gray-500">{r.bookings}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t border-gray-300 font-semibold">
+                        <td className="py-2 pr-3 text-gray-700">Summe ({statsRowsShown.length} Artikel)</td>
+                        <td />
+                        <td className="py-2 px-3 text-right tabular-nums text-brand-red">{currencyFmt.format(statsSum)}</td>
+                        <td />
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>,
+          document.body
+        )}
 
       {edit &&
         createPortal(

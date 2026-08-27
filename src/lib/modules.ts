@@ -20,6 +20,7 @@ export const MODULES: AppModule[] = [
   { key: "lager_bestand", label: "Artikelbestandsliste – ansehen (Lesen)" },
   { key: "lager_bestand_edit", label: "Artikelbestandsliste – bearbeiten (Min/Max)", note: "Schreibrecht: setzt voraus, dass „Artikelbestandsliste – ansehen“ aktiv ist." },
   { key: "lager_ek", label: "Lager EK-Preise (sehen & pflegen)" },
+  { key: "lager_statistik", label: "Lager – Statistik (Auswertung Ausbuchungen)", note: "Button „Lagerstatistik“ unter Lager → Letzte Buchungen." },
   { key: "kunden", label: "Kunden" },
   { key: "aufgaben", label: "Aufgaben" },
   { key: "ueberfaellige_aufgaben", label: "Überfällige Aufgaben (Unternehmen)" },

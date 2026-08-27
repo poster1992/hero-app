@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
+import { getAllowedModules } from "@/lib/role-store";
 import { listRecentMovements } from "@/lib/materials";
 import { getProjects } from "@/lib/hero-api";
 import LagerMovements, { type MovementProjectOption } from "@/components/LagerMovements";
@@ -9,6 +10,7 @@ export default async function LagerBuchungenPage() {
   const session = await getSession();
   if (!session) redirect("/login");
   const isAdmin = session.role === "administrator";
+  const canStats = (await getAllowedModules(session.role)).includes("lager_statistik");
 
   let movements: StockMovement[] = [];
   let projects: MovementProjectOption[] = [];
@@ -37,7 +39,7 @@ export default async function LagerBuchungenPage() {
           {error}
         </div>
       ) : (
-        <LagerMovements movements={movements} isAdmin={isAdmin} projects={projects} />
+        <LagerMovements movements={movements} isAdmin={isAdmin} canStats={canStats} projects={projects} />
       )}
     </div>
   );
