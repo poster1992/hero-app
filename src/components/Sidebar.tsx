@@ -61,6 +61,7 @@ const NAV_ITEMS: NavItem[] = [
       { href: "/dashboard/aktivitaet", label: "Aktivitäts-Logbuch", module: "cockpit_aktivitaet" },
       { href: "/dashboard/planung", label: "Arbeitsplanung", module: "cockpit_planung" },
       { href: "/dashboard/belege", label: "Belege", module: "cockpit_belege", modulesAny: ["cockpit_belege", "cockpit_belege_basis"] },
+      { href: "/dashboard/belege/posteingang", label: "Posteingang (Sammel-Upload)", module: "cockpit_belege_upload" },
       { href: "/dashboard/lohn-abschlaege", label: "Lohn Abschläge erstellen", module: "cockpit_lohn" },
       { href: "/dashboard/benzin", label: "Benzin / Tankkosten", module: "cockpit_benzin" },
       { href: "/dashboard/rechnungen", label: "Rechnungen", module: "cockpit_rechnungen" },

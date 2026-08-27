@@ -36,6 +36,7 @@ export const MODULES: AppModule[] = [
   { key: "cockpit_planung", label: "Arbeitsplanung", group: "Cockpit" },
   { key: "cockpit_belege", label: "Belege (voller Zugriff)", group: "Cockpit" },
   { key: "cockpit_belege_basis", label: "Belege – eingeschränkt (nur Belegliste & Suche)", group: "Cockpit" },
+  { key: "cockpit_belege_upload", label: "Belege hochladen (nur Posteingang / Sammel-Upload)", group: "Cockpit", note: "Zeigt nur den Menüpunkt „Posteingang (Sammel-Upload)“ zum Hochladen – kein Zugriff auf die Belegliste." },
   { key: "cockpit_lohn", label: "Lohn Abschläge erstellen", group: "Cockpit" },
   { key: "cockpit_benzin", label: "Benzin / Tankkosten", group: "Cockpit" },
   { key: "cockpit_rechnungen", label: "Rechnungen", group: "Cockpit" },

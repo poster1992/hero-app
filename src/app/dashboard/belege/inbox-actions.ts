@@ -26,8 +26,8 @@ async function requireAccess() {
   const user = await getUserByUsername(session.username);
   if (!user) return null;
   const allowed = await getAllowedModules(user.role);
-  // Voller Belege-Zugriff nötig (nicht die eingeschränkte Ansicht).
-  if (!allowed.includes("cockpit_belege")) return null;
+  // Voller Belege-Zugriff ODER das reine Upload-Recht (Posteingang/Sammel-Upload).
+  if (!allowed.includes("cockpit_belege") && !allowed.includes("cockpit_belege_upload")) return null;
   return user;
 }
 
