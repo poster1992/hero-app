@@ -28,6 +28,14 @@ function formatDateTime(s: string | null): string {
   });
 }
 
+/** Eindeutiger Projekt-Schlüssel einer Statistik-Zeile (identisch zur Server-Aggregation). */
+const projKey = (r: OutboundStatRow) =>
+  r.projectRelativeId != null ? `#${r.projectRelativeId}` : r.projectName ?? "—";
+function projLabel(r: OutboundStatRow): string {
+  if (r.projectName) return `${r.projectRelativeId != null ? `#${r.projectRelativeId} ` : ""}${r.projectName}`;
+  return r.projectRelativeId != null ? `#${r.projectRelativeId}` : "Ohne Projekt";
+}
+
 type Filter = "all" | "in" | "out";
 
 /** Buchungs-Historie (eigene Lager-Unterseite): die letzten Ein-/Ausbuchungen, filterbar. */
@@ -116,6 +124,8 @@ export default function LagerMovements({
   const [statsLoading, startStats] = useTransition();
   const [statsMode, setStatsMode] = useState<"total" | "day">("total");
   const [statsDay, setStatsDay] = useState("");
+  const [statsProject, setStatsProject] = useState(""); // "" = alle Projekte
+  const [statsSearch, setStatsSearch] = useState("");
 
   const openStats = () => {
     setStatsOpen(true);
@@ -147,12 +157,29 @@ export default function LagerMovements({
     return [...m.values()].sort((a, b) => b.qty - a.qty);
   };
 
-  const statsTotal = useMemo(() => aggregate(statsRows ?? []), [statsRows]);
-  const statsForDay = useMemo(
-    () => aggregate((statsRows ?? []).filter((r) => r.day === statsDay)),
-    [statsRows, statsDay]
+  // Im Statistik-Modal auswählbare Projekte (nur solche, die in Ausbuchungen vorkommen).
+  const statsProjects = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const r of statsRows ?? []) m.set(projKey(r), projLabel(r));
+    return [...m.entries()].map(([key, label]) => ({ key, label })).sort((a, b) => a.label.localeCompare(b.label, "de"));
+  }, [statsRows]);
+
+  // Nach gewähltem Projekt vorfiltern (leer = alle Projekte).
+  const projFiltered = useMemo(
+    () => (statsProject ? (statsRows ?? []).filter((r) => projKey(r) === statsProject) : statsRows ?? []),
+    [statsRows, statsProject]
   );
-  const statsRowsShown = statsMode === "day" ? statsForDay : statsTotal;
+
+  const statsTotal = useMemo(() => aggregate(projFiltered), [projFiltered]);
+  const statsForDay = useMemo(
+    () => aggregate(projFiltered.filter((r) => r.day === statsDay)),
+    [projFiltered, statsDay]
+  );
+  const statsAggregated = statsMode === "day" ? statsForDay : statsTotal;
+  // Artikel-Suche über die (aggregierte) Anzeige.
+  const statsRowsShown = statsSearch.trim()
+    ? statsAggregated.filter((r) => r.name.toLowerCase().includes(statsSearch.trim().toLowerCase()))
+    : statsAggregated;
   const statsSum = statsRowsShown.reduce((s, r) => s + r.value, 0);
 
   const counts = useMemo(
@@ -351,13 +378,38 @@ export default function LagerMovements({
                     )}
                   </select>
                 )}
+                {statsProjects.length > 0 && (
+                  <select
+                    value={statsProject}
+                    onChange={(e) => setStatsProject(e.target.value)}
+                    title="Nach Projekt filtern"
+                    className="max-w-[16rem] rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+                  >
+                    <option value="">Alle Projekte</option>
+                    {statsProjects.map((p) => (
+                      <option key={p.key} value={p.key}>
+                        {p.label}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
+
+              <input
+                type="search"
+                value={statsSearch}
+                onChange={(e) => setStatsSearch(e.target.value)}
+                placeholder="Artikel suchen …"
+                className="mb-3 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-brand-red/60"
+              />
 
               {statsLoading && statsRows == null ? (
                 <p className="py-6 text-center text-sm text-gray-500">Wird geladen …</p>
               ) : statsRowsShown.length === 0 ? (
                 <p className="py-6 text-center text-sm text-gray-500">
-                  Keine Ausbuchungen{statsMode === "day" ? " an diesem Tag" : ""}.
+                  {statsSearch.trim()
+                    ? "Kein Artikel gefunden."
+                    : `Keine Ausbuchungen${statsMode === "day" ? " an diesem Tag" : ""}.`}
                 </p>
               ) : (
                 <div className="max-h-[55vh] overflow-y-auto">

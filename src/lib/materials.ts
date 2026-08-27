@@ -618,6 +618,9 @@ export interface OutboundStatRow {
   unit: string;
   /** Lokaler Tag (Europe/Luxembourg) als YYYY-MM-DD. */
   day: string;
+  /** Projekt der Ausbuchung (für den Projekt-Filter). */
+  projectRelativeId: number | null;
+  projectName: string | null;
   /** Ausgebuchte Menge (positiv). */
   qty: number;
   /** EK-Wert der Ausbuchung. */
@@ -632,6 +635,8 @@ interface OutStatRow extends RowDataPacket {
   unit: string | null;
   qty: string | number;
   ek_price: string | number | null;
+  project_relative_id: number | null;
+  project_name: string | null;
 }
 
 /**
@@ -641,7 +646,8 @@ interface OutStatRow extends RowDataPacket {
  */
 export async function getArticleOutboundStats(): Promise<OutboundStatRow[]> {
   const [rows] = await getPool().query<OutStatRow[]>(
-    `SELECT mv.created_at, m.name, m.unit, -mv.delta AS qty, mv.ek_price
+    `SELECT mv.created_at, m.name, m.unit, -mv.delta AS qty, mv.ek_price,
+            mv.project_relative_id, mv.project_name
        FROM stock_movements mv
        JOIN materials m ON m.id = mv.material_id
       WHERE mv.delta < 0
@@ -654,8 +660,20 @@ export async function getArticleOutboundStats(): Promise<OutboundStatRow[]> {
     const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     const qty = num(r.qty);
     const value = round2(qty * num(r.ek_price ?? 0));
-    const key = `${r.name} ${day}`;
-    const e = map.get(key) ?? { name: r.name, unit: r.unit ?? "", day, qty: 0, value: 0, bookings: 0 };
+    const pkey = r.project_relative_id != null ? `#${r.project_relative_id}` : r.project_name ?? "—";
+    const key = `${r.name} ${day} ${pkey}`;
+    const e =
+      map.get(key) ??
+      {
+        name: r.name,
+        unit: r.unit ?? "",
+        day,
+        projectRelativeId: r.project_relative_id,
+        projectName: r.project_name,
+        qty: 0,
+        value: 0,
+        bookings: 0,
+      };
     e.qty = round2(e.qty + qty);
     e.value = round2(e.value + value);
     e.bookings += 1;
