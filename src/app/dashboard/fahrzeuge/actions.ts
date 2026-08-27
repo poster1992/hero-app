@@ -43,9 +43,10 @@ export async function createVehicleAction(
   const name = String(formData.get("name") ?? "").trim();
   if (!name) return { error: "Bitte einen Fahrzeugnamen angeben." };
   const plate = String(formData.get("plate") ?? "").trim() || null;
+  const driver = String(formData.get("driver") ?? "").trim() || null;
   const note = String(formData.get("note") ?? "").trim() || null;
   try {
-    await createVehicle({ name, plate, note });
+    await createVehicle({ name, plate, driver, note });
   } catch {
     return { error: "Fahrzeug konnte nicht angelegt werden." };
   }
@@ -63,9 +64,10 @@ export async function updateVehicleAction(
   const name = String(formData.get("name") ?? "").trim();
   if (!name) return { error: "Bitte einen Fahrzeugnamen angeben." };
   const plate = String(formData.get("plate") ?? "").trim() || null;
+  const driver = String(formData.get("driver") ?? "").trim() || null;
   const note = String(formData.get("note") ?? "").trim() || null;
   try {
-    await updateVehicle({ id, name, plate, note });
+    await updateVehicle({ id, name, plate, driver, note });
   } catch {
     return { error: "Fahrzeug konnte nicht gespeichert werden." };
   }

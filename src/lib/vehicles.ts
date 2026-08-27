@@ -11,6 +11,8 @@ export interface Vehicle {
   id: number;
   name: string;
   plate: string | null;
+  /** Zugewiesener Mitarbeiter/Fahrer (wer fährt das Fahrzeug). */
+  driver: string | null;
   note: string | null;
   docCount: number;
 }
@@ -30,6 +32,7 @@ interface VehicleRow extends RowDataPacket {
   id: number;
   name: string;
   plate: string | null;
+  driver: string | null;
   note: string | null;
   doc_count: number;
 }
@@ -48,16 +51,17 @@ interface DocRow extends RowDataPacket {
 /** Alle Fahrzeuge inkl. Anzahl hinterlegter Dokumente. */
 export async function listVehicles(): Promise<Vehicle[]> {
   const [rows] = await getPool().query<VehicleRow[]>(
-    `SELECT v.id, v.name, v.plate, v.note, COUNT(d.id) AS doc_count
+    `SELECT v.id, v.name, v.plate, v.driver, v.note, COUNT(d.id) AS doc_count
      FROM vehicles v
      LEFT JOIN vehicle_documents d ON d.vehicle_id = v.id
-     GROUP BY v.id, v.name, v.plate, v.note
+     GROUP BY v.id, v.name, v.plate, v.driver, v.note
      ORDER BY v.name`
   );
   return rows.map((r) => ({
     id: r.id,
     name: r.name,
     plate: r.plate,
+    driver: r.driver,
     note: r.note,
     docCount: Number(r.doc_count),
   }));
@@ -66,13 +70,19 @@ export async function listVehicles(): Promise<Vehicle[]> {
 export async function createVehicle(input: {
   name: string;
   plate: string | null;
+  driver: string | null;
   note: string | null;
 }): Promise<number | null> {
   const name = input.name.trim();
   if (!name) return null;
   const [res] = await getPool().query(
-    "INSERT INTO vehicles (name, plate, note) VALUES (?, ?, ?)",
-    [name.slice(0, 191), input.plate?.trim().slice(0, 64) || null, input.note?.trim().slice(0, 5000) || null]
+    "INSERT INTO vehicles (name, plate, driver, note) VALUES (?, ?, ?, ?)",
+    [
+      name.slice(0, 191),
+      input.plate?.trim().slice(0, 64) || null,
+      input.driver?.trim().slice(0, 191) || null,
+      input.note?.trim().slice(0, 5000) || null,
+    ]
   );
   return (res as { insertId: number }).insertId;
 }
@@ -81,15 +91,17 @@ export async function updateVehicle(input: {
   id: number;
   name: string;
   plate: string | null;
+  driver: string | null;
   note: string | null;
 }): Promise<void> {
   const name = input.name.trim();
   if (!name) return;
   await getPool().query(
-    "UPDATE vehicles SET name = ?, plate = ?, note = ? WHERE id = ?",
+    "UPDATE vehicles SET name = ?, plate = ?, driver = ?, note = ? WHERE id = ?",
     [
       name.slice(0, 191),
       input.plate?.trim().slice(0, 64) || null,
+      input.driver?.trim().slice(0, 191) || null,
       input.note?.trim().slice(0, 5000) || null,
       input.id,
     ]

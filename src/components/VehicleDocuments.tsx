@@ -147,6 +147,7 @@ function VehicleList({
         <form action={formAction} ref={formRef} className="flex flex-col gap-2">
           <input name="name" placeholder="Bezeichnung * (z. B. VW Crafter)" className={inputClass} required />
           <input name="plate" placeholder="Kennzeichen (optional)" className={inputClass} />
+          <input name="driver" placeholder="Fahrer / Mitarbeiter (optional)" className={inputClass} />
           <input name="note" placeholder="Notiz (optional)" className={inputClass} />
           <div className="flex items-center gap-2">
             <button
@@ -183,6 +184,9 @@ function VehicleList({
                     <span className="min-w-0">
                       <span className="block truncate text-sm font-medium text-gray-900">{v.name}</span>
                       {v.plate && <span className="block truncate text-xs text-gray-500">{v.plate}</span>}
+                      {v.driver && (
+                        <span className="block truncate text-xs font-medium text-brand-red">🧑 {v.driver}</span>
+                      )}
                     </span>
                     <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
                       {v.docCount}
@@ -307,6 +311,12 @@ function VehiclePanel({
         <div>
           <h2 className="text-lg font-semibold text-gray-900">{vehicle.name}</h2>
           <p className="text-sm text-gray-600">{vehicle.plate ?? "— kein Kennzeichen —"}</p>
+          <p className="mt-0.5 text-sm">
+            <span className="text-gray-500">Fahrer: </span>
+            <span className={vehicle.driver ? "font-medium text-brand-red" : "text-gray-400"}>
+              {vehicle.driver ?? "— nicht zugewiesen —"}
+            </span>
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -370,6 +380,12 @@ function VehiclePanel({
           <input type="hidden" name="note" value={vehicle.note ?? ""} />
           <input name="name" defaultValue={vehicle.name} placeholder="Bezeichnung *" className={inputClass} required />
           <input name="plate" defaultValue={vehicle.plate ?? ""} placeholder="Kennzeichen" className={inputClass} />
+          <input
+            name="driver"
+            defaultValue={vehicle.driver ?? ""}
+            placeholder="Fahrer / Mitarbeiter"
+            className={`${inputClass} sm:col-span-2`}
+          />
           <div className="sm:col-span-2 flex items-center gap-2">
             <button type="submit" className="rounded-md bg-brand-red px-3 py-2 text-sm font-semibold text-white hover:opacity-90">
               Speichern
