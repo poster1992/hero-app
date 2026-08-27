@@ -6,6 +6,7 @@ import { getSession } from "@/lib/session";
 import { getUserByUsername } from "@/lib/users";
 import { getHiddenBelegColumns } from "@/lib/belege-column-prefs";
 import ManualBelegeForm from "@/components/ManualBelegeForm";
+import RecurringReceipts from "@/components/RecurringReceipts";
 import ManualBelegeTable from "@/components/ManualBelegeTable";
 import BelegeChecklist from "@/components/BelegeChecklist";
 import PaymentAdvices, { PaymentAdviceButton } from "@/components/PaymentAdvices";
@@ -211,6 +212,7 @@ export default async function ManualBelege({
           <BelegeChecklist items={checklist} year={year} month={month} periodLabel={monthLabel} />
           <UploadHistoryButton accounts={accounts} projects={projects} suppliers={suppliers} />
           <PaymentAdviceButton year={year} month={month} monthLabel={monthLabel} />
+          <RecurringReceipts accounts={accounts} suppliers={suppliers} year={year} month={month} />
           <Link
             href="/dashboard/belege/posteingang"
             className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900"
