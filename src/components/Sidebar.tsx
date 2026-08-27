@@ -21,6 +21,8 @@ interface NavItem {
   label: string;
   icon: string;
   module: string;
+  /** Immer sichtbar (kein Recht nötig, z. B. persönlicher Notizblock). */
+  always?: boolean;
   children?: NavChild[];
 }
 
@@ -51,6 +53,7 @@ const NAV_ITEMS: NavItem[] = [
   },
   { href: "/dashboard/kunden", label: "Kunden", icon: "kunden", module: "kunden" },
   { href: "/dashboard/aufgaben", label: "Aufgaben", icon: "aufgaben", module: "aufgaben" },
+  { href: "/dashboard/notizblock", label: "Notizblock", icon: "notiz", module: "notizblock", always: true },
   {
     href: "/dashboard/cockpit",
     label: "Cockpit",
@@ -224,6 +227,13 @@ function NavIcon({ name }: { name: string }) {
           <circle cx="12" cy="12.5" r="3.2" />
         </svg>
       );
+    case "notiz":
+      return (
+        <svg {...common}>
+          <rect x="4" y="3" width="16" height="18" rx="2" />
+          <path d="M8 3v2M12 3v2M16 3v2M8 10h8M8 14h8M8 18h5" />
+        </svg>
+      );
     default:
       return null;
   }
@@ -274,6 +284,7 @@ export default function Sidebar({
   })).filter((item) => {
     // Container-Menüs: sichtbar, sobald mindestens ein Unterpunkt freigegeben ist.
     if (item.module === "cockpit" || item.module === "baustellen") return (item.children?.length ?? 0) > 0;
+    if (item.always) return true; // z. B. Notizblock: für jeden sichtbar
     return allowedModules.includes(item.module);
   });
 
