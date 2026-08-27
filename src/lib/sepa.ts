@@ -1,4 +1,6 @@
-// Erzeugt eine SEPA-Überweisungsdatei (pain.001.001.03) für den Import in Multiline.
+// Erzeugt eine SEPA-Überweisungsdatei (pain.001.001.09) für den Import in Multiline.
+// Hinweis: pain.001.001.03 wird von BGL BNP PARIBAS ab 15.11.2026 nicht mehr unterstützt.
+// Unterschiede .09 ggü. .03: Namespace, <BIC> → <BICFI>, ReqdExctnDt mit <Dt>-Kind.
 
 export interface SepaPayment {
   creditorName: string;
@@ -53,7 +55,7 @@ export function buildSepaCreditTransfer(input: SepaInput): string {
   const tx = input.payments
     .map((p) => {
       const cdtrAgt = p.creditorBic
-        ? `        <CdtrAgt><FinInstnId><BIC>${clean(p.creditorBic)}</BIC></FinInstnId></CdtrAgt>\n`
+        ? `        <CdtrAgt><FinInstnId><BICFI>${clean(p.creditorBic)}</BICFI></FinInstnId></CdtrAgt>\n`
         : "";
       return (
         `      <CdtTrfTxInf>\n` +
@@ -69,12 +71,12 @@ export function buildSepaCreditTransfer(input: SepaInput): string {
     .join("\n");
 
   const dbtrAgt = input.debtorBic
-    ? `      <DbtrAgt><FinInstnId><BIC>${clean(input.debtorBic)}</BIC></FinInstnId></DbtrAgt>\n`
+    ? `      <DbtrAgt><FinInstnId><BICFI>${clean(input.debtorBic)}</BICFI></FinInstnId></DbtrAgt>\n`
     : `      <DbtrAgt><FinInstnId><Othr><Id>NOTPROVIDED</Id></Othr></FinInstnId></DbtrAgt>\n`;
 
   return (
     `<?xml version="1.0" encoding="UTF-8"?>\n` +
-    `<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pain.001.001.03" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">\n` +
+    `<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pain.001.001.09" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">\n` +
     `  <CstmrCdtTrfInitn>\n` +
     `    <GrpHdr>\n` +
     `      <MsgId>${xmlEscape(input.msgId)}</MsgId>\n` +
@@ -90,7 +92,7 @@ export function buildSepaCreditTransfer(input: SepaInput): string {
     `      <NbOfTxs>${nb}</NbOfTxs>\n` +
     `      <CtrlSum>${AMOUNT(total)}</CtrlSum>\n` +
     `      <PmtTpInf><SvcLvl><Cd>SEPA</Cd></SvcLvl></PmtTpInf>\n` +
-    `      <ReqdExctnDt>${input.executionDate}</ReqdExctnDt>\n` +
+    `      <ReqdExctnDt><Dt>${input.executionDate}</Dt></ReqdExctnDt>\n` +
     `      <Dbtr><Nm>${xmlEscape(sepaText(input.debtorName, 70))}</Nm></Dbtr>\n` +
     `      <DbtrAcct><Id><IBAN>${clean(input.debtorIban)}</IBAN></Id></DbtrAcct>\n` +
     dbtrAgt +
