@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useActionState } from "react";
+import { useRouter } from "next/navigation";
 import {
   uploadBelegAction,
   updateBelegAction,
@@ -765,6 +766,7 @@ export default function ManualBelegeForm({
 }) {
   const isEdit = !!receipt;
   const [open, setOpen] = useState(false);
+  const router = useRouter();
   return (
     <div className={isEdit ? "inline-block" : "flex items-center justify-end"}>
       {isEdit ? (
@@ -812,7 +814,10 @@ export default function ManualBelegeForm({
               projects={projects}
               suppliers={suppliers}
               receipt={receipt}
-              onSuccess={() => setOpen(false)}
+              onSuccess={() => {
+                setOpen(false);
+                router.refresh(); // Liste nach dem Speichern aktualisieren
+              }}
               onCancel={() => setOpen(false)}
             />
           </div>

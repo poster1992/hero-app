@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import {
   ManualBelegeFormFields,
   type EditableReceipt,
@@ -42,6 +43,7 @@ export default function BelegDetailModal({
   extraFooter?: ReactNode;
   onClose: () => void;
 }) {
+  const router = useRouter();
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
@@ -85,6 +87,10 @@ export default function BelegDetailModal({
               suppliers={suppliers}
               receipt={receipt}
               formClassName="grid grid-cols-1 gap-3"
+              // Nach dem Speichern die zugrunde liegenden Daten neu laden, damit
+              // die Änderung in Liste/Aufgabe sofort sichtbar ist (sonst wirkt sie
+              // trotz „✓ Gespeichert" nicht übernommen).
+              onSuccess={() => router.refresh()}
             />
           </div>
         </div>
