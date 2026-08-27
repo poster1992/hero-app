@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { PlanboardWeek } from "@/lib/planning-data";
-import { absenceStyle } from "@/lib/planboard-colors";
+import { absenceStyle, planboardColor, planboardColorKey } from "@/lib/planboard-colors";
 
 const round1 = (n: number) => Math.round(n * 10) / 10;
 const hoursFmt = (n: number) => `${round1(n).toLocaleString("de-DE")} h`;
@@ -166,6 +166,7 @@ export default function PlanboardCalendar({ week, backUrl }: { week: PlanboardWe
                   <div className="flex flex-col gap-1">
                     {cell.map((ev) => {
                       const clickable = ev.projectId != null && ev.projectId > 0;
+                      const color = planboardColor(planboardColorKey(ev));
                       return (
                       <div
                         key={`${row.employeeId}-${days[i].date}-${ev.id}`}
@@ -179,13 +180,11 @@ export default function PlanboardCalendar({ week, backUrl }: { week: PlanboardWe
                         }
                         role={clickable ? "button" : undefined}
                         title={clickable ? "Projekt öffnen" : ev.projectName ?? ev.title}
-                        className={`overflow-hidden rounded-md border-l-[3px] bg-white p-1.5 shadow-sm ring-1 ring-gray-200/70 ${
-                          clickable
-                            ? "cursor-pointer border-brand-red transition-all hover:bg-brand-red/[0.04] hover:ring-brand-red/40"
-                            : "border-gray-300"
+                        className={`overflow-hidden rounded-md border-l-[3px] p-1.5 shadow-sm ring-1 ring-gray-200/60 ${color.tint} ${color.border} ${
+                          clickable ? "cursor-pointer transition hover:brightness-[0.97] hover:ring-gray-300" : ""
                         }`}
                       >
-                        <span className="inline-block rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wide text-gray-600">
+                        <span className={`inline-block rounded bg-white/70 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wide ${color.text}`}>
                           {ev.timeLabel}
                         </span>
                         <p className="mt-1 truncate text-xs font-medium leading-snug text-gray-900">
@@ -194,7 +193,7 @@ export default function PlanboardCalendar({ week, backUrl }: { week: PlanboardWe
                         {(ev.projectRelativeId != null || ev.projectName) && (
                           <p className="truncate text-[11px] text-gray-500">
                             {ev.projectRelativeId != null && (
-                              <span className="font-semibold text-brand-red">#{ev.projectRelativeId}</span>
+                              <span className={`font-semibold ${color.text}`}>#{ev.projectRelativeId}</span>
                             )}
                             {ev.projectRelativeId != null && ev.projectName ? " " : ""}
                             {ev.projectName}
