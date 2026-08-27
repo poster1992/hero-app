@@ -135,10 +135,19 @@ function VehicleList({
 }) {
   const [state, formAction, pending] = useActionState<VehicleActionState, FormData>(createVehicleAction, {});
   const formRef = useRef<HTMLFormElement>(null);
+  const [query, setQuery] = useState("");
 
   useEffect(() => {
     if (state.success) formRef.current?.reset();
   }, [state.success]);
+
+  // Filter nach Bezeichnung, Kennzeichen oder Fahrer.
+  const q = query.trim().toLowerCase();
+  const filtered = q
+    ? vehicles.filter((v) =>
+        [v.name, v.plate ?? "", v.driver ?? ""].join(" ").toLowerCase().includes(q)
+      )
+    : vehicles;
 
   return (
     <div className="flex flex-col gap-4">
@@ -163,14 +172,27 @@ function VehicleList({
       </div>
 
       <div className="border border-line bg-white">
-        <div className="border-b border-gray-200 px-4 py-3 text-sm font-semibold text-gray-900">
-          Fahrzeuge ({vehicles.length})
+        <div className="flex items-center justify-between gap-2 border-b border-gray-200 px-4 py-3 text-sm font-semibold text-gray-900">
+          <span>Fahrzeuge ({q ? `${filtered.length}/${vehicles.length}` : vehicles.length})</span>
         </div>
+        {vehicles.length > 0 && (
+          <div className="border-b border-gray-200 p-2">
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Suchen (Bezeichnung, Kennzeichen, Fahrer) …"
+              className={inputClass}
+            />
+          </div>
+        )}
         {vehicles.length === 0 ? (
           <p className="px-4 py-6 text-center text-sm text-gray-500">Noch keine Fahrzeuge.</p>
+        ) : filtered.length === 0 ? (
+          <p className="px-4 py-6 text-center text-sm text-gray-500">Keine Treffer für „{query}".</p>
         ) : (
           <ul className="max-h-[60vh] divide-y divide-gray-100 overflow-y-auto">
-            {vehicles.map((v) => {
+            {filtered.map((v) => {
               const active = v.id === selectedId;
               return (
                 <li key={v.id}>
