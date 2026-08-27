@@ -35,13 +35,13 @@ export default function PlanboardCalendar({ week, backUrl }: { week: PlanboardWe
 
   if (rows.length === 0) {
     return (
-      <p className="rounded-lg border border-gray-200 bg-white p-6 text-center text-sm text-gray-400">
+      <p className="border border-line bg-white p-6 text-center text-sm text-gray-400">
         Keine Termine in dieser Woche.
       </p>
     );
   }
 
-  const cols = "grid-cols-[11rem_repeat(7,minmax(0,1fr))]";
+  const cols = "grid-cols-[13rem_repeat(7,minmax(0,1fr))]";
 
   function dayCellClass(isToday: boolean, isWeekend: boolean): string {
     if (isToday) return "bg-brand-red/5";
@@ -77,27 +77,47 @@ export default function PlanboardCalendar({ week, backUrl }: { week: PlanboardWe
   }
   const compareRows = [...compareMap.values()].sort((a, b) => a.label.localeCompare(b.label, "de"));
 
+  // Summen für die Übersicht: je Mitarbeiter (ganze Woche) und je Tag (alle MA).
+  const rowPlanned = rows.map((row) =>
+    row.cells.reduce((s, cell) => s + cell.reduce((a, e) => a + e.hours, 0), 0)
+  );
+  const dayPlanned = days.map((_, i) =>
+    rows.reduce((s, row) => s + row.cells[i].reduce((a, e) => a + e.hours, 0), 0)
+  );
+  const grandPlanned = dayPlanned.reduce((s, h) => s + h, 0);
+  const initials = (name: string) =>
+    name
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((w) => w[0]?.toUpperCase() ?? "")
+      .join("") || "?";
+
   return (
     <div className="flex flex-col gap-2">
       <p className="px-1 text-xs text-gray-500">
         Tipp: Rechtsklick auf einen Tag zeigt Plan- und Ist-Stunden des Mitarbeiters.
       </p>
 
-      <div className="overflow-x-auto rounded-lg border border-gray-200">
+      <div className="overflow-x-auto border border-line bg-white">
         <div className="min-w-[900px]">
-          {/* Header: corner + day labels */}
-          <div className={`grid ${cols} border-b border-gray-200 bg-gray-50`}>
-            <div className="sticky left-0 z-10 bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-500">
+          {/* Header: corner + day labels + Tages-Summe */}
+          <div className={`sticky top-0 z-20 grid ${cols} border-b border-line bg-paper-2`}>
+            <div className="sticky left-0 z-10 bg-paper-2 px-3 py-2.5 font-mono text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
               Mitarbeiter
             </div>
-            {days.map((d) => (
+            {days.map((d, i) => (
               <div
                 key={d.date}
-                className={`border-l border-gray-200 px-2 py-2 text-center text-xs font-semibold ${
-                  d.isToday ? "text-brand-red" : "text-gray-700"
-                }`}
+                className={`border-l border-line px-2 py-2 text-center ${d.isWeekend ? "bg-gray-100/70" : ""}`}
               >
-                {d.label}
+                <div className={`text-sm font-semibold ${d.isToday ? "text-brand-red" : "text-gray-800"}`}>
+                  {d.label}
+                </div>
+                <div className={`mt-0.5 font-mono text-[10px] tabular-nums ${dayPlanned[i] > 0 ? "text-gray-500" : "text-gray-300"}`}>
+                  {dayPlanned[i] > 0 ? hoursFmt(dayPlanned[i]) : "—"}
+                </div>
+                {d.isToday && <div className="mx-auto mt-1 h-0.5 w-8 rounded-full bg-brand-red" />}
               </div>
             ))}
           </div>
@@ -106,10 +126,18 @@ export default function PlanboardCalendar({ week, backUrl }: { week: PlanboardWe
           {rows.map((row, rowIdx) => (
             <div
               key={row.employeeId}
-              className={`grid ${cols} border-b border-gray-100 last:border-b-0`}
+              className={`group grid ${cols} border-b border-line last:border-b-0`}
             >
-              <div className="sticky left-0 z-10 flex items-center bg-white px-3 py-2 text-sm font-medium text-gray-900">
-                {row.employeeName}
+              <div className="sticky left-0 z-10 flex items-center gap-2 bg-white px-3 py-2 transition-colors group-hover:bg-gray-50/70">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-red/10 font-mono text-[11px] font-semibold text-brand-red">
+                  {initials(row.employeeName)}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium text-gray-900">{row.employeeName}</span>
+                  <span className="block font-mono text-[10px] tabular-nums text-gray-400">
+                    {rowPlanned[rowIdx] > 0 ? `${hoursFmt(rowPlanned[rowIdx])} geplant` : "—"}
+                  </span>
+                </span>
               </div>
               {row.cells.map((cell, i) => (
                 <div
@@ -118,7 +146,7 @@ export default function PlanboardCalendar({ week, backUrl }: { week: PlanboardWe
                     e.preventDefault();
                     setSel({ rowIdx, dayIdx: i });
                   }}
-                  className={`min-h-[3.5rem] cursor-context-menu border-l border-gray-200 p-1.5 ${dayCellClass(
+                  className={`min-h-[3.75rem] cursor-context-menu border-l border-line p-1.5 ${dayCellClass(
                     days[i].isToday,
                     days[i].isWeekend
                   )}`}
@@ -151,22 +179,22 @@ export default function PlanboardCalendar({ week, backUrl }: { week: PlanboardWe
                         }
                         role={clickable ? "button" : undefined}
                         title={clickable ? "Projekt öffnen" : ev.projectName ?? ev.title}
-                        className={`rounded-md border border-gray-300 bg-gray-100 p-1.5 shadow-sm ${
-                          clickable ? "cursor-pointer transition-colors hover:border-brand-red/50 hover:bg-brand-red/5" : ""
+                        className={`overflow-hidden rounded-md border-l-[3px] bg-white p-1.5 shadow-sm ring-1 ring-gray-200/70 ${
+                          clickable
+                            ? "cursor-pointer border-brand-red transition-all hover:bg-brand-red/[0.04] hover:ring-brand-red/40"
+                            : "border-gray-300"
                         }`}
                       >
-                        <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-600">
+                        <span className="inline-block rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wide text-gray-600">
                           {ev.timeLabel}
-                        </p>
-                        <p className="mt-0.5 truncate text-xs font-medium leading-snug text-gray-900">
+                        </span>
+                        <p className="mt-1 truncate text-xs font-medium leading-snug text-gray-900">
                           {ev.title}
                         </p>
                         {(ev.projectRelativeId != null || ev.projectName) && (
                           <p className="truncate text-[11px] text-gray-500">
                             {ev.projectRelativeId != null && (
-                              <span className="font-semibold text-gray-700">
-                                #{ev.projectRelativeId}
-                              </span>
+                              <span className="font-semibold text-brand-red">#{ev.projectRelativeId}</span>
                             )}
                             {ev.projectRelativeId != null && ev.projectName ? " " : ""}
                             {ev.projectName}
@@ -180,6 +208,21 @@ export default function PlanboardCalendar({ week, backUrl }: { week: PlanboardWe
               ))}
             </div>
           ))}
+
+          {/* Summen-Fußzeile: Σ je Tag + Wochensumme */}
+          <div className={`grid ${cols} border-t-2 border-line bg-paper-2`}>
+            <div className="sticky left-0 z-10 flex items-baseline justify-between gap-2 bg-paper-2 px-3 py-2">
+              <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">Σ Geplant</span>
+              <span className="font-mono text-xs font-semibold tabular-nums text-brand-red">{hoursFmt(grandPlanned)}</span>
+            </div>
+            {dayPlanned.map((h, i) => (
+              <div key={days[i].date} className="border-l border-line px-2 py-2 text-center">
+                <span className={`font-mono text-xs tabular-nums ${h > 0 ? "font-semibold text-gray-800" : "text-gray-300"}`}>
+                  {h > 0 ? hoursFmt(h) : "—"}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
