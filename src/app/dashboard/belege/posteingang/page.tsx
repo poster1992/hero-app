@@ -24,14 +24,24 @@ export default async function BelegPosteingangPage() {
             Mehrere Belege auf einmal ablegen – sie werden automatisch erkannt und als manuelle Belege erfasst.
           </p>
         </div>
-        {canFull && (
-          <Link
-            href="/dashboard/belege"
+        <div className="flex flex-wrap items-center gap-2">
+          <a
+            href="/anleitung-belege-hochladen.pdf"
+            target="_blank"
+            rel="noopener noreferrer"
             className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900"
           >
-            ← Zu den Belegen
-          </Link>
-        )}
+            📄 Anleitung
+          </a>
+          {canFull && (
+            <Link
+              href="/dashboard/belege"
+              className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900"
+            >
+              ← Zu den Belegen
+            </Link>
+          )}
+        </div>
       </header>
 
       <BelegInbox />

@@ -73,6 +73,29 @@ export default function HilfePage() {
               </a>
             </span>
           </li>
+          <li className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+            <span className="flex items-center gap-2 text-sm font-medium text-gray-900">
+              <span aria-hidden>📄</span>
+              Belege hochladen – Posteingang (Sammel-Upload)
+            </span>
+            <span className="flex items-center gap-2">
+              <a
+                href="/anleitung-belege-hochladen.pdf"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900"
+              >
+                Ansehen
+              </a>
+              <a
+                href="/anleitung-belege-hochladen.pdf"
+                download="FLOORTEC-Anleitung-Belege-hochladen.pdf"
+                className="rounded-md bg-brand-red px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90"
+              >
+                ⬇ Herunterladen
+              </a>
+            </span>
+          </li>
         </ul>
       </div>
 
