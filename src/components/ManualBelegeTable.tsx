@@ -639,8 +639,7 @@ export default function ManualBelegeTable({
         done++;
         setZipping(`${done} / ${total}`);
       }
-      // Zahlungsavise in einen eigenen Unterordner legen.
-      const usedAvis = new Set<string>();
+      // Zahlungsavise ebenfalls flach in denselben Ordner (kein Unterordner).
       for (const a of paymentAdvices) {
         try {
           const res = await fetch(`/api/payment-advice?id=${a.id}`);
@@ -652,9 +651,9 @@ export default function ManualBelegeTable({
             const dot = name.lastIndexOf(".");
             const base = dot > 0 ? name.slice(0, dot) : name;
             const ext = dot > 0 ? name.slice(dot) : "";
-            while (usedAvis.has(name)) name = `${base} (${i++})${ext}`;
-            usedAvis.add(name);
-            zip.file(`Zahlungsavise/${name}`, blob);
+            while (used.has(name)) name = `${base} (${i++})${ext}`;
+            used.add(name);
+            zip.file(name, blob);
           }
         } catch {
           // einzelnes Avis überspringen
@@ -662,8 +661,7 @@ export default function ManualBelegeTable({
         done++;
         setZipping(`${done} / ${total}`);
       }
-      // HERO-Beleg-PDFs in einen eigenen Unterordner legen.
-      const usedHero = new Set<string>();
+      // HERO-Beleg-PDFs ebenfalls flach in denselben Ordner (kein Unterordner).
       for (const h of heroWithFile) {
         try {
           const res = await fetch(h.docUrl as string);
@@ -672,9 +670,9 @@ export default function ManualBelegeTable({
             const safeParty = (h.supplier ?? "").replace(/[^\wäöüÄÖÜß .-]/g, "_").slice(0, 40);
             let name = `${h.number || `HERO-${h.id}`}_${safeParty}.pdf`.replace(/\s+/g, " ").trim();
             let i = 2;
-            while (usedHero.has(name)) name = name.replace(".pdf", ` (${i++}).pdf`);
-            usedHero.add(name);
-            zip.file(`HERO/${name}`, blob);
+            while (used.has(name)) name = name.replace(".pdf", ` (${i++}).pdf`);
+            used.add(name);
+            zip.file(name, blob);
           }
         } catch {
           // einzelnes HERO-Dokument überspringen
