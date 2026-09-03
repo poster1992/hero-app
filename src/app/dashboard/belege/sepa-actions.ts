@@ -1,6 +1,8 @@
 "use server";
 
 import { getSession } from "@/lib/session";
+import { getUserByUsername } from "@/lib/users";
+import { logReceiptEvent } from "@/lib/receipt-history";
 import { getCompanyBankInfo, getSupplierContacts } from "@/lib/hero-api";
 import { getSupplierIbanMap, upsertSupplierIban, setSupplierDirectDebit } from "@/lib/supplier-ibans";
 import { buildSepaCreditTransfer, type SepaPayment } from "@/lib/sepa";
@@ -16,6 +18,8 @@ export interface SepaItem {
   reference: string;
   /** HERO-Beleg-ID (für die OCR-Prüfung vor dem Export). */
   heroId?: string;
+  /** ID des manuellen Belegs (nur für die Beleg-Historie). */
+  belegId?: number;
 }
 
 export interface SepaResult {
@@ -80,7 +84,8 @@ export async function setDirectDebitAction(formData: FormData): Promise<void> {
 }
 
 export async function buildMultilineSepaAction(items: SepaItem[]): Promise<SepaResult> {
-  if (!(await getSession())) return { missing: [], error: "Kein Zugriff." };
+  const session = await getSession();
+  if (!session) return { missing: [], error: "Kein Zugriff." };
   if (items.length === 0) return { missing: [], error: "Keine Belege ausgewählt." };
 
   const [company, ibanMap] = await Promise.all([getCompanyBankInfo(), getSupplierIbanMap()]);
@@ -104,6 +109,8 @@ export async function buildMultilineSepaAction(items: SepaItem[]): Promise<SepaR
 
   const payments: SepaPayment[] = [];
   const missing: { customerId: number | null; name: string }[] = [];
+  /** Tatsächlich in die Datei aufgenommene Belege (für die Beleg-Historie). */
+  const exported: SepaItem[] = [];
 
   for (const it of items) {
     if (it.amount <= 0) continue;
@@ -123,6 +130,7 @@ export async function buildMultilineSepaAction(items: SepaItem[]): Promise<SepaR
       reference: it.reference,
       endToEndId: it.reference || `BELEG-${customerId ?? "M"}`,
     });
+    exported.push(it);
   }
 
   if (missing.length > 0) {
@@ -143,6 +151,29 @@ export async function buildMultilineSepaAction(items: SepaItem[]): Promise<SepaR
     msgId: `FLOORTEC-${Date.now()}`,
     payments,
   });
+
+  // Beleg-Historie: festhalten, welcher Beleg wann in eine SEPA-Datei ging.
+  const me = await getUserByUsername(session.username).catch(() => null);
+  for (const it of exported) {
+    const amount = it.amount.toLocaleString("de-DE", { style: "currency", currency: "EUR" });
+    if (it.belegId) {
+      await logReceiptEvent({
+        kind: "manual",
+        receiptId: it.belegId,
+        action: "sepa",
+        detail: `${amount} · ${it.name}`,
+        userId: me?.id ?? null,
+      });
+    } else if (it.heroId) {
+      await logReceiptEvent({
+        kind: "hero",
+        receiptId: it.heroId,
+        action: "sepa",
+        detail: `${amount} · ${it.name}`,
+        userId: me?.id ?? null,
+      });
+    }
+  }
 
   return { missing: [], xml, filename: `multiline-sepa-${today}.xml` };
 }

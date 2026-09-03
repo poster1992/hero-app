@@ -14,6 +14,11 @@ import {
   type ManualReceiptUpload,
   type DuplicateBeleg,
 } from "@/lib/manual-receipts";
+import {
+  listReceiptHistory,
+  type ReceiptHistoryEntry,
+  type ReceiptKind,
+} from "@/lib/receipt-history";
 import { getBookAccounts, getProjects, getSupplierContacts } from "@/lib/hero-api";
 import { deleteTasksForBeleg } from "@/lib/tasks";
 import { setHiddenBelegColumns } from "@/lib/belege-column-prefs";
@@ -181,6 +186,8 @@ export async function updateBelegAction(
 ): Promise<UploadBelegState> {
   const session = await getSession();
   if (!session) return { error: "Nicht angemeldet." };
+  // Für die Beleg-Historie: wer hat die Änderung vorgenommen.
+  const me = await getUserByUsername(session.username).catch(() => null);
 
   const id = Number(formData.get("id"));
   if (!Number.isFinite(id) || id <= 0) return { error: "Ungültiger Beleg." };
@@ -269,6 +276,7 @@ export async function updateBelegAction(
       skontoPayAmount,
       skontoDueDate,
       confidential,
+      actorId: me?.id ?? null,
     });
   } catch {
     return { error: "Beleg konnte nicht aktualisiert werden." };
@@ -390,8 +398,22 @@ export async function setBelegPaidAction(formData: FormData): Promise<void> {
   const paid = String(formData.get("paid")) === "1";
   const withSkonto = String(formData.get("withSkonto")) === "1";
   if (!Number.isFinite(id) || id <= 0) return;
-  await setManualReceiptPaid(id, paid, withSkonto);
+  const me = await getUserByUsername(session.username).catch(() => null);
+  await setManualReceiptPaid(id, paid, withSkonto, me?.id ?? null);
   revalidatePath(PATH);
+}
+
+/**
+ * Historie eines Belegs (manuell oder HERO) – wird im Rechtsklick-Menü der
+ * Belegtabelle angezeigt.
+ */
+export async function listReceiptHistoryAction(
+  kind: ReceiptKind,
+  receiptId: number | string
+): Promise<ReceiptHistoryEntry[]> {
+  if (!(await getSession())) return [];
+  if (kind !== "manual" && kind !== "hero") return [];
+  return listReceiptHistory(kind, receiptId).catch(() => []);
 }
 
 /** Hakt einen Checklisten-Punkt für einen Monat ab bzw. wieder ab. */

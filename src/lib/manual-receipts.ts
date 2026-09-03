@@ -5,6 +5,7 @@ import type { RowDataPacket } from "mysql2";
 import { getPool } from "./db";
 import { receiptDupKey } from "./receipt-duplicates";
 import { extForMime } from "./file-sniff";
+import { logReceiptEvent, describeChanges } from "./receipt-history";
 
 /** Directory for uploaded receipt files (configurable via BELEGE_DIR). */
 const BELEGE_DIR = process.env.BELEGE_DIR || path.join(process.cwd(), "data", "belege");
@@ -191,11 +192,32 @@ export async function getManualReceipt(id: number): Promise<ManualReceipt | null
 }
 
 /** Sets/clears the paid status of a manual receipt. withSkonto = mit Skonto gezahlt. */
-export async function setManualReceiptPaid(id: number, paid: boolean, withSkonto = false): Promise<void> {
+export async function setManualReceiptPaid(
+  id: number,
+  paid: boolean,
+  withSkonto = false,
+  actorId: number | null = null
+): Promise<void> {
+  const before = await getManualReceipt(id).catch(() => null);
   await getPool().query(
     "UPDATE manual_receipts SET is_paid = ?, paid_with_skonto = ?, paid_date = ? WHERE id = ?",
     [paid ? 1 : 0, paid && withSkonto ? 1 : 0, paid ? new Date().toISOString().slice(0, 10) : null, id]
   );
+  const amount =
+    paid && withSkonto && before?.skontoPayAmount != null ? before.skontoPayAmount : before?.gross ?? null;
+  await logReceiptEvent({
+    kind: "manual",
+    receiptId: id,
+    action: paid ? "paid" : "unpaid",
+    detail:
+      amount == null
+        ? null
+        : `${withSkonto && paid ? "mit Skonto · " : ""}${amount.toLocaleString("de-DE", {
+            style: "currency",
+            currency: "EUR",
+          })}`,
+    userId: actorId,
+  });
 }
 
 /** Ein manueller Beleg, der an einem bestimmten Tag als bezahlt markiert wurde. */
@@ -389,6 +411,60 @@ export async function listInboxReceipts(): Promise<InboxReceipt[]> {
   }));
 }
 
+/** Feldbezeichnungen für die Änderungs-Historie (Reihenfolge = Anzeige-Reihenfolge). */
+const CHANGE_LABELS: Record<string, string> = {
+  date: "Datum",
+  supplier: "Lieferant",
+  invoiceNumber: "Beleg-Nr.",
+  description: "Beschreibung",
+  gross: "Betrag (brutto)",
+  vatRate: "MwSt-Satz",
+  account: "Konto",
+  project: "Projekt",
+  skontoAmount: "Skonto",
+  skontoPayAmount: "Skontozahlbetrag",
+  skontoDueDate: "Skonto bis",
+  confidential: "Vertraulich",
+};
+
+const eurStr = (n: number | null | undefined): string | null =>
+  n == null ? null : n.toLocaleString("de-DE", { style: "currency", currency: "EUR" });
+
+/** Vergleichbare Klartext-Fassung eines Beleg-Stands (für die Änderungs-Historie). */
+function changeSnapshot(r: {
+  date: string | null;
+  supplier: string | null;
+  description: string | null;
+  gross: number;
+  vatRate: number | null;
+  accountNumber: string | null;
+  accountName: string | null;
+  projectRelativeId?: number | null;
+  projectName?: string | null;
+  invoiceNumber?: string | null;
+  skontoAmount?: number | null;
+  skontoPayAmount?: number | null;
+  skontoDueDate?: string | null;
+  confidential?: boolean;
+}): Record<string, unknown> {
+  return {
+    date: r.date,
+    supplier: r.supplier,
+    invoiceNumber: r.invoiceNumber ?? null,
+    description: r.description,
+    gross: eurStr(r.gross),
+    vatRate: r.vatRate == null ? null : `${r.vatRate} %`,
+    account: r.accountNumber ? `${r.accountNumber} ${r.accountName ?? ""}`.trim() : null,
+    project: r.projectName
+      ? `${r.projectRelativeId != null ? `#${r.projectRelativeId} ` : ""}${r.projectName}`
+      : null,
+    skontoAmount: eurStr(r.skontoAmount ?? null),
+    skontoPayAmount: eurStr(r.skontoPayAmount ?? null),
+    skontoDueDate: r.skontoDueDate ?? null,
+    confidential: r.confidential ? "ja" : "nein",
+  };
+}
+
 /** Updates an existing manual receipt; replaces the file only if a new one is given. */
 export async function updateManualReceipt(input: {
   id: number;
@@ -408,8 +484,35 @@ export async function updateManualReceipt(input: {
   skontoPayAmount?: number | null;
   skontoDueDate?: string | null;
   confidential?: boolean;
+  /** Benutzer, der die Änderung vornimmt (für die Beleg-Historie). */
+  actorId?: number | null;
 }): Promise<void> {
   const pool = getPool();
+  // Vorher-Stand für die Änderungs-Historie (welches Feld wurde wie geändert).
+  const before = await getManualReceipt(input.id).catch(() => null);
+  const logChanges = async () => {
+    const detail = before
+      ? describeChanges(changeSnapshot(before), changeSnapshot(input), CHANGE_LABELS)
+      : "";
+    if (detail) {
+      await logReceiptEvent({
+        kind: "manual",
+        receiptId: input.id,
+        action: "updated",
+        detail,
+        userId: input.actorId ?? null,
+      });
+    }
+    if (input.file) {
+      await logReceiptEvent({
+        kind: "manual",
+        receiptId: input.id,
+        action: "file",
+        detail: `${before?.fileName ? `${before.fileName} → ` : ""}${input.file.originalName}`,
+        userId: input.actorId ?? null,
+      });
+    }
+  };
   const projectId = input.projectId ?? null;
   const projectRelativeId = input.projectRelativeId ?? null;
   const projectName = input.projectName ?? null;
@@ -469,6 +572,7 @@ export async function updateManualReceipt(input: {
         // Alte Datei evtl. schon weg – ignorieren.
       }
     }
+    await logChanges();
     return;
   }
 
@@ -498,6 +602,7 @@ export async function updateManualReceipt(input: {
       input.id,
     ]
   );
+  await logChanges();
 }
 
 /** Löscht einen manuellen Beleg samt hinterlegter Datei. */
@@ -752,6 +857,20 @@ export async function applyAutoExtraction(
       id,
     ]
   );
+  await logReceiptEvent({
+    kind: "manual",
+    receiptId: id,
+    action: "auto",
+    detail: [
+      fields.supplier ? `Lieferant: ${fields.supplier}` : null,
+      fields.gross ? `Betrag: ${eurStr(fields.gross)}` : null,
+      fields.invoiceNumber ? `Beleg-Nr.: ${fields.invoiceNumber}` : null,
+      fields.accountNumber ? `Konto: ${fields.accountNumber}` : null,
+    ]
+      .filter(Boolean)
+      .join(" · ") || null,
+    byName: "Automatik",
+  });
 }
 
 /** Schließt die Auto-Erfassung ab, ohne Felder zu ändern (z. B. nicht erkannt → Entwurf). */

@@ -13,6 +13,8 @@ import { buildMultilineSepaAction, type SepaItem } from "@/app/dashboard/belege/
 import { decideReviewAction } from "@/app/dashboard/belege/review-actions";
 import { setReceiptPaymentStatusAction } from "@/app/dashboard/belege/status-actions";
 import BelegDetailModal from "@/components/BelegDetailModal";
+import ReceiptHistoryModal from "@/components/ReceiptHistoryModal";
+import type { ReceiptKind } from "@/lib/receipt-history";
 import type { ProjectOption, SupplierOption } from "@/components/ManualBelegeForm";
 import type { ManualReceipt } from "@/lib/manual-receipts";
 
@@ -820,6 +822,7 @@ export default function ManualBelegeTable({
         // Voller Bruttobetrag (Skonto wird hier bewusst nicht automatisch gezogen).
         amount: r.gross,
         reference: r.invoiceNumber || `Beleg ${r.id}`,
+        belegId: r.id, // nur für die Beleg-Historie
       }));
       const heroItems: SepaItem[] = heroSelectedRows.map((h) => ({
         customerId: h.supplierId ?? null, // HERO-Kontakt-ID → IBAN; sonst über Namen
@@ -875,8 +878,25 @@ export default function ManualBelegeTable({
   // --- Zeilen-Aktionen per Rechtsklick (Kontextmenü) ---
   const router = useRouter();
   const [, startDelete] = useTransition();
-  const [menu, setMenu] = useState<{ row: BelegRow; x: number; y: number } | null>(null);
+  const [menu, setMenu] = useState<
+    | { kind: "manual"; row: BelegRow; x: number; y: number }
+    | { kind: "hero"; row: HeroBelegRow; x: number; y: number }
+    | null
+  >(null);
   const [editRow, setEditRow] = useState<BelegRow | null>(null);
+  // Beleg, dessen Historie gerade angezeigt wird (manuell oder HERO).
+  const [historyFor, setHistoryFor] = useState<{
+    kind: ReceiptKind;
+    id: number | string;
+    title: string;
+    subtitle: string | null;
+  } | null>(null);
+
+  /** Menü-Position (klemmt am Fensterrand, damit nichts abgeschnitten wird). */
+  const menuPos = (e: { clientX: number; clientY: number }) => ({
+    x: Math.min(e.clientX, window.innerWidth - 200),
+    y: Math.min(e.clientY, window.innerHeight - 170),
+  });
 
   const doDelete = (row: BelegRow) => {
     setMenu(null);
@@ -1096,14 +1116,10 @@ export default function ManualBelegeTable({
                 <tr
                   key={r.id}
                   className={`border-t border-gray-100 ${rowTint(r, todayISO)}`}
-                  title={`${rowTintLabel(r, todayISO)} · Rechtsklick für Aktionen (Bearbeiten / Löschen)`}
+                  title={`${rowTintLabel(r, todayISO)} · Rechtsklick für Aktionen (Ansehen / Bearbeiten / Historie / Löschen)`}
                   onContextMenu={(e) => {
                     e.preventDefault();
-                    setMenu({
-                      row: r,
-                      x: Math.min(e.clientX, window.innerWidth - 180),
-                      y: Math.min(e.clientY, window.innerHeight - 90),
-                    });
+                    setMenu({ kind: "manual", row: r, ...menuPos(e) });
                   }}
                 >
                   <td className="px-3 py-1.5">
@@ -1211,11 +1227,10 @@ export default function ManualBelegeTable({
                 <tr
                   key={`h-${h.id}`}
                   className="border-t border-gray-100 bg-indigo-50/50 hover:bg-indigo-50"
-                  title={`🟣 HERO-Beleg (${h.isPaid ? "bezahlt" : "offen"})${h.docUrl ? " · Rechtsklick: Beleg-PDF öffnen" : ""}`}
+                  title={`🟣 HERO-Beleg (${h.isPaid ? "bezahlt" : "offen"}) · Rechtsklick für Aktionen (${h.docUrl ? "Beleg-PDF / " : ""}Historie)`}
                   onContextMenu={(e) => {
-                    if (!h.docUrl) return;
                     e.preventDefault();
-                    window.open(h.docUrl, "_blank", "noopener,noreferrer");
+                    setMenu({ kind: "hero", row: h, ...menuPos(e) });
                   }}
                 >
                   <td className="px-3 py-1.5">
@@ -1307,40 +1322,108 @@ export default function ManualBelegeTable({
           }}
         />
         <div
-          className="fixed z-50 w-44 overflow-hidden rounded-md border border-gray-200 bg-white py-1 shadow-xl"
+          className="fixed z-50 w-48 overflow-hidden rounded-md border border-gray-200 bg-white py-1 shadow-xl"
           style={{ left: menu.x, top: menu.y }}
         >
-          {menu.row.hasFile && (
-            <button
-              type="button"
-              onClick={() => {
-                window.open(`/api/beleg?id=${menu.row.id}`, "_blank", "noopener,noreferrer");
-                setMenu(null);
-              }}
-              className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
-            >
-              👁 Ansehen
-            </button>
+          {menu.kind === "manual" ? (
+            <>
+              {menu.row.hasFile && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.open(`/api/beleg?id=${menu.row.id}`, "_blank", "noopener,noreferrer");
+                    setMenu(null);
+                  }}
+                  className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  👁 Ansehen
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setEditRow(menu.row);
+                  setMenu(null);
+                }}
+                className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+              >
+                ✏️ Bearbeiten
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setHistoryFor({
+                    kind: "manual",
+                    id: menu.row.id,
+                    title: `Beleg #${menu.row.id}`,
+                    subtitle: [
+                      menu.row.supplier,
+                      menu.row.invoiceNumber ? `Nr. ${menu.row.invoiceNumber}` : null,
+                      currencyFormatter.format(menu.row.gross),
+                    ]
+                      .filter(Boolean)
+                      .join(" · "),
+                  });
+                  setMenu(null);
+                }}
+                className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+              >
+                🕘 Historie
+              </button>
+              <button
+                type="button"
+                onClick={() => doDelete(menu.row)}
+                className="block w-full px-3 py-2 text-left text-sm font-medium text-brand-red hover:bg-gray-50"
+              >
+                🗑 Löschen
+              </button>
+            </>
+          ) : (
+            <>
+              {menu.row.docUrl && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.open(menu.row.docUrl as string, "_blank", "noopener,noreferrer");
+                    setMenu(null);
+                  }}
+                  className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  👁 Beleg-PDF öffnen
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setHistoryFor({
+                    kind: "hero",
+                    id: menu.row.id,
+                    title: `HERO-Beleg ${menu.row.number || menu.row.id}`,
+                    subtitle: [menu.row.supplier, currencyFormatter.format(menu.row.gross)]
+                      .filter(Boolean)
+                      .join(" · "),
+                  });
+                  setMenu(null);
+                }}
+                className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+              >
+                🕘 Historie
+              </button>
+            </>
           )}
-          <button
-            type="button"
-            onClick={() => {
-              setEditRow(menu.row);
-              setMenu(null);
-            }}
-            className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
-          >
-            ✏️ Bearbeiten
-          </button>
-          <button
-            type="button"
-            onClick={() => doDelete(menu.row)}
-            className="block w-full px-3 py-2 text-left text-sm font-medium text-brand-red hover:bg-gray-50"
-          >
-            🗑 Löschen
-          </button>
         </div>
       </>
+    )}
+
+    {/* Beleg-Historie (Rechtsklick → „Historie"). */}
+    {historyFor && (
+      <ReceiptHistoryModal
+        kind={historyFor.kind}
+        receiptId={historyFor.id}
+        title={historyFor.title}
+        subtitle={historyFor.subtitle}
+        onClose={() => setHistoryFor(null)}
+      />
     )}
 
     {/* Bearbeiten-Fenster (dasselbe wie zuvor der „Bearbeiten"-Button). */}
