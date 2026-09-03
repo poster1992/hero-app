@@ -4,8 +4,13 @@ import { useMemo, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import type { StockMovement } from "@/lib/material-types";
-import type { OutboundStatRow } from "@/lib/materials";
-import { deleteMovementAction, updateMovementAction, getOutboundStatsAction } from "@/app/dashboard/lager/actions";
+import type { OutboundStatRow, MissingEkArticle } from "@/lib/materials";
+import {
+  deleteMovementAction,
+  updateMovementAction,
+  getOutboundStatsAction,
+  setMaterialEkAction,
+} from "@/app/dashboard/lager/actions";
 
 export interface MovementProjectOption {
   relativeId: number | null;
@@ -38,17 +43,133 @@ function projLabel(r: OutboundStatRow): string {
 
 type Filter = "all" | "in" | "out";
 
+/**
+ * Nachtrag-Zeile: EK eines ausgebuchten Artikels eintragen. Der Preis wird am
+ * Artikel gespeichert UND auf alle bisherigen Buchungen ohne EK übertragen
+ * (`setMaterialEkAction` → `setMaterialEkByArticle`), sodass Lagerausgang und
+ * Statistik den Wert rückwirkend zeigen.
+ */
+function MissingEkRow({ a }: { a: MissingEkArticle }) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [value, setValue] = useState(a.ekPrice > 0 ? String(a.ekPrice).replace(".", ",") : "");
+  const [done, setDone] = useState(false);
+
+  const save = () => {
+    const price = Number(value.replace(",", "."));
+    if (!Number.isFinite(price) || price <= 0) return;
+    const fd = new FormData();
+    fd.set("heroArticleId", String(a.heroArticleId));
+    fd.set("price", value);
+    start(async () => {
+      await setMaterialEkAction(fd);
+      setDone(true);
+      router.refresh();
+    });
+  };
+
+  return (
+    <li className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
+      <div className="min-w-0 flex-1">
+        <span className="font-medium text-gray-900">{a.name}</span>
+        {a.sku && <span className="text-gray-500"> · {a.sku}</span>}
+        <span className="block text-xs text-gray-500">
+          {numberFmt.format(a.qty)} {a.unit} ohne EK ausgebucht · {a.bookings}{" "}
+          {a.bookings === 1 ? "Buchung" : "Buchungen"}
+          {a.lastAt ? ` · zuletzt ${formatDateTime(a.lastAt)}` : ""}
+          {a.ekPrice > 0
+            ? ` · Artikel-EK ${currencyFmt.format(a.ekPrice)} (nur die Buchungen fehlen)`
+            : ""}
+        </span>
+      </div>
+      <div className="flex shrink-0 items-center gap-1">
+        {done ? (
+          <span className="text-xs font-medium text-emerald-700">✓ übertragen</span>
+        ) : (
+          <>
+            <input
+              type="text"
+              inputMode="decimal"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  save();
+                }
+              }}
+              placeholder="EK 0,00"
+              title={`EK-Preis je ${a.unit} – wird auf die ${a.bookings} Buchung(en) ohne EK übertragen`}
+              className="w-24 rounded-md border border-brand-red/50 bg-brand-red/5 px-2 py-1 text-right text-sm outline-none focus:border-brand-red/60"
+            />
+            <button
+              type="button"
+              onClick={save}
+              disabled={pending || !value.trim()}
+              className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 transition-colors hover:border-brand-red/50 disabled:opacity-50"
+            >
+              {pending ? "…" : "✓"}
+            </button>
+          </>
+        )}
+      </div>
+    </li>
+  );
+}
+
+/** Kasten „Ausbuchungen ohne EK-Preis" mit Nachtrag-Feldern je Artikel. */
+function MissingEkPanel({ items }: { items: MissingEkArticle[] }) {
+  const [open, setOpen] = useState(true);
+  const bookings = items.reduce((s, a) => s + a.bookings, 0);
+
+  return (
+    <div className="mb-4 rounded-md border border-amber-300 bg-amber-50 px-4 py-3">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between gap-3 text-left"
+      >
+        <span className="text-sm font-semibold text-amber-900">
+          ⚠ Ausbuchungen ohne EK-Preis · {items.length} {items.length === 1 ? "Artikel" : "Artikel"} ·{" "}
+          {bookings} {bookings === 1 ? "Buchung" : "Buchungen"}
+        </span>
+        <span className="shrink-0 text-xs font-medium text-amber-800">{open ? "▲ einklappen" : "▼ anzeigen"}</span>
+      </button>
+      {open && (
+        <>
+          <p className="mt-1 text-xs text-amber-900/80">
+            Diese Artikel wurden ohne hinterlegten Einkaufspreis ausgebucht und zählen im Lagerausgang
+            mit 0 €. EK hier nachtragen – er wird am Artikel gespeichert und automatisch auf alle
+            betroffenen Buchungen übertragen.
+          </p>
+          <ul className="mt-2 divide-y divide-amber-200/70">
+            {items.map((a) => (
+              <MissingEkRow key={a.heroArticleId} a={a} />
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
+  );
+}
+
 /** Buchungs-Historie (eigene Lager-Unterseite): die letzten Ein-/Ausbuchungen, filterbar. */
 export default function LagerMovements({
   movements,
   isAdmin = false,
   canStats = false,
+  canEk = false,
+  missingEk = [],
   projects = [],
 }: {
   movements: StockMovement[];
   isAdmin?: boolean;
   /** Recht „lager_statistik": zeigt den Button „Lagerstatistik". */
   canStats?: boolean;
+  /** Recht „lager_ek": zeigt EK-Werte und erlaubt das Nachtragen fehlender Preise. */
+  canEk?: boolean;
+  /** Ausgebuchte Artikel, deren Buchungen ohne EK stehen (zum Nachtragen). */
+  missingEk?: MissingEkArticle[];
   projects?: MovementProjectOption[];
 }) {
   const [filter, setFilter] = useState<Filter>("all");
@@ -260,6 +381,8 @@ export default function LagerMovements({
         </div>
       </div>
 
+      {canEk && missingEk.length > 0 && <MissingEkPanel items={missingEk} />}
+
       <input
         type="text"
         value={search}
@@ -295,6 +418,20 @@ export default function LagerMovements({
                 <span className="block text-xs text-gray-400">
                   {formatDateTime(mv.at)}
                   {mv.employeeName ? ` · ${mv.employeeName}` : mv.byName ? ` · ${mv.byName}` : ""}
+                  {/* EK-Wert der Buchung – fehlender Preis wird deutlich markiert. */}
+                  {canEk && mv.delta < 0 && (
+                    mv.ekPrice && mv.ekPrice > 0 ? (
+                      <span className="text-gray-500">
+                        {" · "}
+                        {currencyFmt.format(Math.abs(mv.delta) * mv.ekPrice)}
+                        <span className="text-gray-400"> ({currencyFmt.format(mv.ekPrice)} EK)</span>
+                      </span>
+                    ) : (
+                      <span className="ml-1.5 whitespace-nowrap rounded-full bg-amber-400/20 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 ring-1 ring-amber-500/40">
+                        kein EK
+                      </span>
+                    )
+                  )}
                 </span>
               </div>
               <div className="flex shrink-0 items-center gap-2">

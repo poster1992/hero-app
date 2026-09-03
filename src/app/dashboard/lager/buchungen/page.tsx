@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
 import { getAllowedModules } from "@/lib/role-store";
-import { listRecentMovements } from "@/lib/materials";
+import { listRecentMovements, listOutboundArticlesWithoutEk, type MissingEkArticle } from "@/lib/materials";
 import { getProjects } from "@/lib/hero-api";
 import LagerMovements, { type MovementProjectOption } from "@/components/LagerMovements";
 import type { StockMovement } from "@/lib/material-types";
@@ -10,13 +10,18 @@ export default async function LagerBuchungenPage() {
   const session = await getSession();
   if (!session) redirect("/login");
   const isAdmin = session.role === "administrator";
-  const canStats = (await getAllowedModules(session.role)).includes("lager_statistik");
+  const allowed = await getAllowedModules(session.role);
+  const canStats = allowed.includes("lager_statistik");
+  // Recht „lager_ek": EK-Preise sehen und (hier) nachtragen.
+  const canEk = allowed.includes("lager_ek");
 
   let movements: StockMovement[] = [];
   let projects: MovementProjectOption[] = [];
+  let missingEk: MissingEkArticle[] = [];
   let error: string | null = null;
   try {
     movements = await listRecentMovements();
+    if (canEk) missingEk = await listOutboundArticlesWithoutEk().catch(() => []);
     // Projektliste nur für Admins (zum Bearbeiten der Buchung nötig).
     if (isAdmin) {
       projects = (await getProjects().catch(() => []))
@@ -39,7 +44,14 @@ export default async function LagerBuchungenPage() {
           {error}
         </div>
       ) : (
-        <LagerMovements movements={movements} isAdmin={isAdmin} canStats={canStats} projects={projects} />
+        <LagerMovements
+          movements={movements}
+          isAdmin={isAdmin}
+          canStats={canStats}
+          canEk={canEk}
+          missingEk={missingEk}
+          projects={projects}
+        />
       )}
     </div>
   );

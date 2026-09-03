@@ -11,7 +11,9 @@ import {
   deleteStockMovement,
   updateStockMovement,
   getArticleOutboundStats,
+  listOutboundArticlesWithoutEk,
   type OutboundStatRow,
+  type MissingEkArticle,
 } from "@/lib/materials";
 import { createEkPriceRequest, completeEkPriceRequests } from "@/lib/tasks";
 import { getProjectPipeline } from "@/lib/hero-api";
@@ -224,6 +226,26 @@ export async function setMaterialEkAction(formData: FormData): Promise<void> {
   await setMaterialEkByArticle(heroArticleId, price);
   if (price > 0) await completeEkPriceRequests(heroArticleId, user.id);
   revalidatePath(PATH);
+  revalidatePath(`${PATH}/buchungen`);
+  revalidatePath(`${PATH}/bestand`);
+}
+
+/**
+ * Ausgebuchte Artikel, deren Buchungen ohne EK-Preis stehen (zum Nachtragen).
+ * Nur mit Recht „lager_ek".
+ */
+export async function listMissingEkAction(): Promise<MissingEkArticle[]> {
+  const session = await getSession();
+  if (!session) return [];
+  const user = await getUserByUsername(session.username);
+  if (!user) return [];
+  const allowed = await getAllowedModules(user.role);
+  if (!allowed.includes("lager_ek")) return [];
+  try {
+    return await listOutboundArticlesWithoutEk();
+  } catch {
+    return [];
+  }
 }
 
 /** Setzt Lager-Minimum/-Maximum eines Artikels (leeres Feld = kein Wert). */

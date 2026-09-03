@@ -43,4 +43,9 @@ export interface StockMovement {
   projectRelativeId: number | null;
   employeeName: string | null;
   at: string | null;
+  /**
+   * Auf der Buchung gespeicherter EK-Preis (Schnappschuss zum Buchungszeitpunkt);
+   * null/0 = kein EK hinterlegt → Buchung zählt im Lagerausgang mit Wert 0.
+   */
+  ekPrice?: number | null;
 }

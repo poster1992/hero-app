@@ -24,6 +24,7 @@ interface MovementRow extends RowDataPacket {
   project_relative_id: number | null;
   employee_name: string | null;
   created_at: string | null;
+  ek_price?: string | number | null;
 }
 
 const num = (v: string | number | null): number => (v == null ? 0 : Number(v));
@@ -88,6 +89,61 @@ export async function setMaterialEkByArticle(heroArticleId: number, price: numbe
       [price, heroArticleId]
     );
   }
+}
+
+/** Ein ausgebuchter Artikel, dessen Buchungen (noch) ohne EK-Preis stehen. */
+export interface MissingEkArticle {
+  heroArticleId: number;
+  name: string;
+  sku: string | null;
+  unit: string;
+  /** Anzahl betroffener Ausbuchungen ohne EK. */
+  bookings: number;
+  /** Summe der ohne EK ausgebuchten Menge. */
+  qty: number;
+  /** Jüngste betroffene Ausbuchung. */
+  lastAt: string | null;
+  /** Aktuell am Artikel hinterlegter EK (0 = keiner). */
+  ekPrice: number;
+}
+
+/**
+ * Artikel, die aus dem Lager ausgebucht wurden, deren Buchungen aber KEINEN
+ * EK-Preis tragen (Wert 0 im Lagerausgang/in der Statistik). Grundlage für das
+ * Nachtragen: `setMaterialEkByArticle` überträgt den Preis auf genau diese
+ * Buchungen. Läuft über alle Buchungen, nicht nur die zuletzt angezeigten.
+ */
+export async function listOutboundArticlesWithoutEk(): Promise<MissingEkArticle[]> {
+  const [rows] = await getPool().query<RowDataPacket[]>(
+    `SELECT m.hero_article_id, m.name, m.sku, m.unit, m.ek_price,
+            COUNT(*) AS bookings, SUM(-mv.delta) AS qty, MAX(mv.created_at) AS last_at
+       FROM stock_movements mv
+       JOIN materials m ON m.id = mv.material_id
+      WHERE mv.delta < 0
+        AND (mv.ek_price IS NULL OR mv.ek_price = 0)
+        AND m.hero_article_id IS NOT NULL
+      GROUP BY m.id, m.hero_article_id, m.name, m.sku, m.unit, m.ek_price
+      ORDER BY last_at DESC`
+  );
+  return (rows as {
+    hero_article_id: number;
+    name: string;
+    sku: string | null;
+    unit: string;
+    ek_price: string | number | null;
+    bookings: number;
+    qty: string | number;
+    last_at: string | Date | null;
+  }[]).map((r) => ({
+    heroArticleId: r.hero_article_id,
+    name: r.name,
+    sku: r.sku,
+    unit: r.unit,
+    bookings: Number(r.bookings),
+    qty: num(r.qty),
+    lastAt: r.last_at ? String(r.last_at) : null,
+    ekPrice: num(r.ek_price),
+  }));
 }
 
 /** Of the given article ids, those without an EK price (0 or null). */
@@ -558,7 +614,7 @@ export async function getBookedStockTotalsByProject(): Promise<Map<number, numbe
 /** Recent stock movements (newest first). */
 export async function listRecentMovements(limit = 50): Promise<StockMovement[]> {
   const [rows] = await getPool().query<MovementRow[]>(
-    `SELECT mv.id, mv.material_id, mv.delta, mv.comment, mv.created_at,
+    `SELECT mv.id, mv.material_id, mv.delta, mv.comment, mv.created_at, mv.ek_price,
             mv.project_name, mv.project_relative_id, mv.employee_name,
             m.name AS material_name,
             COALESCE(NULLIF(u.display_name, ''), u.username) AS by_name
@@ -580,6 +636,7 @@ export async function listRecentMovements(limit = 50): Promise<StockMovement[]> 
     projectRelativeId: r.project_relative_id,
     employeeName: r.employee_name,
     at: r.created_at ? String(r.created_at) : null,
+    ekPrice: r.ek_price == null ? null : num(r.ek_price),
   }));
 }
 
