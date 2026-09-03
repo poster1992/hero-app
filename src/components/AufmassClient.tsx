@@ -160,22 +160,22 @@ export default function AufmassClient({ initial }: { initial: AufmassEntry[] }) 
       </div>
 
       {busy && (
-        <div className="border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <div className="border-l-4 border-amber-400 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           ⏳ {busy} – das dauert je Blatt etwa eine halbe bis eine Minute, bitte das Fenster offen lassen.
         </div>
       )}
       {error && (
-        <div className="border border-brand-red/30 bg-brand-red/10 px-4 py-3 text-sm text-brand-red-dark">
+        <div className="border-l-4 border-brand-red bg-brand-red/10 px-4 py-3 text-sm text-brand-red-dark">
           {error}
         </div>
       )}
       {note && !busy && (
-        <div className="border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{note}</div>
+        <div className="border-l-4 border-emerald-400 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{note}</div>
       )}
 
       {/* Archiv */}
-      <div className="border border-line bg-white">
-        <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
+      <div>
+        <div className="mb-3 flex items-center justify-between">
           <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
             Erfasste Aufmaße
           </h2>
@@ -183,31 +183,34 @@ export default function AufmassClient({ initial }: { initial: AufmassEntry[] }) 
         </div>
 
         {entries.length === 0 ? (
-          <p className="px-5 py-8 text-center text-sm text-gray-400">
+          <p className="py-8 text-center text-sm text-gray-400">
             Noch kein Aufmaß erfasst – oben ein Foto oder PDF hineinziehen.
           </p>
         ) : (
           <ul className="divide-y divide-gray-100">
             {entries.map((e) => (
-              <li key={e.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
+              <li key={e.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
                 <div className="min-w-0 flex-1">
                   <p className="flex flex-wrap items-center gap-2 text-sm">
                     <span className="font-medium text-gray-900">{e.title}</span>
                     <StatusBadge entry={e} />
                   </p>
-                  <p className="mt-0.5 text-xs text-gray-500">
-                    {[
-                      e.customer,
-                      e.project,
-                      formatDate(e.date),
-                      e.fileName,
-                      `erfasst ${formatDateTime(e.created)}${e.createdByName ? ` · ${e.createdByName}` : ""}`,
-                    ]
+                  <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-gray-500">
+                    {[e.customer, e.project, formatDate(e.date)]
                       .filter(Boolean)
-                      .join(" · ")}
+                      .map((part, i) => (
+                        <span key={i}>
+                          {i > 0 && <span className="mr-2 text-gray-300">·</span>}
+                          {part}
+                        </span>
+                      ))}
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-gray-400">
+                    {e.fileName} · erfasst {formatDateTime(e.created)}
+                    {e.createdByName ? ` · ${e.createdByName}` : ""}
                   </p>
                   {e.status === "error" && e.error && (
-                    <p className="mt-0.5 text-xs text-brand-red">{e.error}</p>
+                    <p className="mt-1 text-xs text-brand-red">{e.error}</p>
                   )}
                 </div>
                 <div className="flex shrink-0 flex-wrap items-center gap-2">
