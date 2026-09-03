@@ -64,8 +64,15 @@ export async function uploadAufmassAction(formData: FormData): Promise<AufmassUp
   let id: number;
   try {
     id = await createAufmass({ buffer, originalName: f.name, mime }, user.id);
-  } catch {
-    return { ok: false, error: "Datei konnte nicht gespeichert werden." };
+  } catch (e) {
+    // Grund mitloggen – sonst ist im Fehlerfall (Rechte am Volume, DB) nicht
+    // erkennbar, woran es lag.
+    console.error("[aufmass] Speichern fehlgeschlagen:", e);
+    const reason = e instanceof Error ? e.message : "";
+    return {
+      ok: false,
+      error: `Datei konnte nicht gespeichert werden.${reason ? ` (${reason})` : ""}`,
+    };
   }
 
   const result = await processAufmass(id);

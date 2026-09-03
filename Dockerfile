@@ -27,7 +27,7 @@ COPY --from=builder /app/.next/static ./.next/static
 
 # Persistente Ablage (manuelle Belege, Fahrzeug-Unterlagen …). Die Ordner müssen
 # im Image existieren, damit frisch angelegte Named Volumes die nextjs-Rechte erben.
-RUN mkdir -p /app/data/belege /app/data/fahrzeuge /app/data/versicherungen && chown -R nextjs:nodejs /app/data
+RUN mkdir -p /app/data/belege /app/data/fahrzeuge /app/data/versicherungen /app/data/aufmasse && chown -R nextjs:nodejs /app/data
 
 USER nextjs
 EXPOSE 3000
