@@ -163,9 +163,6 @@ export async function buildAufmassDocx(
       })
     );
     for (const p of g.items) rows.push(positionRow(p));
-    for (const s of sumByUnit(g.items)) {
-      rows.push(sumRow(`Zwischensumme ${g.area}`, s.total, s.unit, "F2F2F2"));
-    }
   }
   for (const s of sumByUnit(data.positions)) {
     rows.push(sumRow("Gesamt", s.total, s.unit, "E7E7E7"));
