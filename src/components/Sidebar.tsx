@@ -79,6 +79,7 @@ const NAV_ITEMS: NavItem[] = [
       { href: "/dashboard/fahrzeuge", label: "Fahrzeuge", module: "cockpit_fahrzeuge" },
       { href: "/dashboard/versicherungen", label: "Versicherungen", module: "cockpit_versicherungen" },
       { href: "/dashboard/arbeitsvertrag", label: "Arbeitsvertrag erstellen", module: "cockpit_arbeitsvertrag" },
+      { href: "/dashboard/aufmass", label: "Aufmaß", module: "cockpit_aufmass" },
     ],
   },
   {

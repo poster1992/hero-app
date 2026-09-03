@@ -51,6 +51,7 @@ export const MODULES: AppModule[] = [
   { key: "cockpit_fahrzeuge", label: "Fahrzeuge (Unterlagen verwalten)", group: "Cockpit" },
   { key: "cockpit_versicherungen", label: "Versicherungen (Verträge & Policen verwalten)", group: "Cockpit" },
   { key: "cockpit_arbeitsvertrag", label: "Arbeitsvertrag erstellen", group: "Cockpit" },
+  { key: "cockpit_aufmass", label: "Aufmaß (handschriftliches Aufmaß → Word)", group: "Cockpit", note: "Foto/PDF hineinziehen – die KI erzeugt daraus ein bearbeitbares Word-Dokument." },
 ];
 
 export const MODULE_KEYS = MODULES.map((m) => m.key);

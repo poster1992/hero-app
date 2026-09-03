@@ -7,10 +7,12 @@ services:
       - BELEGE_DIR=/app/data/belege
       - FAHRZEUG_DIR=/app/data/fahrzeuge
       - VERSICHERUNG_DIR=/app/data/versicherungen
+      - AUFMASS_DIR=/app/data/aufmasse
     volumes:
       - belege:/app/data/belege
       - fahrzeuge:/app/data/fahrzeuge
       - versicherungen:/app/data/versicherungen
+      - aufmasse:/app/data/aufmasse
     expose:
       - "3000"
     # Am Proxy-Netz (default, für caddy/finanz-hub/hyrox) UND am internen DB-Netz.
@@ -71,6 +73,7 @@ volumes:
   belege:
   fahrzeuge:
   versicherungen:
+  aufmasse:
   hero-dbdata:
   caddy_data:
   caddy_config:
