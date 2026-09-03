@@ -100,7 +100,10 @@ export default function ReceiptHistoryModal({
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-gray-900">{e.label}</p>
-                    {e.detail && <p className="mt-0.5 break-words text-sm text-gray-600">{e.detail}</p>}
+                    {e.detail && (
+                      // Notizen können mehrzeilig sein – Zeilenumbrüche erhalten.
+                      <p className="mt-0.5 whitespace-pre-line break-words text-sm text-gray-600">{e.detail}</p>
+                    )}
                     <p className="mt-0.5 text-xs text-gray-500">
                       {fmtAt(e.at)}
                       {e.byName ? ` · ${e.byName}` : ""}

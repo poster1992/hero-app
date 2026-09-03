@@ -45,6 +45,9 @@ const ACTIONS: Record<string, { label: string; icon: string }> = {
   abgelehnt: { label: "Rechnungsprüfung: abgelehnt", icon: "✖️" },
   task: { label: "Aufgabe angelegt", icon: "📌" },
   task_done: { label: "Aufgabe erledigt", icon: "☑️" },
+  task_status: { label: "Aufgabe: Status geändert", icon: "🔄" },
+  task_note: { label: "Notiz zur Aufgabe", icon: "💬" },
+  task_forward: { label: "Aufgabe weitergeleitet", icon: "↪️" },
 };
 
 function describe(action: string): { label: string; icon: string } {
@@ -141,51 +144,104 @@ async function loadLogged(kind: ReceiptKind, receiptId: string): Promise<Receipt
 }
 
 interface TaskEventRow extends RowDataPacket {
-  id: number;
+  task_id: number;
   title: string;
-  status: string;
-  created_at: string | Date | null;
-  updated_at: string | Date | null;
+  task_created_at: string | Date | null;
   created_by_name: string | null;
-  assigned_to_name: string | null;
+  assignee_names: string | null;
+  h_id: number | null;
+  action: string | null;
+  detail: string | null;
+  h_created_at: string | Date | null;
+  by_name: string | null;
 }
 
-/** Verknüpfte Aufgaben (Buchung/Rechnungsprüfung) als Historien-Einträge. */
+/** Ordnet einen Aufgaben-Verlaufseintrag einer Historien-Aktion zu. */
+function taskAction(action: string, detail: string | null): string {
+  switch (action) {
+    case "created":
+      return "task";
+    case "note":
+      return "task_note";
+    case "forwarded":
+      return "task_forward";
+    case "status":
+      return /^Status:\s*Erledigt/i.test(detail ?? "") ? "task_done" : "task_status";
+    default:
+      return "task_status";
+  }
+}
+
+/**
+ * Verknüpfte Aufgaben (Buchung/Rechnungsprüfung) als Historien-Einträge –
+ * inklusive des kompletten Aufgaben-Verlaufs (`task_history`), damit auch
+ * sichtbar ist, WER eine Aufgabe erledigt hat und welche Notiz dabei stand.
+ */
 async function loadTaskEvents(marker: string): Promise<ReceiptHistoryEntry[]> {
   const rows = await getPool()
     .query<TaskEventRow[]>(
-      `SELECT t.id, t.title, t.status, t.created_at, t.updated_at,
+      `SELECT t.id AS task_id, t.title, t.created_at AS task_created_at,
               COALESCE(NULLIF(cu.display_name, ''), cu.username) AS created_by_name,
-              COALESCE(NULLIF(au.display_name, ''), au.username) AS assigned_to_name
+              COALESCE(
+                (SELECT GROUP_CONCAT(COALESCE(NULLIF(tu.display_name, ''), tu.username) SEPARATOR ', ')
+                   FROM task_assignees ta JOIN users tu ON tu.id = ta.user_id
+                  WHERE ta.task_id = t.id),
+                COALESCE(NULLIF(au.display_name, ''), au.username)
+              ) AS assignee_names,
+              h.id AS h_id, h.action, h.detail, h.created_at AS h_created_at,
+              COALESCE(NULLIF(hu.display_name, ''), hu.username) AS by_name
          FROM tasks t
+         LEFT JOIN task_history h ON h.task_id = t.id
          LEFT JOIN users cu ON cu.id = t.created_by
          LEFT JOIN users au ON au.id = t.assigned_to
+         LEFT JOIN users hu ON hu.id = h.user_id
         WHERE t.description LIKE ?
-        ORDER BY t.id`,
+        ORDER BY t.id, h.created_at, h.id`,
       [`%${marker}%`]
     )
     .then(([r]) => r)
     .catch(() => [] as TaskEventRow[]);
+
   const out: ReceiptHistoryEntry[] = [];
+  const seenTasks = new Set<number>();
   for (const r of rows) {
-    out.push({
-      key: `task-${r.id}`,
-      action: "task",
-      ...describe("task"),
-      detail: `${r.title}${r.assigned_to_name ? ` · für ${r.assigned_to_name}` : ""}`,
-      byName: r.created_by_name,
-      at: r.created_at ? String(r.created_at) : null,
-    });
-    if (r.status === "erledigt") {
+    const title = `„${r.title}"`;
+    // Aufgabe ganz ohne Verlauf (Altdaten): wenigstens die Anlage zeigen.
+    if (r.h_id == null) {
+      if (seenTasks.has(r.task_id)) continue;
+      seenTasks.add(r.task_id);
       out.push({
-        key: `task-done-${r.id}`,
-        action: "task_done",
-        ...describe("task_done"),
-        detail: r.title,
-        byName: null,
-        at: r.updated_at ? String(r.updated_at) : null,
+        key: `task-${r.task_id}`,
+        action: "task",
+        ...describe("task"),
+        detail: `${title}${r.assignee_names ? ` · für ${r.assignee_names}` : ""}`,
+        byName: r.created_by_name,
+        at: r.task_created_at ? String(r.task_created_at) : null,
       });
+      continue;
     }
+
+    const action = taskAction(r.action ?? "", r.detail);
+    // „Status: Erledigt – Notiz" → nur die Notiz übrig lassen (Status steht im Label).
+    let rest = (r.detail ?? "")
+      .replace(/^Status:\s*[^–-]*[–-]\s*/i, "")
+      .replace(/^Status:\s*/i, "")
+      .replace(/^Aufgabe erstellt$/i, "")
+      .trim();
+    // Beim Erledigen steht der Status schon im Label – nur die Notiz zeigen.
+    if (action === "task_done" && /^Erledigt$/i.test(rest)) rest = "";
+    const detail =
+      action === "task"
+        ? `${title}${r.assignee_names ? ` · für ${r.assignee_names}` : ""}`
+        : `${title}${rest ? ` · ${rest}` : ""}`;
+    out.push({
+      key: `task-h-${r.h_id}`,
+      action,
+      ...describe(action),
+      detail,
+      byName: r.by_name ?? (action === "task" ? r.created_by_name : null),
+      at: r.h_created_at ? String(r.h_created_at) : null,
+    });
   }
   return out;
 }
