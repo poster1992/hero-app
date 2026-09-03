@@ -1,6 +1,7 @@
 import "server-only";
 import {
   AlignmentType,
+  BorderStyle,
   Document,
   HeadingLevel,
   Packer,
@@ -33,14 +34,40 @@ const WIDTHS = [30, 9, 9, 9, 7, 11, 8, 17];
 const RIGHT_FROM = 1;
 const RIGHT_TO = 6;
 
+// Statt eines vollen Gitternetzes nur dezente Trennlinien: kein Rahmen um/zwischen
+// den Spalten, nur eine feine Zeile zwischen den Positionen und eine kräftigere
+// unter der Kopfzeile – wirkt aufgeräumter, bleibt aber lesbar gegliedert.
+const NO_BORDER = { style: BorderStyle.NONE, size: 0, color: "FFFFFF" };
+const TABLE_NO_BORDERS = {
+  top: NO_BORDER,
+  bottom: NO_BORDER,
+  left: NO_BORDER,
+  right: NO_BORDER,
+  insideHorizontal: NO_BORDER,
+  insideVertical: NO_BORDER,
+};
+const HAIRLINE = { style: BorderStyle.SINGLE, size: 4, color: "DBDBD6" };
+const HEADER_RULE = { style: BorderStyle.SINGLE, size: 8, color: "17181A" };
+const CELL_MARGINS = { top: 60, bottom: 60, left: 80, right: 80 };
+
 function cell(
   text: string,
-  opts: { bold?: boolean; right?: boolean; fill?: string; width?: number; span?: number } = {}
+  opts: {
+    bold?: boolean;
+    right?: boolean;
+    fill?: string;
+    width?: number;
+    span?: number;
+    rule?: "hairline" | "header";
+  } = {}
 ) {
+  const bottom = opts.rule === "header" ? HEADER_RULE : opts.rule === "hairline" ? HAIRLINE : undefined;
   return new TableCell({
     width: opts.width ? { size: opts.width, type: WidthType.PERCENTAGE } : undefined,
     columnSpan: opts.span,
     shading: opts.fill ? { fill: opts.fill } : undefined,
+    margins: CELL_MARGINS,
+    borders: bottom ? { bottom } : undefined,
     children: [
       new Paragraph({
         alignment: opts.right ? AlignmentType.RIGHT : AlignmentType.LEFT,
@@ -55,7 +82,13 @@ function headerRow(): TableRow {
   return new TableRow({
     tableHeader: true,
     children: HEADERS.map((h, i) =>
-      cell(h, { bold: true, fill: "E7E7E7", width: WIDTHS[i], right: i >= RIGHT_FROM && i <= RIGHT_TO })
+      cell(h, {
+        bold: true,
+        fill: "E7E7E7",
+        width: WIDTHS[i],
+        right: i >= RIGHT_FROM && i <= RIGHT_TO,
+        rule: "header",
+      })
     ),
   });
 }
@@ -74,7 +107,7 @@ function positionRow(p: AufmassPosition): TableRow {
   ];
   return new TableRow({
     children: values.map((v, i) =>
-      cell(v, { width: WIDTHS[i], right: i >= RIGHT_FROM && i <= RIGHT_TO })
+      cell(v, { width: WIDTHS[i], right: i >= RIGHT_FROM && i <= RIGHT_TO, rule: "hairline" })
     ),
   });
 }
@@ -97,8 +130,8 @@ function sumRow(label: string, total: number, unit: string, fill: string): Table
 function metaRow(label: string, value: string | null): TableRow {
   return new TableRow({
     children: [
-      cell(label, { bold: true, width: 25, fill: "F5F5F5" }),
-      cell(value && value.trim() ? value : "_______________________________", { width: 75 }),
+      cell(label, { bold: true, width: 25, fill: "F5F5F5", rule: "hairline" }),
+      cell(value && value.trim() ? value : "_______________________________", { width: 75, rule: "hairline" }),
     ],
   });
 }
@@ -173,6 +206,7 @@ export async function buildAufmassDocx(
 
           new Table({
             width: { size: 100, type: WidthType.PERCENTAGE },
+            borders: TABLE_NO_BORDERS,
             rows: [
               metaRow("Kunde", data.customer),
               metaRow("Projekt / Bauvorhaben", data.project),
@@ -184,7 +218,7 @@ export async function buildAufmassDocx(
           }),
 
           heading("Positionen"),
-          new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows }),
+          new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, borders: TABLE_NO_BORDERS, rows }),
 
           ...(data.remarks
             ? [heading("Bemerkungen"), new Paragraph({ children: [new TextRun({ text: data.remarks, size: 20 })] })]
