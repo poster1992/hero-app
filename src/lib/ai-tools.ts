@@ -6,6 +6,7 @@ import { getStockOutboundReport } from "./materials";
 import { getProjectProfits } from "./project-profit";
 import { getCustomerName, effectiveReceiptStatus } from "./invoices";
 import { getPaymentOverrideMap } from "./receipt-payment-status";
+import { listAllManualReceipts } from "./manual-receipts";
 import { addMemory, listMemories, deleteMemory } from "./ai-memory";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -100,7 +101,7 @@ export const TOOLS: Anthropic.Tool[] = [
   {
     name: "belege_lieferant",
     description:
-      "Listet alle Belege (Eingangsrechnungen) eines bestimmten Lieferanten mit Belegnummer, Datum, Brutto-/Nettobetrag, offenem Betrag und Zahlstatus. Für Fragen wie 'zeig mir alle Belege von Lieferant X', 'was haben wir bei Y gekauft', 'wie viel offen bei Z'. Standard: letzte 4 Jahre; optional auf ein Jahr oder nur offene Belege einschränken.",
+      "Listet alle Belege (Eingangsrechnungen) eines bestimmten Lieferanten mit Belegnummer, Datum, Brutto-/Nettobetrag, offenem Betrag und Zahlstatus. Berücksichtigt sowohl HERO-Belege als auch die seit Juli 2026 nur noch über den Posteingang erfassten Belege. Für Fragen wie 'zeig mir alle Belege von Lieferant X', 'was haben wir bei Y gekauft', 'wie viel offen bei Z'. Standard: letzte 4 Jahre; optional auf ein Jahr oder nur offene Belege einschränken.",
     input_schema: {
       type: "object",
       properties: {
@@ -270,36 +271,81 @@ export async function runTool(name: string, input: Record<string, unknown>): Pro
       const cy = currentYear();
       const hasYear = Number.isFinite(Number(input?.jahr));
       const y = hasYear ? Number(input.jahr) : null;
-      const from = `${hasYear ? y : cy - 3}-01-01T00:00:00Z`;
-      const to = `${hasYear ? y : cy}-12-31T23:59:59Z`;
+      const fromDate = `${hasYear ? y : cy - 3}-01-01`;
+      const toDate = `${hasYear ? y : cy}-12-31`;
 
-      const [receipts, overrides] = await Promise.all([
-        getReceiptsInRange(from, to),
+      const [receipts, overrides, manualReceipts] = await Promise.all([
+        getReceiptsInRange(`${fromDate}T00:00:00Z`, `${toDate}T23:59:59Z`),
         getPaymentOverrideMap().catch(() => new Map()),
+        listAllManualReceipts().catch(() => []),
       ]);
 
-      const matched = receipts
+      interface MatchedBeleg {
+        datum: string | null;
+        lieferant: string;
+        nr: string;
+        brutto: number;
+        netto: number;
+        offen: boolean;
+        offenBetrag: number;
+        statusLabel: string;
+      }
+
+      // HERO-Belege (Eingangsrechnungen, type "output").
+      const heroMatched: MatchedBeleg[] = receipts
         .filter((r) => r.type === "output" && getCustomerName(r).toLowerCase().includes(suche))
         .map((r) => {
           const ov = overrides.get(r.id) ?? null;
           const st = effectiveReceiptStatus(r, ov?.status ?? null);
           const offen = st.tone !== "paid";
           const offenBetrag = !offen ? 0 : r.openAmount > 0.005 ? r.openAmount : r.value;
-          return { r, statusLabel: st.label, offen, offenBetrag };
-        })
+          return {
+            datum: r.receiptDate ? r.receiptDate.slice(0, 10) : null,
+            lieferant: getCustomerName(r),
+            nr: r.number,
+            brutto: r.value,
+            netto: r.netValue,
+            offen,
+            offenBetrag,
+            statusLabel: st.label,
+          };
+        });
+
+      // Manuelle Belege (Posteingang/Formular) – seit Juli 2026 laufen Eingangsbelege NUR NOCH
+      // hierüber, nicht mehr über HERO. Ohne diese Quelle wären aktuelle Belege unvollständig.
+      const manualMatched: MatchedBeleg[] = manualReceipts
+        .filter(
+          (r) =>
+            (r.supplier ?? "").toLowerCase().includes(suche) &&
+            r.date != null &&
+            r.date >= fromDate &&
+            r.date <= toDate
+        )
+        .map((r) => ({
+          datum: r.date,
+          lieferant: r.supplier ?? "",
+          nr: r.invoiceNumber ?? "",
+          brutto: r.gross,
+          netto: r.net,
+          offen: !r.isPaid,
+          offenBetrag: r.isPaid ? 0 : r.gross,
+          statusLabel: r.isPaid ? "bezahlt" : "offen",
+        }));
+
+      const matched = [...heroMatched, ...manualMatched]
         .filter((m) => (nurOffen ? m.offen : true))
-        .sort((a, b) => (b.r.receiptDate ?? "").localeCompare(a.r.receiptDate ?? ""));
+        .sort((a, b) => (b.datum ?? "").localeCompare(a.datum ?? ""));
 
       // Eindeutige Lieferantennamen unter den Treffern (Hilfe bei Mehrdeutigkeit).
-      const lieferanten = [...new Set(matched.map((m) => getCustomerName(m.r)))];
+      const lieferanten = [...new Set(matched.map((m) => m.lieferant))];
 
       // Summen je Jahr.
       const proJahrMap = new Map<string, { anzahl: number; brutto: number }>();
       for (const m of matched) {
-        const jahr = (m.r.receiptDate ?? "").slice(0, 4) || "unbekannt";
+        const jahr = (m.datum ?? "").slice(0, 4) || "unbekannt";
         const e = proJahrMap.get(jahr) ?? { anzahl: 0, brutto: 0 };
         e.anzahl++;
-        e.brutto += m.r.value;
+        e.brutto += m.brutto;
         proJahrMap.set(jahr, e);
       }
 
@@ -309,18 +355,18 @@ export async function runTool(name: string, input: Record<string, unknown>): Pro
         zeitraum: hasYear ? String(y) : `${cy - 3}–${cy}`,
         nur_offen: nurOffen,
         anzahl: matched.length,
-        summe_brutto: round2(matched.reduce((s, m) => s + m.r.value, 0)),
-        summe_netto: round2(matched.reduce((s, m) => s + m.r.netValue, 0)),
+        summe_brutto: round2(matched.reduce((s, m) => s + m.brutto, 0)),
+        summe_netto: round2(matched.reduce((s, m) => s + m.netto, 0)),
         summe_offen: round2(matched.reduce((s, m) => s + m.offenBetrag, 0)),
         pro_jahr: [...proJahrMap.entries()]
           .sort((a, b) => b[0].localeCompare(a[0]))
           .map(([jahr, e]) => ({ jahr, anzahl: e.anzahl, summe_brutto: round2(e.brutto) })),
         belege: matched.slice(0, limit).map((m) => ({
-          nr: m.r.number,
-          datum: m.r.receiptDate ? m.r.receiptDate.slice(0, 10) : null,
-          lieferant: getCustomerName(m.r),
-          brutto: m.r.value,
-          netto: m.r.netValue,
+          nr: m.nr,
+          datum: m.datum,
+          lieferant: m.lieferant,
+          brutto: m.brutto,
+          netto: m.netto,
           offen_betrag: round2(m.offenBetrag),
           status: m.statusLabel,
         })),
