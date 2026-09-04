@@ -353,15 +353,15 @@ export default function PriceComparison({ rows }: { rows: PriceRow[] }) {
                           .sort((a, b) => a.unitPrice - b.unitPrice)
                           .map((r, i) => (
                             <tr key={`${g.key}-${i}`} className="border-b border-line bg-paper-2 text-[11px]">
-                              <td className="px-3 py-1.5 pl-8 align-top text-gray-100">{r.article}</td>
-                              <td className="px-3 py-1.5 text-center align-top text-gray-200">{r.supplier}</td>
+                              <td className="px-3 py-1.5 pl-8 align-top text-gray-800">{r.article}</td>
+                              <td className="px-3 py-1.5 text-center align-top text-gray-700">{r.supplier}</td>
                               <td className="px-3 py-1.5 text-right align-top whitespace-nowrap">
                                 {deltaCell(r, g.min, g.rows.length > 1)}
                               </td>
-                              <td className="px-3 py-1.5 text-right align-top whitespace-nowrap font-semibold text-white">
+                              <td className="px-3 py-1.5 text-right align-top whitespace-nowrap font-semibold text-gray-900">
                                 {r.unitPrice > 0 ? eur.format(r.unitPrice) : "—"}
                               </td>
-                              <td className="px-3 py-1.5 text-right align-top whitespace-nowrap text-gray-300">
+                              <td className="px-3 py-1.5 text-right align-top whitespace-nowrap text-gray-500">
                                 {r.quantity ? `${num.format(r.quantity)}${r.unit ? " " + r.unit : ""}` : ""}
                               </td>
                               <td className="px-3 py-1.5 text-right align-top whitespace-nowrap">

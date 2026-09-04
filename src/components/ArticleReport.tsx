@@ -384,7 +384,7 @@ export default function ArticleReport({ rows, merges }: { rows: ArticleRow[]; me
                           <td colSpan={6} className="px-3 py-2">
                             <table className="w-full text-[11px]">
                               <thead>
-                                <tr className="text-gray-300">
+                                <tr className="text-muted">
                                   <th className="px-2 py-1 text-left font-semibold">Bezeichnung</th>
                                   <th className="px-2 py-1 text-left font-semibold">Datum</th>
                                   <th className="px-2 py-1 text-left font-semibold">Lieferant</th>
@@ -400,12 +400,12 @@ export default function ArticleReport({ rows, merges }: { rows: ArticleRow[]; me
                                   .sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""))
                                   .map((r, i) => (
                                     <tr key={`${g.key}-${i}`} className="border-t border-line">
-                                      <td className="px-2 py-1 text-gray-100">{r.article}</td>
-                                      <td className="px-2 py-1 whitespace-nowrap text-gray-300">{r.date ? dateFmt.format(new Date(r.date)) : "—"}</td>
-                                      <td className="px-2 py-1 text-gray-200">{r.supplier}</td>
-                                      <td className="px-2 py-1 text-right whitespace-nowrap text-gray-200">{num.format(r.quantity)} {r.unit || ""}</td>
-                                      <td className="px-2 py-1 text-right whitespace-nowrap text-gray-200">{r.unitPrice > 0 ? eur.format(r.unitPrice) : "—"}</td>
-                                      <td className="px-2 py-1 text-right whitespace-nowrap font-semibold text-white">{eur.format(r.lineTotal)}</td>
+                                      <td className="px-2 py-1 text-gray-800">{r.article}</td>
+                                      <td className="px-2 py-1 whitespace-nowrap text-gray-500">{r.date ? dateFmt.format(new Date(r.date)) : "—"}</td>
+                                      <td className="px-2 py-1 text-gray-700">{r.supplier}</td>
+                                      <td className="px-2 py-1 text-right whitespace-nowrap text-gray-700">{num.format(r.quantity)} {r.unit || ""}</td>
+                                      <td className="px-2 py-1 text-right whitespace-nowrap text-gray-700">{r.unitPrice > 0 ? eur.format(r.unitPrice) : "—"}</td>
+                                      <td className="px-2 py-1 text-right whitespace-nowrap font-semibold text-gray-900">{eur.format(r.lineTotal)}</td>
                                       <td className="px-2 py-1 whitespace-nowrap"><BelegLink number={r.number} url={r.docUrl} /></td>
                                     </tr>
                                   ))}
