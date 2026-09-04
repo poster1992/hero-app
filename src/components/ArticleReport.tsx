@@ -26,6 +26,28 @@ function norm(s: string): string {
   return s.toLowerCase().replace(/\s+/g, " ").trim().slice(0, 191);
 }
 
+/** Zahl fürs CSV: Punkt-Dezimaltrenner → Komma, keine Tausenderpunkte (Excel/DE-Gebietsschema). */
+function csvNum(v: number): string {
+  return v.toFixed(2).replace(".", ",");
+}
+
+/** Feld fürs CSV escapen (Semikolon-getrennt, „ innerhalb verdoppeln, bei Bedarf in Anführungszeichen). */
+function csvField(v: string): string {
+  return /[;"\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+}
+
+/** CSV-Datei im Browser als Download anstoßen. */
+function downloadCsv(filename: string, rows: string[][]) {
+  const content = rows.map((r) => r.map(csvField).join(";")).join("\r\n");
+  const blob = new Blob(["﻿" + content], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 type SortKey = "article" | "supplier" | "qty" | "amount" | "count";
 
 interface Group {
@@ -53,6 +75,8 @@ export default function ArticleReport({ rows, merges }: { rows: ArticleRow[]; me
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [search, setSearch] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("amount");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -70,9 +94,12 @@ export default function ArticleReport({ rows, merges }: { rows: ArticleRow[]; me
 
   const groups = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const src = q
-      ? rows.filter((r) => r.article.toLowerCase().includes(q) || r.supplier.toLowerCase().includes(q))
-      : rows;
+    const src = rows.filter((r) => {
+      if (q && !r.article.toLowerCase().includes(q) && !r.supplier.toLowerCase().includes(q)) return false;
+      if (dateFrom && (!r.date || r.date < dateFrom)) return false;
+      if (dateTo && (!r.date || r.date > dateTo)) return false;
+      return true;
+    });
     const byKey = new Map<string, ArticleRow[]>();
     for (const r of src) {
       const k = resolve(r.article);
@@ -94,7 +121,7 @@ export default function ArticleReport({ rows, merges }: { rows: ArticleRow[]; me
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, search, merges]);
+  }, [rows, search, dateFrom, dateTo, merges]);
 
   const sorted = useMemo(() => {
     const dir = sortDir === "asc" ? 1 : -1;
@@ -162,6 +189,44 @@ export default function ArticleReport({ rows, merges }: { rows: ArticleRow[]; me
     });
   };
 
+  const exportCsv = () => {
+    const stamp = new Date().toISOString().slice(0, 10);
+    const range = dateFrom || dateTo ? `_${dateFrom || "…"}_bis_${dateTo || "…"}` : "";
+
+    // Zusammenfassung je Artikel (wie die Tabelle, inkl. aktuellem Filter/Sortierung)
+    const summary: string[][] = [
+      ["Artikel", "Lieferant(en)", "Gesamtmenge", "Einheit", "Gesamtbetrag (EUR)", "Belege", "Lieferanten"],
+      ...sorted.map((g) => [
+        g.label,
+        g.supplierList.join(", "),
+        csvNum(g.totalQty),
+        g.unit || "",
+        csvNum(g.totalAmount),
+        String(g.rows.length),
+        String(g.suppliers),
+      ]),
+    ];
+    downloadCsv(`Artikel-Auswertung${range}_${stamp}.csv`, summary);
+
+    // Einzelposten je Beleg (Basis für die Zusammenfassung, gleicher Filter)
+    const detail: string[][] = [
+      ["Artikel", "Datum", "Lieferant", "Menge", "Einheit", "Einzelpreis (EUR)", "Betrag (EUR)", "Belegnummer"],
+      ...sorted.flatMap((g) =>
+        g.rows.map((r) => [
+          g.label,
+          r.date ? dateFmt.format(new Date(r.date)) : "",
+          r.supplier,
+          csvNum(r.quantity),
+          r.unit || "",
+          csvNum(r.unitPrice),
+          csvNum(r.lineTotal),
+          r.number || "",
+        ])
+      ),
+    ];
+    downloadCsv(`Artikel-Auswertung${range}_${stamp}_Einzelposten.csv`, detail);
+  };
+
   const Th = ({ k, label, cls = "" }: { k: SortKey; label: string; cls?: string }) => (
     <th className={`px-3 py-2 font-medium ${cls}`}>
       <button type="button" onClick={() => sortBy(k)} className="inline-flex items-center gap-1 hover:text-gray-900">
@@ -173,7 +238,7 @@ export default function ArticleReport({ rows, merges }: { rows: ArticleRow[]; me
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-end gap-3">
         <input
           type="text"
           value={search}
@@ -181,6 +246,45 @@ export default function ArticleReport({ rows, merges }: { rows: ArticleRow[]; me
           placeholder="Artikel oder Lieferant suchen …"
           className="w-full max-w-md rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-brand-red focus:outline-none"
         />
+        <label className="flex flex-col gap-1 text-xs text-gray-500">
+          Von
+          <input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+            className="rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-900 focus:border-brand-red focus:outline-none"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-gray-500">
+          Bis
+          <input
+            type="date"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+            className="rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-900 focus:border-brand-red focus:outline-none"
+          />
+        </label>
+        {(dateFrom || dateTo) && (
+          <button
+            type="button"
+            onClick={() => {
+              setDateFrom("");
+              setDateTo("");
+            }}
+            className="rounded-md border border-gray-300 px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+          >
+            Zeitraum zurücksetzen
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={exportCsv}
+          disabled={sorted.length === 0}
+          title="Aktuell gefilterte Ansicht als CSV exportieren (Zusammenfassung + Einzelposten)"
+          className="rounded-md bg-brand-red px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
+        >
+          ⬇ Exportieren
+        </button>
         <span className="ml-auto text-sm text-gray-500">
           {sorted.length} Artikel · Summe {eur.format(grandTotal)}
         </span>
