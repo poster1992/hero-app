@@ -12,6 +12,7 @@ export interface AppModule {
 
 export const MODULES: AppModule[] = [
   { key: "dashboard", label: "Dashboard" },
+  { key: "dashboard_bewertungen", label: "Dashboard: Zufriedenheitsumfragen & Rezensionen", note: "Zeigt die Kacheln „Zufriedenheitsumfragen versendet“ und „Google-Rezensionen“ auf dem Dashboard." },
   { key: "projektsuche", label: "Projektsuche (Suchfeld oben in der Kopfzeile)" },
   { key: "projekte", label: "Projekte" },
   { key: "projekte_finanzen", label: "Projekt-Finanzen (Kosten/Ertrag/Belege im Projekt-Popup)" },
@@ -23,7 +24,6 @@ export const MODULES: AppModule[] = [
   { key: "lager_statistik", label: "Lager – Statistik (Auswertung Ausbuchungen)", note: "Button „Lagerstatistik“ unter Lager → Letzte Buchungen." },
   { key: "kunden", label: "Kunden" },
   { key: "aufgaben", label: "Aufgaben" },
-  { key: "ueberfaellige_aufgaben", label: "Überfällige Aufgaben (Unternehmen)" },
   { key: "rechnungspruefung", label: "Rechnungsprüfung (Belege prüfen)" },
   { key: "ki", label: "KI-Assistent (Chat-Widget)" },
   { key: "baustellen", label: "Baustellen-Dokumentation (Projekt-Fotos)" },
