@@ -471,7 +471,7 @@ export default function LagerMovements({
             onClick={() => setStatsOpen(false)}
           >
             <div
-              className="my-8 w-full max-w-xl border border-line bg-white p-5 shadow-2xl"
+              className="my-8 w-full max-w-6xl border border-line bg-white p-5 shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="mb-3 flex items-center justify-between gap-3">
@@ -549,7 +549,7 @@ export default function LagerMovements({
                     : `Keine Ausbuchungen${statsMode === "day" ? " an diesem Tag" : ""}.`}
                 </p>
               ) : (
-                <div className="max-h-[55vh] overflow-y-auto">
+                <div className="max-h-[80vh] overflow-y-auto">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-gray-300 text-xs uppercase tracking-wide text-gray-500">
