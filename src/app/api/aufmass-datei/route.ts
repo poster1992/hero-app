@@ -2,14 +2,17 @@ import type { NextRequest } from "next/server";
 import { getSession } from "@/lib/session";
 import { getUserByUsername } from "@/lib/users";
 import { getAllowedModules } from "@/lib/role-store";
-import { getAufmassDocx, getAufmassSource } from "@/lib/aufmass";
+import { getAufmass, getAufmassDocx, getAufmassSource } from "@/lib/aufmass";
+import { aufmassXlsxFileName, buildAufmassXlsx } from "@/lib/aufmass-xlsx";
 
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
 /**
  * Liefert die Dateien eines Aufmaßes:
  *  ?id=<n>            → Originaldatei (Foto/PDF, inline)
  *  ?id=<n>&typ=word   → erzeugtes Word-Dokument (Download)
+ *  ?id=<n>&typ=excel  → Excel-Tabelle, live aus den ausgelesenen Daten erzeugt (Download)
  */
 export async function GET(request: NextRequest) {
   const session = await getSession();
@@ -30,6 +33,25 @@ export async function GET(request: NextRequest) {
       headers: {
         "Content-Type": DOCX_MIME,
         "Content-Disposition": `attachment; filename="${encodeURIComponent(doc.name)}"`,
+        "Cache-Control": "private, no-store",
+      },
+    });
+  }
+
+  if (request.nextUrl.searchParams.get("typ") === "excel") {
+    const entry = await getAufmass(id);
+    if (!entry || entry.data.positions.length === 0) {
+      return new Response("Aufmaß nicht gefunden", { status: 404 });
+    }
+    const buffer = await buildAufmassXlsx(entry.data, {
+      sourceFileName: entry.fileName,
+      createdByName: entry.createdByName,
+    });
+    return new Response(new Uint8Array(buffer), {
+      status: 200,
+      headers: {
+        "Content-Type": XLSX_MIME,
+        "Content-Disposition": `attachment; filename="${encodeURIComponent(aufmassXlsxFileName(entry.data))}"`,
         "Cache-Control": "private, no-store",
       },
     });

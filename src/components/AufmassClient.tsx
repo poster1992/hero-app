@@ -222,6 +222,14 @@ export default function AufmassClient({ initial }: { initial: AufmassEntry[] }) 
                       📘 Word herunterladen
                     </a>
                   )}
+                  {e.hasDocx && (
+                    <a
+                      href={`/api/aufmass-datei?id=${e.id}&typ=excel`}
+                      className="rounded-md border border-gray-300 px-2.5 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900"
+                    >
+                      📊 Excel herunterladen
+                    </a>
+                  )}
                   {e.hasFile && (
                     <a
                       href={`/api/aufmass-datei?id=${e.id}`}
