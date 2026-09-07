@@ -6,6 +6,8 @@ export interface LohnRunPosition {
   name: string;
   iban: string;
   amount: number;
+  /** Verknüpfung zum Mitarbeiter der Abschlagsliste (fehlt bei Läufen vor dieser Verknüpfung). */
+  employeeId?: number;
 }
 
 /** Ein gespeicherter Lohnlauf (Historie eines SEPA-Exports). */
@@ -44,11 +46,15 @@ function parsePositions(value: unknown): LohnRunPosition[] {
   }
   if (!Array.isArray(raw)) return [];
   return raw
-    .map((p) => ({
-      name: String((p as LohnRunPosition)?.name ?? ""),
-      iban: String((p as LohnRunPosition)?.iban ?? ""),
-      amount: Number((p as LohnRunPosition)?.amount ?? 0),
-    }))
+    .map((p) => {
+      const employeeId = Number((p as LohnRunPosition)?.employeeId);
+      return {
+        name: String((p as LohnRunPosition)?.name ?? ""),
+        iban: String((p as LohnRunPosition)?.iban ?? ""),
+        amount: Number((p as LohnRunPosition)?.amount ?? 0),
+        employeeId: Number.isFinite(employeeId) ? employeeId : undefined,
+      };
+    })
     .filter((p) => p.name || p.amount);
 }
 
@@ -76,6 +82,32 @@ export async function recordLohnRun(input: {
     ]
   );
   return res.insertId;
+}
+
+/**
+ * Summe der in einem Monat ausgezahlten Lohn-Abschläge je Mitarbeiter (nach Ausführungsdatum
+ * des SEPA-Laufs). Läufe von vor der ID-Verknüpfung haben kein `employeeId` in den gespeicherten
+ * Positionen – dafür greift der optionale Namens-Fallback (aktuelle Mitarbeiterliste).
+ */
+export async function getAbschlagTotalsByMonth(
+  year: number,
+  month: number,
+  employeeIdByName?: Map<string, number>
+): Promise<Map<number, number>> {
+  const [rows] = await getPool().query<RunRow[]>(
+    `SELECT positions FROM lohn_runs
+      WHERE execution_date IS NOT NULL AND YEAR(execution_date) = ? AND MONTH(execution_date) = ?`,
+    [year, month]
+  );
+  const totals = new Map<number, number>();
+  for (const r of rows) {
+    for (const p of parsePositions(r.positions)) {
+      const id = p.employeeId ?? employeeIdByName?.get(p.name.trim().toLowerCase());
+      if (id == null) continue;
+      totals.set(id, Math.round(((totals.get(id) ?? 0) + p.amount) * 100) / 100);
+    }
+  }
+  return totals;
 }
 
 /** Alle Lohnläufe, neueste zuerst. */

@@ -115,7 +115,7 @@ export async function buildWageSepaAction(
       reference,
       endToEndId: `LOHN-${emp.id}-${Date.now()}`.slice(0, 35),
     });
-    positions.push({ name: emp.name, iban: emp.iban, amount: it.amount });
+    positions.push({ name: emp.name, iban: emp.iban, amount: it.amount, employeeId: emp.id });
   }
   if (payments.length === 0) {
     return { error: "Keine gültigen Mitarbeiter/IBANs für den Export." };

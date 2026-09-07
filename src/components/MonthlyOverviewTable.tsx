@@ -45,6 +45,8 @@ function AutoCell({
   );
 }
 
+const eurFmt = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
+
 const FIELDS: { key: MonthlyField; label: string; prop: keyof MonthlyOverviewRow }[] = [
   { key: "krank", label: "Krank", prop: "krank" },
   { key: "krank_gesamt", label: "Krank gesamt", prop: "krankGesamt" },
@@ -111,13 +113,14 @@ export default function MonthlyOverviewTable({
       const usable = 297 - marginX * 2;
       const cols = [
         { label: "Mitarbeiter", w: 34, prop: "name" as const },
+        { label: "Abschlag bezahlt", w: 24, prop: "abschlagBezahlt" as const, format: (r: MonthlyOverviewRow) => eurFmt.format(r.abschlagBezahlt) },
         { label: "Krank", w: 24, prop: "krank" as const },
         { label: "Krank gesamt", w: 22, prop: "krankGesamt" as const },
         { label: "Urlaub", w: 24, prop: "urlaub" as const },
         { label: "Urlaub gesamt", w: 22, prop: "urlaubGesamt" as const },
         { label: "Überstunden mit 40% Aufschlag", w: 40, prop: "ueberstunden" as const },
         { label: "Elternzeit/Sonderurlaub", w: 38, prop: "elternzeit" as const },
-        { label: "Notiz", w: usable - 34 - 24 - 22 - 24 - 22 - 40 - 38, prop: "note" as const },
+        { label: "Notiz", w: usable - 34 - 24 - 24 - 22 - 24 - 22 - 40 - 38, prop: "note" as const },
       ];
       let y = 16;
       doc.setFont("helvetica", "bold");
@@ -157,7 +160,10 @@ export default function MonthlyOverviewTable({
       doc.setFontSize(8);
       for (const row of rows) {
         // Zeilenhöhe dynamisch nach der am stärksten umbrochenen Zelle (z. B. Notiz).
-        const cellLines = cols.map((c) => doc.splitTextToSize(String(row[c.prop] ?? ""), c.w - 3) as string[]);
+        const cellLines = cols.map((c) => {
+          const text = "format" in c && c.format ? c.format(row) : String(row[c.prop] ?? "");
+          return doc.splitTextToSize(text, c.w - 3) as string[];
+        });
         const lineCount = Math.max(1, ...cellLines.map((l) => l.length));
         const rowH = Math.max(9, lineCount * dataLineH + 3);
         if (y + rowH > 205) {
@@ -314,6 +320,7 @@ export default function MonthlyOverviewTable({
             <thead className="bg-gray-100">
               <tr className="text-left text-xs font-semibold text-gray-700">
                 <th className="border border-gray-300 px-3 py-2">Mitarbeiter</th>
+                <th className="border border-gray-300 px-3 py-2">Abschlag bezahlt</th>
                 {FIELDS.map((f) => (
                   <th key={f.key} className="border border-gray-300 px-3 py-2">
                     {f.label}
@@ -328,6 +335,9 @@ export default function MonthlyOverviewTable({
                 <tr key={row.employeeId} className="even:bg-white/[0.04]">
                   <td className="border border-gray-300 px-3 py-1.5 font-medium text-gray-900">
                     {row.name}
+                  </td>
+                  <td className="border border-gray-300 px-3 py-1.5 text-right tabular-nums text-gray-700">
+                    {eurFmt.format(row.abschlagBezahlt)}
                   </td>
                   {FIELDS.map((f) => {
                     const original = String(row[f.prop] ?? "");

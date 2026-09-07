@@ -4,6 +4,7 @@ import path from "node:path";
 import type { RowDataPacket, ResultSetHeader } from "mysql2";
 import { getPool } from "./db";
 import { listLohnEmployees } from "./lohn-employees";
+import { getAbschlagTotalsByMonth } from "./lohn-runs";
 
 // Krankmeldungen liegen im selben persistenten Volume wie die Belege (Unterordner).
 const BELEGE_DIR = process.env.BELEGE_DIR || path.join(process.cwd(), "data", "belege");
@@ -28,6 +29,8 @@ export interface MonthlyOverviewRow {
   note: string;
   docsComplete: boolean;
   krankmeldungen: KrankmeldungFile[];
+  /** Im Monat ausgezahlte Lohn-Abschläge (Summe aus den SEPA-Läufen der Abschlagsliste). */
+  abschlagBezahlt: number;
 }
 
 interface OverviewRow extends RowDataPacket {
@@ -56,19 +59,23 @@ interface KrankRow extends RowDataPacket {
 export async function getMonthlyOverview(year: number, month: number): Promise<MonthlyOverviewRow[]> {
   const employees = await listLohnEmployees(false); // nur aktive
   const pool = getPool();
+  const employeeIdByName = new Map(employees.map((e) => [e.name.trim().toLowerCase(), e.id]));
 
-  const [saved] = await pool.query<OverviewRow[]>(
-    `SELECT employee_id, krank, krank_gesamt, urlaub, urlaub_gesamt, ueberstunden, elternzeit, note, docs_complete
-       FROM monthly_overview WHERE year = ? AND month = ?`,
-    [year, month]
-  );
+  const [saved, files, abschlagMap] = await Promise.all([
+    pool.query<OverviewRow[]>(
+      `SELECT employee_id, krank, krank_gesamt, urlaub, urlaub_gesamt, ueberstunden, elternzeit, note, docs_complete
+         FROM monthly_overview WHERE year = ? AND month = ?`,
+      [year, month]
+    ).then(([rows]) => rows),
+    pool.query<KrankRow[]>(
+      `SELECT id, employee_id, file_name, mime FROM krankmeldungen
+        WHERE year = ? AND month = ? ORDER BY id ASC`,
+      [year, month]
+    ).then(([rows]) => rows),
+    getAbschlagTotalsByMonth(year, month, employeeIdByName).catch(() => new Map<number, number>()),
+  ]);
   const savedMap = new Map(saved.map((r) => [r.employee_id, r]));
 
-  const [files] = await pool.query<KrankRow[]>(
-    `SELECT id, employee_id, file_name, mime FROM krankmeldungen
-      WHERE year = ? AND month = ? ORDER BY id ASC`,
-    [year, month]
-  );
   const filesMap = new Map<number, KrankmeldungFile[]>();
   for (const f of files) {
     (filesMap.get(f.employee_id) ?? filesMap.set(f.employee_id, []).get(f.employee_id)!).push({
@@ -92,6 +99,7 @@ export async function getMonthlyOverview(year: number, month: number): Promise<M
       note: s?.note ?? "",
       docsComplete: s?.docs_complete === 1,
       krankmeldungen: filesMap.get(e.id) ?? [],
+      abschlagBezahlt: abschlagMap.get(e.id) ?? 0,
     };
   });
 }
