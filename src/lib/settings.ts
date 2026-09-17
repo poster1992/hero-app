@@ -98,3 +98,81 @@ export async function getGoogleReviewUrl(): Promise<string | null> {
   }
   return process.env.GOOGLE_REVIEW_URL?.trim() || null;
 }
+
+// --- Outlook-Posteingang-Agent (Rechnungs-Mails → Belege-Posteingang) ---
+export const OUTLOOK_ENABLED_KEY = "outlook_agent_enabled"; // "1" = an (Default: aus)
+export const OUTLOOK_TENANT_ID_KEY = "outlook_tenant_id";
+export const OUTLOOK_CLIENT_ID_KEY = "outlook_client_id";
+export const OUTLOOK_CLIENT_SECRET_KEY = "outlook_client_secret";
+export const OUTLOOK_MAILBOX_KEY = "outlook_mailbox"; // z.B. pascal.oster@floortec.design
+export const OUTLOOK_KEYWORDS_KEY = "outlook_keywords"; // Komma-Liste, leer = Standardliste
+export const OUTLOOK_UPLOAD_USER_ID_KEY = "outlook_upload_user_id"; // Belege werden diesem Benutzer zugeordnet
+// Intern (nicht in der UI editierbar):
+export const OUTLOOK_WATERMARK_KEY = "outlook_watermark"; // ISO-Zeitstempel: nur Mails danach werden geprüft
+export const OUTLOOK_LAST_RUN_KEY = "outlook_last_run"; // ISO-Zeitstempel des letzten Laufs
+export const OUTLOOK_LAST_IMPORTED_KEY = "outlook_last_imported"; // Anzahl beim letzten Lauf
+export const OUTLOOK_LAST_ERROR_KEY = "outlook_last_error";
+
+const DEFAULT_OUTLOOK_KEYWORDS = "rechnung,invoice,beleg,quittung,gutschrift";
+
+export interface OutlookAgentConfig {
+  enabled: boolean;
+  tenantId: string | null;
+  clientId: string | null;
+  clientSecret: string | null;
+  mailbox: string | null;
+  keywords: string[];
+  uploadUserId: number | null;
+  watermark: string | null;
+  lastRun: string | null;
+  lastImported: number | null;
+  lastError: string | null;
+}
+
+/** Konfiguration des Outlook-Posteingang-Agenten: erst DB, sonst Umgebungsvariablen (Erstinstallation). */
+export async function getOutlookAgentConfig(): Promise<OutlookAgentConfig> {
+  const [
+    enabled,
+    tenantId,
+    clientId,
+    clientSecret,
+    mailbox,
+    keywordsRaw,
+    uploadUserIdRaw,
+    watermark,
+    lastRun,
+    lastImportedRaw,
+    lastError,
+  ] = await Promise.all([
+    getSetting(OUTLOOK_ENABLED_KEY),
+    getSetting(OUTLOOK_TENANT_ID_KEY),
+    getSetting(OUTLOOK_CLIENT_ID_KEY),
+    getSetting(OUTLOOK_CLIENT_SECRET_KEY),
+    getSetting(OUTLOOK_MAILBOX_KEY),
+    getSetting(OUTLOOK_KEYWORDS_KEY),
+    getSetting(OUTLOOK_UPLOAD_USER_ID_KEY),
+    getSetting(OUTLOOK_WATERMARK_KEY),
+    getSetting(OUTLOOK_LAST_RUN_KEY),
+    getSetting(OUTLOOK_LAST_IMPORTED_KEY),
+    getSetting(OUTLOOK_LAST_ERROR_KEY),
+  ]);
+  const pick = (v: string | null, env: string | undefined) => (v && v.trim() ? v.trim() : env?.trim() || null);
+  const keywords = (keywordsRaw && keywordsRaw.trim() ? keywordsRaw : DEFAULT_OUTLOOK_KEYWORDS)
+    .split(",")
+    .map((k) => k.trim().toLowerCase())
+    .filter(Boolean);
+  const uploadUserId = uploadUserIdRaw && /^\d+$/.test(uploadUserIdRaw) ? Number(uploadUserIdRaw) : null;
+  return {
+    enabled: enabled === "1",
+    tenantId: pick(tenantId, process.env.OUTLOOK_TENANT_ID),
+    clientId: pick(clientId, process.env.OUTLOOK_CLIENT_ID),
+    clientSecret: clientSecret && clientSecret.length ? clientSecret : process.env.OUTLOOK_CLIENT_SECRET || null,
+    mailbox: pick(mailbox, process.env.OUTLOOK_MAILBOX),
+    keywords,
+    uploadUserId,
+    watermark: watermark && watermark.trim() ? watermark.trim() : null,
+    lastRun: lastRun && lastRun.trim() ? lastRun.trim() : null,
+    lastImported: lastImportedRaw && /^\d+$/.test(lastImportedRaw) ? Number(lastImportedRaw) : null,
+    lastError: lastError && lastError.trim() ? lastError.trim() : null,
+  };
+}

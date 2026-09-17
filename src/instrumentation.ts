@@ -91,6 +91,35 @@ export async function register(): Promise<void> {
     console.log("[task-digest] aktiv – tägliche Prüfung alle 10 Minuten.");
   }
 
+  // Outlook-Posteingang-Agent: prüft das konfigurierte Postfach per Microsoft-Graph-API
+  // auf neue Rechnungs-Mails und legt deren Anhänge als Posteingang-Beleg an. Bricht die
+  // Funktion selbst früh ab, wenn nicht aktiviert/konfiguriert – Timer läuft trotzdem mit.
+  const gOutlook = globalThis as unknown as { __outlookAgentStarted?: boolean; __outlookAgentRunning?: boolean };
+  if (!gOutlook.__outlookAgentStarted) {
+    gOutlook.__outlookAgentStarted = true;
+    const FIVE_MINUTES = 5 * 60 * 1000;
+    const tickOutlook = async () => {
+      if (gOutlook.__outlookAgentRunning) return; // keine Überlappung
+      gOutlook.__outlookAgentRunning = true;
+      try {
+        const { pollOutlookInbox } = await import("./lib/outlook-inbox-agent");
+        const r = await pollOutlookInbox();
+        if (r.imported > 0) {
+          console.log(`[outlook-agent] importiert: ${r.imported}, geprüfte Mails: ${r.checkedMessages}`);
+        } else if (r.error) {
+          console.warn(`[outlook-agent] Fehler: ${r.error}`);
+        }
+      } catch (e) {
+        console.warn("[outlook-agent] Fehler:", e instanceof Error ? e.message : e);
+      } finally {
+        gOutlook.__outlookAgentRunning = false;
+      }
+    };
+    setTimeout(tickOutlook, 45_000);
+    setInterval(tickOutlook, FIVE_MINUTES);
+    console.log("[outlook-agent] aktiv – Postfach-Prüfung alle 5 Minuten (falls konfiguriert).");
+  }
+
   // Dritter Loop: Volltext-Indexierung manueller Belege automatisch nachziehen.
   // Deckt Belege ab, die NICHT über den Posteingang kamen (Formular-Uploads,
   // Altbestand) – so muss niemand mehr manuell „Volltext indexieren" klicken.

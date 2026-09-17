@@ -25,6 +25,14 @@ import {
   DAILY_REPORT_INSTRUCTIONS_KEY,
   TASK_DIGEST_ENABLED_KEY,
   TASK_DIGEST_HOUR_KEY,
+  OUTLOOK_ENABLED_KEY,
+  OUTLOOK_TENANT_ID_KEY,
+  OUTLOOK_CLIENT_ID_KEY,
+  OUTLOOK_CLIENT_SECRET_KEY,
+  OUTLOOK_MAILBOX_KEY,
+  OUTLOOK_KEYWORDS_KEY,
+  OUTLOOK_UPLOAD_USER_ID_KEY,
+  getOutlookAgentConfig,
 } from "@/lib/settings";
 import { getUserByUsername } from "@/lib/users";
 import { sendMailResult, verifySmtp } from "@/lib/mailer";
@@ -32,6 +40,8 @@ import { getGoogleReviewStats } from "@/lib/google-reviews";
 import { addBaustelle, deleteBaustelle } from "@/lib/baustellen-docs";
 import { sendDailyReport } from "@/lib/daily-report";
 import { sendOpenTaskDigests } from "@/lib/task-digest";
+import { verifyOutlookAccess } from "@/lib/outlook-graph";
+import { pollOutlookInbox } from "@/lib/outlook-inbox-agent";
 
 const PATH = "/dashboard/einstellungen";
 
@@ -256,4 +266,72 @@ export async function sendTestMailAction(to: string): Promise<TestMailResult> {
   return r.ok
     ? { ok: true, message: `Testmail an ${target} gesendet.` }
     : { ok: false, message: `Versand fehlgeschlagen: ${r.error}` };
+}
+
+/** Speichert die Konfiguration des Outlook-Posteingang-Agenten (Client-Secret nur bei Neueingabe). */
+export async function saveOutlookAgentConfigAction(
+  _prev: SettingsState,
+  formData: FormData
+): Promise<SettingsState> {
+  if (!(await isAdmin())) return { error: "Kein Zugriff." };
+  const enabled = formData.get("enabled") === "on" || formData.get("enabled") === "1" ? "1" : "0";
+  const tenantId = String(formData.get("tenantId") ?? "").trim();
+  const clientId = String(formData.get("clientId") ?? "").trim();
+  const clientSecret = String(formData.get("clientSecret") ?? "");
+  const mailbox = String(formData.get("mailbox") ?? "").trim();
+  const keywords = String(formData.get("keywords") ?? "").trim();
+  const uploadUserIdRaw = String(formData.get("uploadUserId") ?? "").trim();
+  if (mailbox && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(mailbox)) {
+    return { error: "Bitte eine gültige Postfach-Adresse angeben." };
+  }
+  try {
+    await Promise.all([
+      setSetting(OUTLOOK_ENABLED_KEY, enabled),
+      setSetting(OUTLOOK_TENANT_ID_KEY, tenantId || null),
+      setSetting(OUTLOOK_CLIENT_ID_KEY, clientId || null),
+      setSetting(OUTLOOK_MAILBOX_KEY, mailbox || null),
+      setSetting(OUTLOOK_KEYWORDS_KEY, keywords || null),
+      setSetting(OUTLOOK_UPLOAD_USER_ID_KEY, uploadUserIdRaw || null),
+    ]);
+    // Secret nur überschreiben, wenn ein neues eingegeben wurde (sonst bleibt es erhalten).
+    if (clientSecret.length > 0) await setSetting(OUTLOOK_CLIENT_SECRET_KEY, clientSecret);
+  } catch {
+    return { error: "Speichern fehlgeschlagen." };
+  }
+  revalidatePath("/dashboard/agenten");
+  return { success: "Outlook-Agent-Einstellungen gespeichert." };
+}
+
+export interface TestOutlookResult {
+  ok: boolean;
+  message: string;
+}
+
+/** Prüft Azure-AD-Anmeldung + Postfach-Zugriff (ohne zu importieren). */
+export async function checkOutlookAccessAction(): Promise<TestOutlookResult> {
+  if (!(await isAdmin())) return { ok: false, message: "Kein Zugriff." };
+  const cfg = await getOutlookAgentConfig();
+  if (!cfg.tenantId || !cfg.clientId || !cfg.clientSecret || !cfg.mailbox) {
+    return { ok: false, message: "Tenant-ID, Client-ID, Client-Secret und Postfach müssen ausgefüllt sein." };
+  }
+  const r = await verifyOutlookAccess(
+    { tenantId: cfg.tenantId, clientId: cfg.clientId, clientSecret: cfg.clientSecret },
+    cfg.mailbox
+  );
+  return r.ok
+    ? { ok: true, message: `Verbindung zu ${cfg.mailbox} erfolgreich.` }
+    : { ok: false, message: r.error ?? "Verbindung fehlgeschlagen." };
+}
+
+/** Führt SOFORT einen Prüf-Lauf aus (umgeht den 5-Minuten-Timer, respektiert aber „aktiv"). */
+export async function runOutlookAgentNowAction(): Promise<TestOutlookResult> {
+  if (!(await isAdmin())) return { ok: false, message: "Kein Zugriff." };
+  const r = await pollOutlookInbox();
+  revalidatePath("/dashboard/agenten");
+  if (!r.ok) return { ok: false, message: r.error ?? "Fehlgeschlagen." };
+  if (r.skipped) return { ok: false, message: `Übersprungen: ${r.skipped}.` };
+  return {
+    ok: true,
+    message: `${r.checkedMessages} Mail(s) geprüft, ${r.imported} Beleg(e) importiert.`,
+  };
 }
