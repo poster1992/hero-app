@@ -328,8 +328,8 @@ export async function runTool(name: string, input: Record<string, unknown>): Pro
           brutto: r.gross,
           netto: r.net,
           offen: !r.isPaid,
-          offenBetrag: r.isPaid ? 0 : r.gross,
-          statusLabel: r.isPaid ? "bezahlt" : "offen",
+          offenBetrag: r.openAmount,
+          statusLabel: r.isPaid ? "bezahlt" : r.paidAmount > 0 ? `teilweise bezahlt (${r.paidAmount.toFixed(2)} € gezahlt)` : "offen",
         }));
 
       const matched = [...heroMatched, ...manualMatched]

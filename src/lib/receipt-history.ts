@@ -37,6 +37,7 @@ const ACTIONS: Record<string, { label: string; icon: string }> = {
   updated: { label: "Bearbeitet", icon: "✏️" },
   file: { label: "Datei ersetzt", icon: "📎" },
   paid: { label: "Als bezahlt markiert", icon: "✅" },
+  partial_paid: { label: "Teilzahlung erfasst", icon: "💰" },
   unpaid: { label: "Auf offen gesetzt", icon: "↩️" },
   status: { label: "Zahlstatus gesetzt", icon: "💶" },
   sepa: { label: "In SEPA-Überweisung exportiert", icon: "🏦" },

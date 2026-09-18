@@ -4,6 +4,7 @@ import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   setBelegPaidAction,
+  addBelegPartialPaymentAction,
   deleteBelegAction,
   saveBelegColumnsAction,
 } from "@/app/dashboard/belege/manual-actions";
@@ -97,6 +98,7 @@ function rowTint(r: BelegRow, todayISO: string): string {
   // nicht nach Fälligkeit (sonst würden sie rot/„überfällig" erscheinen).
   if (r.gross < 0) return "bg-sky-500/20 hover:bg-sky-500/30";
   if (r.isPaid) return "bg-green-500/30 hover:bg-green-500/40";
+  if (r.paidAmount > 0) return "bg-purple-500/30 hover:bg-purple-500/40";
   const skontoOpen =
     r.skontoPayAmount != null &&
     r.skontoPayAmount < r.gross &&
@@ -114,6 +116,7 @@ function rowTint(r: BelegRow, todayISO: string): string {
 function rowTintLabel(r: BelegRow, todayISO: string): string {
   if (r.gross < 0) return "🔵 Gutschrift (negativer Beleg)";
   if (r.isPaid) return "🟢 Bezahlt";
+  if (r.paidAmount > 0) return `🟣 Teilweise bezahlt – Rest ${currencyFormatter.format(r.openAmount)}`;
   const skontoOpen =
     r.skontoPayAmount != null &&
     r.skontoPayAmount < r.gross &&
@@ -125,11 +128,14 @@ function rowTintLabel(r: BelegRow, todayISO: string): string {
   return "🔴 Überfällig";
 }
 
-/** Status-Zelle: Bezahlt/Offen + Skonto-Kennzeichnung; „als bezahlt" fragt bei Skonto nach. */
+/** Status-Zelle: Bezahlt/Teilweise/Offen + Skonto-Kennzeichnung; „als bezahlt" fragt bei Skonto nach. */
 function PaidCell({ r }: { r: BelegRow }) {
   const router = useRouter();
   const [busy, start] = useTransition();
   const [menu, setMenu] = useState(false);
+  const [partialOpen, setPartialOpen] = useState(false);
+  const [partialAmount, setPartialAmount] = useState("");
+  const [partialError, setPartialError] = useState<string | null>(null);
   // Position des Auswahlmenüs (fixed, damit es nicht vom Tabellen-Container
   // abgeschnitten wird; öffnet nach oben, wenn unten kein Platz ist).
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -137,6 +143,7 @@ function PaidCell({ r }: { r: BelegRow }) {
   // Skonto anbietbar, wenn ein (echt niedrigerer) Skontozahlbetrag hinterlegt ist.
   const hasSkonto = r.skontoPayAmount != null && r.skontoPayAmount < r.gross;
   const saving = hasSkonto ? r.gross - (r.skontoPayAmount as number) : 0;
+  const isPartial = !r.isPaid && r.paidAmount > 0;
 
   const MENU_W = 224; // w-56
   const openMenu = () => {
@@ -165,85 +172,162 @@ function PaidCell({ r }: { r: BelegRow }) {
     });
   };
 
-  return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      {r.isPaid ? (
-        <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">Bezahlt</span>
-      ) : (
-        <span className="rounded-full bg-gray-200 px-2 py-0.5 text-xs font-medium text-gray-600">Offen</span>
-      )}
-      {r.isPaid &&
-        (r.paidWithSkonto ? (
-          <span
-            className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-700"
-            title="Mit Skonto bezahlt – nur der reduzierte Betrag zählt als Ausgabe"
-          >
-            Skonto −{currencyFormatter.format(saving > 0 ? saving : (r.skontoAmount ?? 0))}
-          </span>
-        ) : hasSkonto ? (
-          <span
-            className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500"
-            title="Voll bezahlt (kein Skonto gezogen)"
-          >
-            ohne Skonto
-          </span>
-        ) : null)}
+  const submitPartial = () => {
+    setPartialError(null);
+    const fd = new FormData();
+    fd.set("id", String(r.id));
+    fd.set("amount", partialAmount);
+    start(async () => {
+      const res = await addBelegPartialPaymentAction(fd);
+      if (!res.ok) {
+        setPartialError(res.error ?? "Fehlgeschlagen.");
+        return;
+      }
+      setPartialOpen(false);
+      setPartialAmount("");
+      router.refresh();
+    });
+  };
 
-      {r.isPaid ? (
-        <button
-          type="button"
-          onClick={() => setPaid(false, false)}
-          disabled={busy}
-          className="rounded-md border border-gray-300 px-2 py-0.5 text-xs font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900 disabled:opacity-50"
-        >
-          auf offen
-        </button>
-      ) : hasSkonto ? (
-        <div className="relative">
+  return (
+    <div className="flex flex-col items-start gap-1">
+      <div className="flex flex-wrap items-center gap-1.5">
+        {r.isPaid ? (
+          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">Bezahlt</span>
+        ) : isPartial ? (
+          <span
+            className="rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700"
+            title={`Bisher ${currencyFormatter.format(r.paidAmount)} von ${currencyFormatter.format(r.gross)} gezahlt`}
+          >
+            Teilw. bezahlt · Rest {currencyFormatter.format(r.openAmount)}
+          </span>
+        ) : (
+          <span className="rounded-full bg-gray-200 px-2 py-0.5 text-xs font-medium text-gray-600">Offen</span>
+        )}
+        {r.isPaid &&
+          (r.paidWithSkonto ? (
+            <span
+              className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-700"
+              title="Mit Skonto bezahlt – nur der reduzierte Betrag zählt als Ausgabe"
+            >
+              Skonto −{currencyFormatter.format(saving > 0 ? saving : (r.skontoAmount ?? 0))}
+            </span>
+          ) : hasSkonto ? (
+            <span
+              className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500"
+              title="Voll bezahlt (kein Skonto gezogen)"
+            >
+              ohne Skonto
+            </span>
+          ) : null)}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-1.5">
+        {r.isPaid || isPartial ? (
           <button
-            ref={btnRef}
             type="button"
-            onClick={() => (menu ? setMenu(false) : openMenu())}
+            onClick={() => setPaid(false, false)}
+            disabled={busy}
+            title={isPartial ? "Setzt die erfassten Teilzahlungen zurück" : undefined}
+            className="rounded-md border border-gray-300 px-2 py-0.5 text-xs font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900 disabled:opacity-50"
+          >
+            auf offen
+          </button>
+        ) : hasSkonto ? (
+          <div className="relative">
+            <button
+              ref={btnRef}
+              type="button"
+              onClick={() => (menu ? setMenu(false) : openMenu())}
+              disabled={busy}
+              className="rounded-md border border-gray-300 px-2 py-0.5 text-xs font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900 disabled:opacity-50"
+            >
+              als bezahlt ▾
+            </button>
+            {menu && pos && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setMenu(false)} />
+                <div
+                  className="fixed z-50 w-56 overflow-hidden rounded-md border border-gray-200 bg-white py-1 shadow-xl"
+                  style={{ left: pos.left, top: pos.top, bottom: pos.bottom }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setPaid(true, true)}
+                    className="block w-full px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50"
+                  >
+                    Mit Skonto · {currencyFormatter.format(r.skontoPayAmount as number)}
+                    <span className="ml-1 text-emerald-600">(−{currencyFormatter.format(saving)})</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPaid(true, false)}
+                    className="block w-full px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50"
+                  >
+                    Voll · {currencyFormatter.format(r.gross)}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setPaid(true, false)}
             disabled={busy}
             className="rounded-md border border-gray-300 px-2 py-0.5 text-xs font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900 disabled:opacity-50"
           >
-            als bezahlt ▾
+            als bezahlt
           </button>
-          {menu && pos && (
-            <>
-              <div className="fixed inset-0 z-40" onClick={() => setMenu(false)} />
-              <div
-                className="fixed z-50 w-56 overflow-hidden rounded-md border border-gray-200 bg-white py-1 shadow-xl"
-                style={{ left: pos.left, top: pos.top, bottom: pos.bottom }}
-              >
-                <button
-                  type="button"
-                  onClick={() => setPaid(true, true)}
-                  className="block w-full px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50"
-                >
-                  Mit Skonto · {currencyFormatter.format(r.skontoPayAmount as number)}
-                  <span className="ml-1 text-emerald-600">(−{currencyFormatter.format(saving)})</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPaid(true, false)}
-                  className="block w-full px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50"
-                >
-                  Voll · {currencyFormatter.format(r.gross)}
-                </button>
-              </div>
-            </>
-          )}
+        )}
+
+        {!r.isPaid && r.gross > 0 && (
+          <button
+            type="button"
+            onClick={() => {
+              setPartialError(null);
+              setPartialOpen((v) => !v);
+            }}
+            disabled={busy}
+            className="rounded-md border border-gray-300 px-2 py-0.5 text-xs font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900 disabled:opacity-50"
+          >
+            Teilzahlung
+          </button>
+        )}
+      </div>
+
+      {partialOpen && !r.isPaid && r.gross > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <input
+            type="text"
+            inputMode="decimal"
+            autoFocus
+            value={partialAmount}
+            onChange={(e) => setPartialAmount(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && submitPartial()}
+            placeholder={`z. B. ${currencyFormatter.format(Math.min(100, r.openAmount))}`}
+            className="w-28 rounded-md border border-gray-300 px-2 py-0.5 text-xs text-gray-900 outline-none focus:border-brand-red/60"
+          />
+          <button
+            type="button"
+            onClick={submitPartial}
+            disabled={busy || !partialAmount.trim()}
+            className="rounded-md bg-brand-red px-2 py-0.5 text-xs font-semibold text-white transition hover:brightness-110 disabled:opacity-50"
+          >
+            {busy ? "…" : "Erfassen"}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setPartialOpen(false);
+              setPartialError(null);
+            }}
+            className="rounded-md px-1.5 py-0.5 text-xs text-gray-500 hover:text-gray-800"
+          >
+            Abbrechen
+          </button>
+          {partialError && <span className="w-full text-xs text-rose-600">{partialError}</span>}
         </div>
-      ) : (
-        <button
-          type="button"
-          onClick={() => setPaid(true, false)}
-          disabled={busy}
-          className="rounded-md border border-gray-300 px-2 py-0.5 text-xs font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900 disabled:opacity-50"
-        >
-          als bezahlt
-        </button>
       )}
     </div>
   );
@@ -734,7 +818,7 @@ export default function ManualBelegeTable({
         r.skontoAmount != null ? money2(r.skontoAmount) : "",
         r.skontoPayAmount != null ? money2(r.skontoPayAmount) : "",
         formatDate(r.skontoDueDate),
-        r.isPaid ? "Bezahlt" : "Offen",
+        r.isPaid ? "Bezahlt" : r.paidAmount > 0 ? `Teilweise bezahlt (${money2(r.openAmount)} offen)` : "Offen",
         r.hasFile ? "ja" : "nein",
       ]
         .map(esc)
@@ -819,8 +903,9 @@ export default function ManualBelegeTable({
       const manualItems: SepaItem[] = selectedRows.map((r) => ({
         customerId: null, // manueller Beleg → Auflösung über den Lieferantennamen
         name: r.supplier ?? "",
-        // Voller Bruttobetrag (Skonto wird hier bewusst nicht automatisch gezogen).
-        amount: r.gross,
+        // Offener Betrag (Bruttobetrag abzüglich bereits erfasster Teilzahlungen;
+        // Skonto wird hier bewusst nicht automatisch gezogen).
+        amount: r.openAmount,
         reference: r.invoiceNumber || `Beleg ${r.id}`,
         belegId: r.id, // nur für die Beleg-Historie
       }));

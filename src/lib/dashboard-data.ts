@@ -318,17 +318,18 @@ export async function getDashboardData(year: number): Promise<DashboardData> {
       monthly[monthIndex].skonto += skontoSaving(r);
       totalOutput += effNet;
       countOutput++;
-      if (!r.isPaid) {
-        openReceiptsTotal += r.gross;
+      if (!r.isPaid && r.openAmount > 0.005) {
+        // Teilzahlungen mindern den offenen Betrag (nicht den vollen Bruttobetrag).
+        openReceiptsTotal += r.openAmount;
         openReceiptsCount++;
         openReceiptsMonthly[monthIndex].count++;
-        openReceiptsMonthly[monthIndex].total += r.gross;
+        openReceiptsMonthly[monthIndex].total += r.openAmount;
         openReceiptsDetails.push({
           month: monthIndex + 1,
           date: r.date,
           number: "",
           party: r.supplier || r.description || "Manueller Beleg",
-          amount: round2(r.gross),
+          amount: round2(r.openAmount),
         });
       }
       const number = r.accountNumber?.trim() ?? "";

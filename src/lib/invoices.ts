@@ -147,12 +147,16 @@ export interface ManualReceiptLike {
   /** true = mit Skonto bezahlt → als Ausgabe zählt nur der reduzierte Zahlbetrag. */
   paidWithSkonto: boolean;
   skontoPayAmount: number | null;
+  /** Bisher gezahlter Betrag (Teilzahlungen); bei isPaid = voller/skontierter Betrag. */
+  paidAmount: number;
+  /** Noch offener Betrag (0, wenn vollständig bezahlt). */
+  openAmount: number;
 }
 
 /**
  * Folds manually uploaded receipts into a HERO receipts summary so the Belege
- * cards (Gesamtsumme/Steuerlast/Bezahlt/Offen) reflect both sources.
- * Manual receipts have no partial payments: paid → fully paid, otherwise open.
+ * cards (Gesamtsumme/Steuerlast/Bezahlt/Offen) reflect both sources. Teilzahlungen
+ * zählen anteilig: paidAmount fließt in „Bezahlt", openAmount in „Offen" ein.
  */
 export function mergeManualIntoSummary(
   summary: ReceiptsSummary,
@@ -171,9 +175,9 @@ export function mergeManualIntoSummary(
     count++;
     netTotal += m.net;
     grossTotal += m.gross;
-    // Bei Skonto-Zahlung zählt als tatsächliche Ausgabe nur der reduzierte Zahlbetrag.
-    if (m.isPaid) paidTotal += m.paidWithSkonto && m.skontoPayAmount != null ? m.skontoPayAmount : m.gross;
-    else openTotal += m.gross;
+    // paidAmount deckt Voll-, Skonto- und Teilzahlungen ab; openAmount den Rest.
+    paidTotal += m.paidAmount;
+    openTotal += m.openAmount;
     const rate = m.vatRate ?? 0;
     const entry = byRate.get(rate) ?? { net: 0, gross: 0 };
     entry.net += m.net;

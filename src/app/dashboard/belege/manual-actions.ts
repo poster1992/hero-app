@@ -6,6 +6,7 @@ import { getUserByUsername } from "@/lib/users";
 import {
   createManualReceipt,
   setManualReceiptPaid,
+  addManualReceiptPartialPayment,
   updateManualReceipt,
   deleteManualReceipt,
   getManualReceipt,
@@ -13,6 +14,7 @@ import {
   listManualDuplicates,
   type ManualReceiptUpload,
   type DuplicateBeleg,
+  type PartialPaymentResult,
 } from "@/lib/manual-receipts";
 import {
   listReceiptHistory,
@@ -401,6 +403,21 @@ export async function setBelegPaidAction(formData: FormData): Promise<void> {
   const me = await getUserByUsername(session.username).catch(() => null);
   await setManualReceiptPaid(id, paid, withSkonto, me?.id ?? null);
   revalidatePath(PATH);
+}
+
+/** Erfasst eine Teilzahlung für einen Beleg (Betrag in EUR, deutsches Komma erlaubt). */
+export async function addBelegPartialPaymentAction(formData: FormData): Promise<PartialPaymentResult> {
+  const session = await getSession();
+  if (!session) return { ok: false, error: "Kein Zugriff.", fullyPaid: false, openAmount: 0 };
+  const id = Number(formData.get("id"));
+  const amount = Number(String(formData.get("amount") ?? "").replace(",", "."));
+  if (!Number.isFinite(id) || id <= 0) {
+    return { ok: false, error: "Ungültiger Beleg.", fullyPaid: false, openAmount: 0 };
+  }
+  const me = await getUserByUsername(session.username).catch(() => null);
+  const result = await addManualReceiptPartialPayment(id, amount, me?.id ?? null);
+  if (result.ok) revalidatePath(PATH);
+  return result;
 }
 
 /**

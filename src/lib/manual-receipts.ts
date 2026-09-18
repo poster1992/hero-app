@@ -27,6 +27,10 @@ export interface ManualReceipt {
   isPaid: boolean;
   /** true = beim Bezahlen wurde Skonto gezogen (nur dann zählt der reduzierte Zahlbetrag). */
   paidWithSkonto: boolean;
+  /** Bisher gezahlter Betrag (Teilzahlungen aufsummiert; bei isPaid = voller/skontierter Betrag). */
+  paidAmount: number;
+  /** Noch offener Betrag (0, wenn vollständig bezahlt). */
+  openAmount: number;
   /** true = vertraulich (z. B. Lohn) → NICHT in die Rechnungsprüfung/Workflow-Automatik. */
   confidential: boolean;
   paidDate: string | null;
@@ -58,6 +62,7 @@ interface ReceiptRow extends RowDataPacket {
   mime: string | null;
   is_paid: number | null;
   paid_with_skonto: number | null;
+  paid_amount: string | number | null;
   confidential: number | null;
   paid_date: string | null;
   project_id: number | null;
@@ -71,10 +76,38 @@ interface ReceiptRow extends RowDataPacket {
 
 const num = (v: string | number | null): number => (v == null ? 0 : Number(v));
 
+let paidAmountColumnReady = false;
+/** Stellt die Spalte `paid_amount` sicher (Teilzahlungen; einmalig, self-healing). */
+async function ensurePaidAmountColumn(): Promise<void> {
+  if (paidAmountColumnReady) return;
+  const pool = getPool();
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT COUNT(*) AS n FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'manual_receipts' AND COLUMN_NAME = 'paid_amount'`
+  );
+  if ((rows[0]?.n ?? 0) === 0) {
+    // Tolerant gegenüber parallelen ersten Aufrufen (Duplicate-Column ignorieren).
+    await pool
+      .query("ALTER TABLE manual_receipts ADD COLUMN paid_amount DECIMAL(12,2) NOT NULL DEFAULT 0")
+      .catch(() => {});
+    // Bestehende voll bezahlte Belege rückwirkend befüllen (sonst zeigen sie 100 % offen).
+    await pool
+      .query(
+        `UPDATE manual_receipts
+            SET paid_amount = CASE WHEN paid_with_skonto = 1 AND skonto_pay_amount IS NOT NULL THEN skonto_pay_amount ELSE gross END
+          WHERE is_paid = 1 AND paid_amount = 0`
+      )
+      .catch(() => {});
+  }
+  paidAmountColumnReady = true;
+}
+
 function mapRow(r: ReceiptRow): ManualReceipt {
   const gross = num(r.gross);
   const rate = r.vat_rate == null ? null : num(r.vat_rate);
   const vat = rate ? Math.round((gross - gross / (1 + rate / 100)) * 100) / 100 : 0;
+  const isPaid = r.is_paid === 1;
+  const paidAmount = num(r.paid_amount);
   return {
     id: r.id,
     date: r.beleg_date ? String(r.beleg_date).slice(0, 10) : null,
@@ -89,8 +122,10 @@ function mapRow(r: ReceiptRow): ManualReceipt {
     fileName: r.file_name,
     mime: r.mime,
     hasFile: !!r.stored_name,
-    isPaid: r.is_paid === 1,
+    isPaid,
     paidWithSkonto: r.paid_with_skonto === 1,
+    paidAmount,
+    openAmount: isPaid ? 0 : Math.round((gross - paidAmount) * 100) / 100,
     confidential: r.confidential === 1,
     paidDate: r.paid_date ? String(r.paid_date).slice(0, 10) : null,
     projectId: r.project_id ?? null,
@@ -105,9 +140,10 @@ function mapRow(r: ReceiptRow): ManualReceipt {
 
 /** Manual receipts whose beleg_date falls in the given year (newest first). */
 export async function listManualReceipts(year: number): Promise<ManualReceipt[]> {
+  await ensurePaidAmountColumn();
   const [rows] = await getPool().query<ReceiptRow[]>(
     `SELECT id, beleg_date, supplier, description, gross, vat_rate, account_number, account_name,
-            file_name, stored_name, mime, is_paid, paid_with_skonto, confidential, paid_date, project_id, project_relative_id, project_name,
+            file_name, stored_name, mime, is_paid, paid_with_skonto, paid_amount, confidential, paid_date, project_id, project_relative_id, project_name,
             invoice_number, skonto_amount, skonto_pay_amount, skonto_due_date
      FROM manual_receipts
      WHERE beleg_date IS NULL OR YEAR(beleg_date) = ?
@@ -119,9 +155,10 @@ export async function listManualReceipts(year: number): Promise<ManualReceipt[]>
 
 /** Alle manuellen Belege (jahresübergreifend, neueste zuerst) – für die Volltextsuche. */
 export async function listAllManualReceipts(): Promise<ManualReceipt[]> {
+  await ensurePaidAmountColumn();
   const [rows] = await getPool().query<ReceiptRow[]>(
     `SELECT id, beleg_date, supplier, description, gross, vat_rate, account_number, account_name,
-            file_name, stored_name, mime, is_paid, paid_with_skonto, confidential, paid_date, project_id, project_relative_id, project_name,
+            file_name, stored_name, mime, is_paid, paid_with_skonto, paid_amount, confidential, paid_date, project_id, project_relative_id, project_name,
             invoice_number, skonto_amount, skonto_pay_amount, skonto_due_date
      FROM manual_receipts
      ORDER BY beleg_date DESC, id DESC`
@@ -181,9 +218,10 @@ export async function listManualReceiptUploads(limit = 300): Promise<ManualRecei
 
 /** Loads a single manual receipt by id (or null). */
 export async function getManualReceipt(id: number): Promise<ManualReceipt | null> {
+  await ensurePaidAmountColumn();
   const [rows] = await getPool().query<ReceiptRow[]>(
     `SELECT id, beleg_date, supplier, description, gross, vat_rate, account_number, account_name,
-            file_name, stored_name, mime, is_paid, paid_with_skonto, confidential, paid_date, project_id, project_relative_id, project_name,
+            file_name, stored_name, mime, is_paid, paid_with_skonto, paid_amount, confidential, paid_date, project_id, project_relative_id, project_name,
             invoice_number, skonto_amount, skonto_pay_amount, skonto_due_date
      FROM manual_receipts WHERE id = ? LIMIT 1`,
     [id]
@@ -198,26 +236,98 @@ export async function setManualReceiptPaid(
   withSkonto = false,
   actorId: number | null = null
 ): Promise<void> {
+  await ensurePaidAmountColumn();
   const before = await getManualReceipt(id).catch(() => null);
-  await getPool().query(
-    "UPDATE manual_receipts SET is_paid = ?, paid_with_skonto = ?, paid_date = ? WHERE id = ?",
-    [paid ? 1 : 0, paid && withSkonto ? 1 : 0, paid ? new Date().toISOString().slice(0, 10) : null, id]
-  );
+  // Voll bezahlt (ggf. mit Skonto) oder komplett zurück auf offen – setzt/verwirft
+  // dabei auch etwaige vorher erfasste Teilzahlungen (bewusster Reset).
   const amount =
-    paid && withSkonto && before?.skontoPayAmount != null ? before.skontoPayAmount : before?.gross ?? null;
+    paid && withSkonto && before?.skontoPayAmount != null ? before.skontoPayAmount : before?.gross ?? 0;
+  await getPool().query(
+    "UPDATE manual_receipts SET is_paid = ?, paid_with_skonto = ?, paid_amount = ?, paid_date = ? WHERE id = ?",
+    [paid ? 1 : 0, paid && withSkonto ? 1 : 0, paid ? amount : 0, paid ? new Date().toISOString().slice(0, 10) : null, id]
+  );
   await logReceiptEvent({
     kind: "manual",
     receiptId: id,
     action: paid ? "paid" : "unpaid",
-    detail:
-      amount == null
-        ? null
-        : `${withSkonto && paid ? "mit Skonto · " : ""}${amount.toLocaleString("de-DE", {
-            style: "currency",
-            currency: "EUR",
-          })}`,
+    detail: !paid
+      ? null
+      : `${withSkonto ? "mit Skonto · " : ""}${amount.toLocaleString("de-DE", {
+          style: "currency",
+          currency: "EUR",
+        })}`,
     userId: actorId,
   });
+}
+
+export interface PartialPaymentResult {
+  ok: boolean;
+  error?: string;
+  /** true, wenn die Teilzahlung den Beleg vollständig ausgeglichen hat. */
+  fullyPaid: boolean;
+  /** Noch offener Betrag nach dieser Zahlung. */
+  openAmount: number;
+}
+
+/**
+ * Erfasst eine Teilzahlung: erhöht den bisher gezahlten Betrag um `amount`.
+ * Erreicht die Summe den Bruttobetrag, wird der Beleg automatisch als
+ * vollständig bezahlt markiert (wie beim „als bezahlt"-Button, ohne Skonto).
+ */
+export async function addManualReceiptPartialPayment(
+  id: number,
+  amount: number,
+  actorId: number | null = null
+): Promise<PartialPaymentResult> {
+  await ensurePaidAmountColumn();
+  const r = await getManualReceipt(id);
+  if (!r) return { ok: false, error: "Beleg nicht gefunden.", fullyPaid: false, openAmount: 0 };
+  if (r.isPaid) {
+    return { ok: false, error: "Beleg ist bereits vollständig bezahlt.", fullyPaid: true, openAmount: 0 };
+  }
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return { ok: false, error: "Ungültiger Betrag.", fullyPaid: false, openAmount: r.openAmount };
+  }
+  if (amount > r.openAmount + 0.01) {
+    return {
+      ok: false,
+      error: `Betrag darf den offenen Betrag (${r.openAmount.toLocaleString("de-DE", {
+        style: "currency",
+        currency: "EUR",
+      })}) nicht überschreiten.`,
+      fullyPaid: false,
+      openAmount: r.openAmount,
+    };
+  }
+
+  const newPaidAmount = Math.round((r.paidAmount + amount) * 100) / 100;
+  const fullyPaid = newPaidAmount >= r.gross - 0.01;
+  const today = new Date().toISOString().slice(0, 10);
+  if (fullyPaid) {
+    await getPool().query(
+      "UPDATE manual_receipts SET is_paid = 1, paid_with_skonto = 0, paid_amount = ?, paid_date = ? WHERE id = ?",
+      [r.gross, today, id]
+    );
+  } else {
+    await getPool().query("UPDATE manual_receipts SET paid_amount = ?, paid_date = ? WHERE id = ?", [
+      newPaidAmount,
+      today,
+      id,
+    ]);
+  }
+
+  const eur = (n: number) => n.toLocaleString("de-DE", { style: "currency", currency: "EUR" });
+  await logReceiptEvent({
+    kind: "manual",
+    receiptId: id,
+    action: fullyPaid ? "paid" : "partial_paid",
+    detail: fullyPaid
+      ? `Teilzahlung ${eur(amount)} · damit vollständig bezahlt (${eur(r.gross)})`
+      : `Teilzahlung ${eur(amount)} · bisher ${eur(newPaidAmount)} von ${eur(r.gross)} · Rest ${eur(r.gross - newPaidAmount)}`,
+    userId: actorId,
+  });
+
+  return { ok: true, fullyPaid, openAmount: fullyPaid ? 0 : Math.round((r.gross - newPaidAmount) * 100) / 100 };
 }
 
 /** Ein manueller Beleg, der an einem bestimmten Tag als bezahlt markiert wurde. */
@@ -694,9 +804,10 @@ export async function getManualCostNetByProject(): Promise<Map<number, number>> 
 
 /** Manuelle Belege, die einem Projekt (HERO project_match id) zugeordnet sind. */
 export async function listManualReceiptsByProject(projectId: number): Promise<ManualReceipt[]> {
+  await ensurePaidAmountColumn();
   const [rows] = await getPool().query<ReceiptRow[]>(
     `SELECT id, beleg_date, supplier, description, gross, vat_rate, account_number, account_name,
-            file_name, stored_name, mime, is_paid, paid_with_skonto, confidential, paid_date, project_id, project_relative_id, project_name,
+            file_name, stored_name, mime, is_paid, paid_with_skonto, paid_amount, confidential, paid_date, project_id, project_relative_id, project_name,
             invoice_number, skonto_amount, skonto_pay_amount, skonto_due_date
      FROM manual_receipts WHERE project_id = ? ORDER BY beleg_date DESC, id DESC`,
     [projectId]
