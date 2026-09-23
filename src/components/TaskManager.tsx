@@ -153,6 +153,14 @@ function TaskCard({
     setBelegOpen(false);
     setBelegEdit(null);
   };
+  // Nach "Änderungen speichern" im offenen Beleg-Fenster die frischen Werte
+  // nachladen, ohne das Fenster zu schließen (direkt "Geprüft & abschließen" möglich).
+  const reloadBeleg = () => {
+    if (!belegId) return;
+    loadBelegEditDataAction(Number(belegId))
+      .then((d) => setBelegEdit(d))
+      .catch(() => {});
+  };
   // Optimistischer Status: sofort sichtbar, bevor der Server nachzieht.
   const effectiveStatus: TaskStatus = localStatus ?? task.status;
 
@@ -661,6 +669,8 @@ function TaskCard({
           projects={belegEdit.projects}
           suppliers={belegEdit.suppliers}
           title={`Beleg #${belegId}${task.title ? ` · ${task.title}` : ""}`}
+          keepOpenOnSave
+          onSaved={reloadBeleg}
           hasFile={belegEdit.receipt.fileName != null}
           onClose={closeBeleg}
           extraFooter={

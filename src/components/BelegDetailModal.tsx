@@ -29,6 +29,8 @@ export default function BelegDetailModal({
   hasFile = true,
   extraFooter,
   onClose,
+  keepOpenOnSave = false,
+  onSaved,
 }: {
   belegId: number | string;
   receipt: EditableReceipt;
@@ -42,6 +44,14 @@ export default function BelegDetailModal({
   /** Zusätzliche Aktionen im Footer (z. B. "Geprüft & abschließen" bei Aufgaben). */
   extraFooter?: ReactNode;
   onClose: () => void;
+  /**
+   * Nach dem Speichern NICHT schließen (z. B. Beleg-Prüfung: erst speichern,
+   * dann direkt "Geprüft & abschließen" klicken können). Erfordert `onSaved`,
+   * um dem Aufrufer die frisch gespeicherten Werte nachzuladen.
+   */
+  keepOpenOnSave?: boolean;
+  /** Wird bei `keepOpenOnSave` statt `onClose` nach erfolgreichem Speichern aufgerufen. */
+  onSaved?: () => void;
 }) {
   const router = useRouter();
   return (
@@ -82,20 +92,27 @@ export default function BelegDetailModal({
           )}
           <div className="min-h-0 overflow-y-auto border-t border-gray-200 p-4 md:w-1/2 md:border-t-0">
             <ManualBelegeFormFields
+              // Wichtig: React 19 setzt das Formular nach der Server-Action auf die
+              // (alten) defaultValues zurück. Bei `keepOpenOnSave` remounten wir das
+              // Formular deshalb (key = Inhalt von `receipt`) sobald der Aufrufer nach
+              // dem Speichern frische Werte nachgeladen hat – so zeigt es die neuen,
+              // gespeicherten Werte statt kurz auf die alten zurückzuspringen.
+              key={keepOpenOnSave ? JSON.stringify(receipt) : undefined}
               accounts={accounts}
               projects={projects}
               suppliers={suppliers}
               receipt={receipt}
               formClassName="grid grid-cols-1 gap-3"
-              // Nach dem Speichern das Fenster schließen UND die Daten neu laden.
-              // Wichtig: React 19 setzt das Formular nach der Server-Action auf die
-              // (alten) defaultValues zurück – bliebe das Fenster offen, sprängen
-              // bearbeitete Felder (z. B. Skontozahlbetrag) sichtbar auf den alten
-              // Wert zurück, obwohl die DB den neuen Wert längst hat. Schließen +
-              // router.refresh() zeigt beim erneuten Öffnen die frischen Werte.
+              // Standard: Fenster schließen und Daten neu laden. Bei `keepOpenOnSave`
+              // bleibt das Fenster offen (z. B. um direkt "Geprüft & abschließen" zu
+              // klicken) und der Aufrufer lädt via `onSaved` die frischen Werte nach.
               onSuccess={() => {
-                router.refresh();
-                onClose();
+                if (keepOpenOnSave) {
+                  onSaved?.();
+                } else {
+                  router.refresh();
+                  onClose();
+                }
               }}
             />
           </div>
