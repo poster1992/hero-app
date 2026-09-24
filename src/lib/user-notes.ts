@@ -94,9 +94,11 @@ export async function getUserNote(userId: number): Promise<UserNote> {
   // Self-heal: Zeilen, die schon vor der `format`-Spalte als echtes HTML
   // gespeichert wurden, bekamen beim Einführen der Spalte pauschal
   // format='text' und wurden dadurch beim nächsten Laden ein zweites Mal
-  // escaped (sichtbares "&lt;br&gt;" statt Zeilenumbruch). Einmalig erkennen
-  // und zurückwandeln + richtig markieren.
-  if (format === "text" && ESCAPED_TAG_RE.test(content)) {
+  // escaped (sichtbares "&lt;br&gt;" statt Zeilenumbruch). Ein zwischenzeitliches
+  // Auto-Save (z. B. Feld verlassen) konnte diesen kaputten Stand danach sogar
+  // schon als format='html' festgeschrieben haben – deshalb hier UNABHÄNGIG
+  // vom aktuellen `format`-Wert auf das Schadensbild prüfen, nicht nur bei 'text'.
+  if (ESCAPED_TAG_RE.test(content)) {
     content = decodeHtmlEntitiesFully(content);
     format = "html";
     await getPool()
