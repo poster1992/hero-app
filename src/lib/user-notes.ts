@@ -50,6 +50,28 @@ interface NoteRow extends RowDataPacket {
   format: string | null;
 }
 
+/**
+ * Erkennt sichtbare escapte Tags wie "&lt;br&gt;" – auch mehrfach verschachtelt
+ * ("&amp;lt;br&amp;gt;", falls mehrmals nacheinander escaped wurde). Anzeichen
+ * der Doppel-Escaping-Panne.
+ */
+const ESCAPED_TAG_RE = /&(?:amp;)*lt;\/?[a-z][a-z0-9]*(?:\s[^&]*)?&(?:amp;)*gt;/i;
+
+function decodeHtmlEntitiesOnce(s: string): string {
+  return s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&");
+}
+
+/** Wendet die Entity-Dekodierung wiederholt an, bis sich nichts mehr ändert (mehrfach verschachtelte Escapes). */
+function decodeHtmlEntitiesFully(s: string): string {
+  let cur = s;
+  for (let i = 0; i < 5; i++) {
+    const next = decodeHtmlEntitiesOnce(cur);
+    if (next === cur) break;
+    cur = next;
+  }
+  return cur;
+}
+
 export interface UserNote {
   content: string;
   updated: string | null;
@@ -66,10 +88,26 @@ export async function getUserNote(userId: number): Promise<UserNote> {
     [userId]
   );
   const r = rows[0];
+  let content = r?.content ?? "";
+  let format: "text" | "html" = r?.format === "html" ? "html" : "text";
+
+  // Self-heal: Zeilen, die schon vor der `format`-Spalte als echtes HTML
+  // gespeichert wurden, bekamen beim Einführen der Spalte pauschal
+  // format='text' und wurden dadurch beim nächsten Laden ein zweites Mal
+  // escaped (sichtbares "&lt;br&gt;" statt Zeilenumbruch). Einmalig erkennen
+  // und zurückwandeln + richtig markieren.
+  if (format === "text" && ESCAPED_TAG_RE.test(content)) {
+    content = decodeHtmlEntitiesFully(content);
+    format = "html";
+    await getPool()
+      .query("UPDATE user_notes SET content = ?, format = 'html' WHERE user_id = ?", [content, userId])
+      .catch(() => {});
+  }
+
   return {
-    content: r?.content ?? "",
+    content,
     updated: r?.updated ? String(r.updated) : null,
-    format: r?.format === "html" ? "html" : "text",
+    format,
   };
 }
 
