@@ -31,11 +31,12 @@ const TEXT_COLORS: { label: string; value: string }[] = [
 /**
  * Alte Notizen (reiner Text aus der vorherigen Textarea-Version, kein HTML)
  * beim ersten Laden sicher als HTML darstellen, statt sie als Markup zu
- * interpretieren.
+ * interpretieren – sonst wird z. B. ein getipptes "<" als HTML-Tag gelesen
+ * und verschluckt Text samt Zeilenumbrüchen. Welches Format vorliegt, sagt
+ * `initialFormat` (aus der DB) statt einer Rate-Heuristik.
  */
-function toEditableHtml(raw: string): string {
-  const trimmed = raw.trim();
-  if (trimmed.startsWith("<")) return raw; // schon HTML (neues Format)
+function toEditableHtml(raw: string, format: "text" | "html"): string {
+  if (format === "html") return raw;
   const escaped = raw.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   return escaped.replace(/\n/g, "<br>");
 }
@@ -43,9 +44,12 @@ function toEditableHtml(raw: string): string {
 export default function Notepad({
   initialContent,
   initialUpdated,
+  initialFormat,
 }: {
   initialContent: string;
   initialUpdated: string | null;
+  /** "text" = alte Notiz (reiner Text), "html" = bereits mit diesem Editor gespeichert. */
+  initialFormat: "text" | "html";
 }) {
   const [status, setStatus] = useState<Status>("saved");
   const [dirty, setDirty] = useState(false);
@@ -58,7 +62,7 @@ export default function Notepad({
   // Startinhalt einmalig setzen (unkontrolliertes contentEditable – sonst
   // springt der Cursor bei jedem Tastendruck an den Anfang zurück).
   useEffect(() => {
-    if (editorRef.current) editorRef.current.innerHTML = toEditableHtml(initialContent);
+    if (editorRef.current) editorRef.current.innerHTML = toEditableHtml(initialContent, initialFormat);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

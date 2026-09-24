@@ -12,11 +12,13 @@ export default async function NotizblockPage() {
 
   let content = "";
   let updated: string | null = null;
+  let format: "text" | "html" = "text";
   let error: string | null = null;
   try {
     const note = await getUserNote(user.id);
     content = note.content;
     updated = note.updated;
+    format = note.format;
   } catch (e) {
     error = e instanceof Error ? e.message : "Notizblock konnte nicht geladen werden.";
   }
@@ -31,7 +33,7 @@ export default async function NotizblockPage() {
       {error ? (
         <div className="border border-brand-red/40 bg-brand-red/10 p-4 text-sm text-brand-red-dark">{error}</div>
       ) : (
-        <Notepad initialContent={content} initialUpdated={updated} />
+        <Notepad initialContent={content} initialUpdated={updated} initialFormat={format} />
       )}
     </div>
   );
