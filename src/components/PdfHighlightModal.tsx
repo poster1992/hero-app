@@ -5,25 +5,37 @@ import { addPdfHighlightsAction } from "@/app/dashboard/belege/kontoauszug/actio
 import { MARKER_COLORS, markerColorHex, type MarkerColor } from "@/lib/kontoauszug-colors";
 import type { HighlightRect } from "@/lib/kontoauszuege";
 
-/** Nur der Ausschnitt der pdfjs-`PageViewport`, den wir für die Koordinaten-Umrechnung brauchen. */
+/** Nur der Ausschnitt der pdfjs-`PageViewport`/`PDFPageProxy`, den wir brauchen. */
 interface MinimalViewport {
   convertToPdfPoint(x: number, y: number): number[];
+  convertToViewportPoint(x: number, y: number): number[];
+}
+interface MinimalPdfPage {
+  getViewport(params: { scale: number }): MinimalViewport & { width: number; height: number };
+  render(params: { canvas: HTMLCanvasElement; viewport: MinimalViewport }): { promise: Promise<void> };
 }
 
+/** Ein aufgezogenes Rechteck, in PDF-Koordinaten gespeichert (bleibt beim Zoomen stabil). */
 interface PendingRect {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
+  pdfX: number;
+  pdfY: number;
+  pdfWidth: number;
+  pdfHeight: number;
   color: MarkerColor;
+  note: string;
 }
+
+const MIN_ZOOM = 0.5;
+const MAX_ZOOM = 3;
+const ZOOM_STEP = 0.25;
 
 /**
  * Echter Textmarker: rendert eine einzelne PDF-Seite (via pdfjs-dist) auf ein
- * Canvas, lässt per Maus-Ziehen halbtransparente Rechtecke aufziehen und
- * brennt sie beim Speichern dauerhaft in die PDF-Datei ein (server-seitig via
- * pdf-lib). Bewusst als eigenes Fenster statt den Haupt-Viewer zu ersetzen –
- * der bleibt der native, schnelle Browser-PDF-Viewer zum Lesen/Blättern.
+ * Canvas, lässt per Maus-Ziehen halbtransparente Rechtecke aufziehen (optional
+ * mit Notiz, die zusätzlich als durchsuchbarer Seiten-Marker gespeichert wird)
+ * und brennt sie beim Speichern dauerhaft in die PDF-Datei ein (server-seitig
+ * via pdf-lib). Bewusst als eigenes Fenster statt den Haupt-Viewer zu ersetzen
+ * – der bleibt der native, schnelle Browser-PDF-Viewer zum Lesen/Blättern.
  */
 export default function PdfHighlightModal({
   page,
@@ -36,7 +48,13 @@ export default function PdfHighlightModal({
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const viewportRef = useRef<MinimalViewport | null>(null);
+  const pdfPageRef = useRef<MinimalPdfPage | null>(null);
+  const fitScaleRef = useRef(1);
+  // Als State statt Ref: wird für die Koordinaten-Umrechnung beim Rendern der
+  // Markierungs-Overlays gebraucht (Ref-Zugriff während des Renderns ist nicht
+  // erlaubt/zuverlässig).
+  const [viewport, setViewport] = useState<MinimalViewport | null>(null);
+  const [zoom, setZoom] = useState(1);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [color, setColor] = useState<MarkerColor>("yellow");
@@ -46,6 +64,18 @@ export default function PdfHighlightModal({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  const renderAtScale = async (scale: number) => {
+    const proxy = pdfPageRef.current;
+    const canvas = canvasRef.current;
+    if (!proxy || !canvas) return;
+    const newViewport = proxy.getViewport({ scale });
+    setViewport(newViewport);
+    canvas.width = Math.round(newViewport.width);
+    canvas.height = Math.round(newViewport.height);
+    await proxy.render({ canvas, viewport: newViewport }).promise;
+  };
+
+  // Beim Öffnen (bzw. Seitenwechsel) die Seite laden und auf Container-Breite einpassen.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -54,17 +84,12 @@ export default function PdfHighlightModal({
         pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
         const doc = await pdfjsLib.getDocument({ url: "/api/kontoauszug-datei" }).promise;
         const pdfPage = await doc.getPage(page);
+        if (cancelled) return;
+        pdfPageRef.current = pdfPage as unknown as MinimalPdfPage;
         const baseViewport = pdfPage.getViewport({ scale: 1 });
         const targetWidth = Math.max(320, (containerRef.current?.clientWidth || 900) - 24);
-        const scale = targetWidth / baseViewport.width;
-        const viewport = pdfPage.getViewport({ scale });
-        if (cancelled) return;
-        viewportRef.current = viewport;
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        canvas.width = Math.round(viewport.width);
-        canvas.height = Math.round(viewport.height);
-        await pdfPage.render({ canvas, viewport }).promise;
+        fitScaleRef.current = targetWidth / baseViewport.width;
+        await renderAtScale(fitScaleRef.current);
         if (!cancelled) setLoading(false);
       } catch (e) {
         if (!cancelled) {
@@ -77,6 +102,12 @@ export default function PdfHighlightModal({
       cancelled = true;
     };
   }, [page]);
+
+  const applyZoom = (next: number) => {
+    const clamped = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, next));
+    setZoom(clamped);
+    void renderAtScale(fitScaleRef.current * clamped);
+  };
 
   const relativePos = (e: ReactPointerEvent) => {
     const canvas = canvasRef.current;
@@ -96,13 +127,22 @@ export default function PdfHighlightModal({
     setDragCurrent(relativePos(e));
   };
   const handlePointerUp = () => {
-    if (dragStart && dragCurrent) {
+    if (dragStart && dragCurrent && viewport) {
       const width = Math.abs(dragCurrent.x - dragStart.x);
       const height = Math.abs(dragCurrent.y - dragStart.y);
       if (width >= 4 && height >= 4) {
+        const [x1, y1] = viewport.convertToPdfPoint(dragStart.x, dragStart.y);
+        const [x2, y2] = viewport.convertToPdfPoint(dragCurrent.x, dragCurrent.y);
         setRects((prev) => [
           ...prev,
-          { x: Math.min(dragStart.x, dragCurrent.x), y: Math.min(dragStart.y, dragCurrent.y), width, height, color },
+          {
+            pdfX: Math.min(x1, x2),
+            pdfY: Math.min(y1, y2),
+            pdfWidth: Math.abs(x2 - x1),
+            pdfHeight: Math.abs(y2 - y1),
+            color,
+            note: "",
+          },
         ]);
       }
     }
@@ -111,23 +151,21 @@ export default function PdfHighlightModal({
   };
 
   const removeRect = (index: number) => setRects((prev) => prev.filter((_, i) => i !== index));
+  const setRectNote = (index: number, note: string) =>
+    setRects((prev) => prev.map((r, i) => (i === index ? { ...r, note } : r)));
 
   const handleSave = async () => {
-    const viewport = viewportRef.current;
-    if (!viewport || rects.length === 0) return;
+    if (rects.length === 0) return;
     setSaving(true);
     setSaveError(null);
-    const pdfRects: HighlightRect[] = rects.map((r) => {
-      const [x1, y1] = viewport.convertToPdfPoint(r.x, r.y);
-      const [x2, y2] = viewport.convertToPdfPoint(r.x + r.width, r.y + r.height);
-      return {
-        x: Math.min(x1, x2),
-        y: Math.min(y1, y2),
-        width: Math.abs(x2 - x1),
-        height: Math.abs(y2 - y1),
-        color: r.color,
-      };
-    });
+    const pdfRects: HighlightRect[] = rects.map((r) => ({
+      x: r.pdfX,
+      y: r.pdfY,
+      width: r.pdfWidth,
+      height: r.pdfHeight,
+      color: r.color,
+      note: r.note.trim() || undefined,
+    }));
     const res = await addPdfHighlightsAction(page, pdfRects);
     setSaving(false);
     if (res.ok) {
@@ -137,14 +175,27 @@ export default function PdfHighlightModal({
     }
   };
 
-  let previewRect: PendingRect | null = null;
+  // PDF-Rechteck (zoom-stabil gespeichert) für die aktuelle Zoomstufe auf
+  // Canvas-Pixel umrechnen.
+  const toCanvasRect = (r: { pdfX: number; pdfY: number; pdfWidth: number; pdfHeight: number }) => {
+    if (!viewport) return { left: 0, top: 0, width: 0, height: 0 };
+    const [vx1, vy1] = viewport.convertToViewportPoint(r.pdfX, r.pdfY);
+    const [vx2, vy2] = viewport.convertToViewportPoint(r.pdfX + r.pdfWidth, r.pdfY + r.pdfHeight);
+    return {
+      left: Math.min(vx1, vx2),
+      top: Math.min(vy1, vy2),
+      width: Math.abs(vx2 - vx1),
+      height: Math.abs(vy2 - vy1),
+    };
+  };
+
+  let previewRect: { left: number; top: number; width: number; height: number } | null = null;
   if (dragStart && dragCurrent) {
     previewRect = {
-      x: Math.min(dragStart.x, dragCurrent.x),
-      y: Math.min(dragStart.y, dragCurrent.y),
+      left: Math.min(dragStart.x, dragCurrent.x),
+      top: Math.min(dragStart.y, dragCurrent.y),
       width: Math.abs(dragCurrent.x - dragStart.x),
       height: Math.abs(dragCurrent.y - dragStart.y),
-      color,
     };
   }
 
@@ -173,6 +224,27 @@ export default function PdfHighlightModal({
               className={`h-5 w-5 rounded-full border-2 ${color === c.key ? "border-gray-900" : "border-transparent"}`}
             />
           ))}
+          <div className="ml-2 flex items-center gap-1 border-l border-gray-200 pl-3">
+            <button
+              type="button"
+              onClick={() => applyZoom(zoom - ZOOM_STEP)}
+              disabled={loading || zoom <= MIN_ZOOM}
+              title="Verkleinern"
+              className="rounded border border-gray-300 px-2 py-0.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+            >
+              −
+            </button>
+            <span className="w-10 text-center text-xs text-gray-500">{Math.round(zoom * 100)}%</span>
+            <button
+              type="button"
+              onClick={() => applyZoom(zoom + ZOOM_STEP)}
+              disabled={loading || zoom >= MAX_ZOOM}
+              title="Vergrößern"
+              className="rounded border border-gray-300 px-2 py-0.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+            >
+              +
+            </button>
+          </div>
           <span className="text-xs text-gray-400">Mit der Maus über den Text ziehen, um zu markieren.</span>
         </div>
 
@@ -181,30 +253,19 @@ export default function PdfHighlightModal({
           {loading && !loadError && <p className="p-4 text-sm text-gray-500">Seite wird geladen …</p>}
           <div className="relative inline-block touch-none select-none">
             <canvas ref={canvasRef} className="block" />
-            {rects.map((r, i) => (
-              <div
-                key={i}
-                style={{
-                  left: r.x,
-                  top: r.y,
-                  width: r.width,
-                  height: r.height,
-                  backgroundColor: markerColorHex(r.color),
-                  opacity: 0.35,
-                }}
-                className="pointer-events-none absolute"
-              />
-            ))}
+            {rects.map((r, i) => {
+              const box = toCanvasRect(r);
+              return (
+                <div
+                  key={i}
+                  style={{ ...box, backgroundColor: markerColorHex(r.color), opacity: 0.35 }}
+                  className="pointer-events-none absolute"
+                />
+              );
+            })}
             {previewRect && (
               <div
-                style={{
-                  left: previewRect.x,
-                  top: previewRect.y,
-                  width: previewRect.width,
-                  height: previewRect.height,
-                  backgroundColor: markerColorHex(previewRect.color),
-                  opacity: 0.35,
-                }}
+                style={{ ...previewRect, backgroundColor: markerColorHex(color), opacity: 0.35 }}
                 className="pointer-events-none absolute"
               />
             )}
@@ -219,18 +280,26 @@ export default function PdfHighlightModal({
         </div>
 
         {rects.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 border-t border-gray-200 px-4 py-2">
+          <div className="flex max-h-32 flex-col gap-1.5 overflow-y-auto border-t border-gray-200 px-4 py-2">
             {rects.map((r, i) => (
-              <button
-                key={i}
-                type="button"
-                onClick={() => removeRect(i)}
-                title="Entfernen"
-                className="flex items-center gap-1 rounded-full border border-gray-300 bg-white px-2 py-0.5 text-[11px] text-gray-600 hover:border-rose-300 hover:text-rose-600"
-              >
-                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: markerColorHex(r.color) }} />
-                Markierung {i + 1} ✕
-              </button>
+              <div key={i} className="flex items-center gap-2">
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: markerColorHex(r.color) }} />
+                <input
+                  type="text"
+                  value={r.note}
+                  onChange={(e) => setRectNote(i, e.target.value)}
+                  placeholder={`Notiz zu Markierung ${i + 1} (optional, wird durchsuchbar)`}
+                  className="min-w-0 flex-1 border border-line px-2 py-1 text-xs outline-none focus:border-brand-red/60"
+                />
+                <button
+                  type="button"
+                  onClick={() => removeRect(i)}
+                  title="Entfernen"
+                  className="shrink-0 text-gray-400 transition-colors hover:text-rose-600"
+                >
+                  ✕
+                </button>
+              </div>
             ))}
           </div>
         )}

@@ -79,7 +79,7 @@ export async function addPdfHighlightsAction(page: number, rects: HighlightRect[
   if (!Number.isFinite(page) || page < 1) return { ok: false, error: "Ungültige Seite." };
   if (!Array.isArray(rects) || rects.length === 0) return { ok: false, error: "Keine Markierung." };
   try {
-    await drawStatementHighlights(page, rects);
+    await drawStatementHighlights(page, rects, userId);
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Markieren fehlgeschlagen." };

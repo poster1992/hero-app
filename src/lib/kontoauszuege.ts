@@ -282,14 +282,22 @@ export interface HighlightRect {
   width: number;
   height: number;
   color?: string;
+  /** Optional: legt zusätzlich einen durchsuchbaren Seiten-Marker mit dieser Notiz an. */
+  note?: string;
 }
 
 /**
  * Zeichnet echte Textmarker-Rechtecke (halbtransparent) dauerhaft auf eine
  * Seite der Sammel-Datei – wie ein Textmarker auf Papier, nicht rückgängig
  * machbar (auch ein echter Textmarker lässt sich nicht wieder entfernen).
+ * Rechtecke mit Notiz legen zusätzlich einen durchsuchbaren Seiten-Marker an
+ * (dieselbe Tabelle wie `addStatementMarker`), damit man sie später wiederfindet.
  */
-export async function drawStatementHighlights(page: number, rects: HighlightRect[]): Promise<void> {
+export async function drawStatementHighlights(
+  page: number,
+  rects: HighlightRect[],
+  userId: number | null
+): Promise<void> {
   if (rects.length === 0) return;
   const existing = await getStatementFile();
   if (!existing) throw new Error("Noch keine Kontoauszüge hochgeladen.");
@@ -310,4 +318,10 @@ export async function drawStatementHighlights(page: number, rects: HighlightRect
     });
   }
   await writeFile(ARCHIVE_PATH, await pdf.save());
+
+  for (const r of rects) {
+    if (r.note?.trim()) {
+      await addStatementMarker({ page, note: r.note, color: r.color, userId });
+    }
+  }
 }
