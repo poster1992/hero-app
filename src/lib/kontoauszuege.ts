@@ -145,6 +145,8 @@ export interface StatementMarker {
   color: MarkerColor;
   createdByName: string | null;
   createdAt: string | null;
+  /** Position im PDF (nur gesetzt, wenn beim Markieren mit einem Textmarker-Rechteck verknüpft). */
+  highlight: { x: number; y: number; width: number; height: number } | null;
 }
 
 interface UploadRow extends RowDataPacket {
@@ -352,16 +354,22 @@ interface MarkerRow extends RowDataPacket {
   color: string;
   created_at: string | null;
   created_by_name: string | null;
+  hx: number | string | null;
+  hy: number | string | null;
+  hwidth: number | string | null;
+  hheight: number | string | null;
 }
 
-/** Alle Markierungen, nach Seite sortiert. */
+/** Alle Markierungen, nach Seite sortiert. Enthält die genaue Position, falls mit einem Textmarker-Rechteck verknüpft. */
 export async function listStatementMarkers(): Promise<StatementMarker[]> {
   await ensureTables();
   const [rows] = await getPool().query<MarkerRow[]>(
     `SELECT m.id, m.page, m.note, m.color, m.created_at,
-            COALESCE(NULLIF(u.display_name, ''), u.username) AS created_by_name
+            COALESCE(NULLIF(u.display_name, ''), u.username) AS created_by_name,
+            h.x AS hx, h.y AS hy, h.width AS hwidth, h.height AS hheight
      FROM bank_statement_markers m
      LEFT JOIN users u ON u.id = m.created_by
+     LEFT JOIN bank_statement_highlights h ON h.marker_id = m.id
      ORDER BY m.page ASC, m.id ASC`
   );
   return rows.map((r) => ({
@@ -371,6 +379,10 @@ export async function listStatementMarkers(): Promise<StatementMarker[]> {
     color: normalizeColor(r.color),
     createdByName: r.created_by_name,
     createdAt: r.created_at ? String(r.created_at) : null,
+    highlight:
+      r.hx != null && r.hy != null && r.hwidth != null && r.hheight != null
+        ? { x: Number(r.hx), y: Number(r.hy), width: Number(r.hwidth), height: Number(r.hheight) }
+        : null,
   }));
 }
 

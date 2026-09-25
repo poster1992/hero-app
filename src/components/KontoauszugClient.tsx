@@ -46,6 +46,12 @@ export default function KontoauszugClient({
   // Erzwingt ein Neuladen des PDF-iframes (die Sammel-Datei ändert sich serverseitig
   // z. B. beim Markieren, ohne dass sich Seitenzahl/URL sonst ändern würde).
   const [reloadToken, setReloadToken] = useState(0);
+  // URL-Fragment für den iframe: nur die Seite, oder (falls die Markierung mit
+  // einer Textmarker-Position verknüpft ist) zusätzlich zoom=100,left,top, damit
+  // direkt zur markierten Stelle statt nur zum Seitenanfang gesprungen wird.
+  const [viewFragment, setViewFragment] = useState("page=1");
+  // Erzwingt ein erneutes Springen im iframe, auch wenn dieselbe Stelle nochmal angeklickt wird.
+  const [jumpToken, setJumpToken] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const hasFile = initialPageCount > 0;
@@ -58,11 +64,20 @@ export default function KontoauszugClient({
     );
   }, [initialMarkers, search, colorFilter]);
 
-  const goToPage = (p: number) => {
+  const goToPage = (p: number, highlight?: { x: number; y: number; width: number; height: number } | null) => {
     const clamped = Math.max(1, Math.min(p, initialPageCount || p));
     setActivePage(clamped);
     setPageInput(String(clamped));
     setMarkerPage(String(clamped));
+    if (highlight) {
+      // PDF-Koordinaten (Ursprung unten links) → etwas Rand über der Markierung,
+      // damit sie nicht direkt am oberen Rand klebt.
+      const top = Math.round(highlight.y + highlight.height + 40);
+      setViewFragment(`page=${clamped}&zoom=100,0,${top}`);
+    } else {
+      setViewFragment(`page=${clamped}`);
+    }
+    setJumpToken((t) => t + 1);
   };
 
   const handleUpload = () => {
@@ -185,8 +200,8 @@ export default function KontoauszugClient({
         <div className="min-h-0 flex-1 border border-line bg-gray-100">
           {hasFile ? (
             <iframe
-              key={`${initialPageCount}-${reloadToken}-${activePage}`}
-              src={`/api/kontoauszug-datei?v=${initialPageCount}-${reloadToken}#page=${activePage}`}
+              key={`${initialPageCount}-${reloadToken}-${jumpToken}`}
+              src={`/api/kontoauszug-datei?v=${initialPageCount}-${reloadToken}#${viewFragment}`}
               title="Kontoauszüge"
               className="h-full min-h-[70vh] w-full md:min-h-0"
             />
@@ -360,7 +375,12 @@ export default function KontoauszugClient({
                   style={{ borderLeftColor: markerColorHex(m.color), borderLeftWidth: 4 }}
                   className="flex items-start justify-between gap-2 border border-line bg-white p-2 text-xs"
                 >
-                  <button type="button" onClick={() => goToPage(m.page)} className="min-w-0 flex-1 text-left">
+                  <button
+                    type="button"
+                    onClick={() => goToPage(m.page, m.highlight)}
+                    title={m.highlight ? "Springt direkt zur markierten Stelle" : "Springt zur Seite"}
+                    className="min-w-0 flex-1 text-left"
+                  >
                     <div className="font-semibold text-brand-red">Seite {m.page}</div>
                     <div className="whitespace-pre-line text-gray-700">{m.note}</div>
                     <div className="mt-0.5 text-[10px] text-gray-400">
