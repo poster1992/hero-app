@@ -183,12 +183,15 @@ export default async function MonthlyReceipts({
         <div className="flex flex-wrap items-center gap-2">
           {type === "output" && !restricted && (
             <>
-              <Link
-                href="/dashboard/belege/kontoauszug"
+              <a
+                href="/kontoauszuege"
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Öffnet in einem eigenen Fenster ohne Menü"
                 className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900"
               >
-                Kontoauszüge
-              </Link>
+                Kontoauszüge ↗
+              </a>
               <Link
                 href="/dashboard/belege/ibans"
                 className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:border-brand-red/50 hover:text-gray-900"
