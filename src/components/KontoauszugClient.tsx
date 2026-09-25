@@ -40,6 +40,7 @@ export default function KontoauszugClient({
   const [markerColor, setMarkerColor] = useState<MarkerColor>("red");
   const [search, setSearch] = useState("");
   const [colorFilter, setColorFilter] = useState<MarkerColor | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const hasFile = initialPageCount > 0;
@@ -177,8 +178,18 @@ export default function KontoauszugClient({
         </div>
       </div>
 
-      {/* Rechts: Hochladen, Historie, Markierungen */}
-      <div className="flex w-full flex-col gap-5 md:w-[380px] md:flex-none">
+      {/* Rechts: Hochladen, Historie, Markierungen (einklappbar für mehr Platz für die PDF-Ansicht) */}
+      <div className={`flex flex-col ${sidebarOpen ? "w-full gap-5 md:w-[380px] md:flex-none" : "w-full md:w-auto md:flex-none"}`}>
+        <button
+          type="button"
+          onClick={() => setSidebarOpen((v) => !v)}
+          title={sidebarOpen ? "Bereich einklappen" : "Bereich ausklappen"}
+          className="self-start rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-600 transition-colors hover:border-brand-red/50 hover:text-gray-900 md:self-end"
+        >
+          {sidebarOpen ? "» Einklappen" : "« Anhängen/Markierungen"}
+        </button>
+        {sidebarOpen && (
+        <>
         <div className="border border-line bg-gray-50 p-3">
           <h2 className="mb-2 text-sm font-semibold text-gray-900">Neue Datei anhängen</h2>
           <input
@@ -350,6 +361,8 @@ export default function KontoauszugClient({
             )}
           </ul>
         </div>
+        </>
+        )}
       </div>
     </div>
   );
