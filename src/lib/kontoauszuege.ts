@@ -120,12 +120,17 @@ export async function getStatementFile(): Promise<Buffer | null> {
 export async function getStatementPageCount(): Promise<number> {
   await ensureTables();
   const [rows] = await getPool().query<RowDataPacket[]>(
-    `SELECT page_start + page_count - 1 AS total FROM bank_statement_uploads ORDER BY id DESC LIMIT 1`
+    `SELECT COALESCE(SUM(page_count), 0) AS total FROM bank_statement_uploads`
   );
   return Number(rows[0]?.total ?? 0);
 }
 
-/** Hängt eine neue PDF-Datei hinten an die Sammel-Datei an. */
+/**
+ * Fügt eine neue PDF-Datei VORN in die Sammel-Datei ein (neuester Auszug =
+ * Seite 1); bestehende Seiten rutschen nach hinten. Bisherige Marker und
+ * Upload-Einträge werden dabei automatisch um die Anzahl neuer Seiten
+ * verschoben, damit sie weiter auf dieselbe Stelle zeigen.
+ */
 export async function appendStatementPdf(input: {
   buffer: Buffer;
   originalName: string;
@@ -137,32 +142,36 @@ export async function appendStatementPdf(input: {
   }
   await mkdir(KONTOAUSZUEGE_DIR, { recursive: true });
 
-  let target: PDFDocument;
-  let pageStart: number;
   const existing = await getStatementFile();
+  let pageCount: number;
   try {
-    if (existing) {
-      target = await PDFDocument.load(existing, { ignoreEncryption: true });
-      pageStart = target.getPageCount() + 1;
-    } else {
-      target = await PDFDocument.create();
-      pageStart = 1;
-    }
+    // Neues Dokument: erst die neuen Seiten, danach die bisherigen (falls vorhanden).
+    const merged = await PDFDocument.create();
     const incoming = await PDFDocument.load(input.buffer, { ignoreEncryption: true });
-    const copied = await target.copyPages(incoming, incoming.getPageIndices());
-    for (const page of copied) target.addPage(page);
-    const pageCount = copied.length;
-    await writeFile(ARCHIVE_PATH, await target.save());
+    const incomingPages = await merged.copyPages(incoming, incoming.getPageIndices());
+    for (const page of incomingPages) merged.addPage(page);
+    pageCount = incomingPages.length;
 
-    await getPool().query(
-      `INSERT INTO bank_statement_uploads (filename, page_start, page_count, added_by) VALUES (?, ?, ?, ?)`,
-      [input.originalName.slice(0, 255), pageStart, pageCount, input.userId]
-    );
-    return { pageStart, pageCount };
+    if (existing) {
+      const existingDoc = await PDFDocument.load(existing, { ignoreEncryption: true });
+      const existingPages = await merged.copyPages(existingDoc, existingDoc.getPageIndices());
+      for (const page of existingPages) merged.addPage(page);
+    }
+    await writeFile(ARCHIVE_PATH, await merged.save());
   } catch (e) {
     if (e instanceof Error && e.message.includes("angehängt")) throw e;
     throw new Error("PDF konnte nicht gelesen/angehängt werden (beschädigt oder kein gültiges PDF?).");
   }
+
+  const pool = getPool();
+  // Bisherige Seitenzahlen rutschen um `pageCount` nach hinten.
+  await pool.query(`UPDATE bank_statement_markers SET page = page + ?`, [pageCount]);
+  await pool.query(`UPDATE bank_statement_uploads SET page_start = page_start + ?`, [pageCount]);
+  await pool.query(
+    `INSERT INTO bank_statement_uploads (filename, page_start, page_count, added_by) VALUES (?, 1, ?, ?)`,
+    [input.originalName.slice(0, 255), pageCount, input.userId]
+  );
+  return { pageStart: 1, pageCount };
 }
 
 /** Alle bisherigen Anhänge (neueste zuerst). */
@@ -180,9 +189,9 @@ export async function listStatementUploads(): Promise<StatementUpload[]> {
 
 /**
  * Macht den zuletzt angehängten Upload rückgängig (z. B. falsche Datei erwischt):
- * entfernt dessen Seiten vom Ende der Sammel-Datei und löscht Marker auf diesen
- * Seiten. Wirkt immer nur auf den letzten Eintrag (kein Entfernen mittendrin,
- * das würde alle nachfolgenden Seitennummern verschieben).
+ * entfernt dessen Seiten vom Anfang der Sammel-Datei (neue Anhänge landen immer
+ * vorn, Seite 1..N) und löscht Marker auf diesen Seiten. Die übrigen Marker und
+ * Upload-Einträge rutschen wieder um die entfernte Seitenzahl nach vorn.
  */
 export async function undoLastStatementUpload(): Promise<void> {
   await ensureTables();
@@ -192,14 +201,14 @@ export async function undoLastStatementUpload(): Promise<void> {
   );
   const last = rows[0];
   if (!last) return;
+  const removeCount = last.page_count;
 
   const existing = await getStatementFile();
   if (existing) {
     const pdf = await PDFDocument.load(existing, { ignoreEncryption: true });
-    const totalBefore = pdf.getPageCount();
-    const removeFromIndex = last.page_start - 1; // 0-basiert
-    // Von hinten nach vorn entfernen, sonst verschieben sich die Indizes.
-    for (let i = totalBefore - 1; i >= removeFromIndex; i--) pdf.removePage(i);
+    // Die ersten `removeCount` Seiten entfernen; von hinten nach vorn, sonst
+    // verschieben sich die Indizes der noch zu entfernenden Seiten.
+    for (let i = removeCount - 1; i >= 0; i--) pdf.removePage(i);
     await writeFile(ARCHIVE_PATH, await pdf.save());
   }
 
@@ -208,6 +217,9 @@ export async function undoLastStatementUpload(): Promise<void> {
     last.page_start + last.page_count - 1,
   ]);
   await pool.query(`DELETE FROM bank_statement_uploads WHERE id = ?`, [last.id]);
+  // Verbleibende Marker/Uploads wieder nach vorn rutschen lassen.
+  await pool.query(`UPDATE bank_statement_markers SET page = page - ?`, [removeCount]);
+  await pool.query(`UPDATE bank_statement_uploads SET page_start = page_start - ?`, [removeCount]);
 }
 
 interface MarkerRow extends RowDataPacket {
