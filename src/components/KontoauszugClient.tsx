@@ -128,9 +128,11 @@ export default function KontoauszugClient({
   };
 
   const handleDeleteMarker = (id: number) => {
-    if (!window.confirm("Diese Markierung löschen?")) return;
+    if (!window.confirm("Diese Markierung löschen? Falls sie mit einer Textmarker-Stelle im PDF verknüpft ist, wird die dort auch entfernt.")) return;
     startMarker(async () => {
       await deleteStatementMarkerAction(id);
+      // Falls eine verknüpfte PDF-Markierung mitgelöscht wurde, PDF-Ansicht neu laden.
+      setReloadToken((t) => t + 1);
       router.refresh();
     });
   };

@@ -66,6 +66,8 @@ async function ensureTables(): Promise<void> {
          width DOUBLE NOT NULL,
          height DOUBLE NOT NULL,
          color VARCHAR(10) NOT NULL DEFAULT 'yellow',
+         note VARCHAR(1000) NULL,
+         marker_id INT NULL,
          created_by INT NULL,
          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
          INDEX idx_bsh_page (page)
@@ -73,7 +75,39 @@ async function ensureTables(): Promise<void> {
     )
     .catch(() => {});
   await ensureMarkerColorColumn();
+  await ensureHighlightNoteColumn();
+  await ensureHighlightMarkerIdColumn();
   tableReady = true;
+}
+
+/** Self-healing: `note`-Spalte nachrüsten, falls die Tabelle schon vor der Notiz-Funktion existierte. */
+let highlightNoteColumnReady = false;
+async function ensureHighlightNoteColumn(): Promise<void> {
+  if (highlightNoteColumnReady) return;
+  const pool = getPool();
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT COUNT(*) AS n FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'bank_statement_highlights' AND COLUMN_NAME = 'note'`
+  );
+  if ((rows[0]?.n ?? 0) === 0) {
+    await pool.query("ALTER TABLE bank_statement_highlights ADD COLUMN note VARCHAR(1000) NULL").catch(() => {});
+  }
+  highlightNoteColumnReady = true;
+}
+
+/** Self-healing: `marker_id`-Spalte nachrüsten (Verknüpfung Textmarker ↔ Seiten-Marker). */
+let highlightMarkerIdColumnReady = false;
+async function ensureHighlightMarkerIdColumn(): Promise<void> {
+  if (highlightMarkerIdColumnReady) return;
+  const pool = getPool();
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT COUNT(*) AS n FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'bank_statement_highlights' AND COLUMN_NAME = 'marker_id'`
+  );
+  if ((rows[0]?.n ?? 0) === 0) {
+    await pool.query("ALTER TABLE bank_statement_highlights ADD COLUMN marker_id INT NULL").catch(() => {});
+  }
+  highlightMarkerIdColumnReady = true;
 }
 
 /** Self-healing: `color`-Spalte nachrüsten, falls die Tabelle schon vor der Farbfunktion existierte. */
@@ -340,28 +374,44 @@ export async function listStatementMarkers(): Promise<StatementMarker[]> {
   }));
 }
 
-/** Legt eine Markierung (Seite + Notiz + Farbe) an. */
+/** Legt eine Markierung (Seite + Notiz + Farbe) an. Gibt die neue ID zurück (oder null bei leerer Notiz). */
 export async function addStatementMarker(input: {
   page: number;
   note: string;
   color?: string;
   userId: number | null;
-}): Promise<void> {
+}): Promise<number | null> {
   await ensureTables();
   const note = input.note.trim().slice(0, 1000);
-  if (!note) return;
+  if (!note) return null;
   const page = Math.max(1, Math.trunc(input.page));
   const color = normalizeColor(input.color);
-  await getPool().query(
+  const [result] = await getPool().query(
     `INSERT INTO bank_statement_markers (page, note, color, created_by) VALUES (?, ?, ?, ?)`,
     [page, note, color, input.userId]
   );
+  return (result as { insertId?: number }).insertId ?? null;
 }
 
-/** Löscht eine Markierung. */
+/**
+ * Löscht eine Markierung. War sie beim Erstellen mit einem Textmarker-Rechteck
+ * verknüpft (Notiz beim Markieren im PDF), wird dieses gleich mitgelöscht und
+ * die angezeigte Datei neu aufgebaut – sonst bliebe die Markierung im PDF
+ * sichtbar, obwohl die zugehörige Notiz schon weg ist.
+ */
 export async function deleteStatementMarker(id: number): Promise<void> {
   await ensureTables();
-  await getPool().query(`DELETE FROM bank_statement_markers WHERE id = ?`, [id]);
+  const pool = getPool();
+  const [rows] = await pool.query<RowDataPacket[]>(`SELECT id FROM bank_statement_highlights WHERE marker_id = ?`, [id]);
+  const highlightIds = rows.map((r) => Number(r.id));
+  await pool.query(`DELETE FROM bank_statement_markers WHERE id = ?`, [id]);
+  if (highlightIds.length > 0) {
+    await pool.query(
+      `DELETE FROM bank_statement_highlights WHERE id IN (${highlightIds.map(() => "?").join(",")})`,
+      highlightIds
+    );
+    await rebuildDisplayFile();
+  }
 }
 
 /** Ein Textmarker-Rechteck in PDF-Punkten (Ursprung unten links), wie von pdf-lib erwartet. */
@@ -383,6 +433,7 @@ export interface StatementHighlight {
   width: number;
   height: number;
   color: MarkerColor;
+  note: string | null;
   createdByName: string | null;
   createdAt: string | null;
 }
@@ -395,6 +446,7 @@ interface HighlightRow extends RowDataPacket {
   width: number | string;
   height: number | string;
   color: string;
+  note: string | null;
   created_at: string | null;
   created_by_name: string | null;
 }
@@ -403,7 +455,7 @@ interface HighlightRow extends RowDataPacket {
 export async function listStatementHighlights(page: number): Promise<StatementHighlight[]> {
   await ensureTables();
   const [rows] = await getPool().query<HighlightRow[]>(
-    `SELECT h.id, h.page, h.x, h.y, h.width, h.height, h.color, h.created_at,
+    `SELECT h.id, h.page, h.x, h.y, h.width, h.height, h.color, h.note, h.created_at,
             COALESCE(NULLIF(u.display_name, ''), u.username) AS created_by_name
      FROM bank_statement_highlights h
      LEFT JOIN users u ON u.id = h.created_by
@@ -419,6 +471,7 @@ export async function listStatementHighlights(page: number): Promise<StatementHi
     width: Number(r.width),
     height: Number(r.height),
     color: normalizeColor(r.color),
+    note: r.note,
     createdByName: r.created_by_name,
     createdAt: r.created_at ? String(r.created_at) : null,
   }));
@@ -426,10 +479,11 @@ export async function listStatementHighlights(page: number): Promise<StatementHi
 
 /**
  * Legt Textmarker-Rechtecke auf einer Seite an (als Daten, nicht direkt ins
- * PDF gebrannt) und baut danach die angezeigte Datei neu auf. Rechtecke mit
- * Notiz legen zusätzlich einen durchsuchbaren Seiten-Marker an (dieselbe
- * Tabelle wie `addStatementMarker`). Anders als vorher jederzeit über
- * `deleteStatementHighlight` einzeln wieder entfernbar.
+ * PDF gebrannt) und baut danach die angezeigte Datei neu auf. Die Notiz wird
+ * direkt an der Markierung gespeichert (sichtbar in der Liste im
+ * Markieren-Fenster) UND zusätzlich als durchsuchbarer Seiten-Marker angelegt
+ * (dieselbe Tabelle wie `addStatementMarker`). Anders als vorher jederzeit
+ * über `deleteStatementHighlight` einzeln wieder entfernbar.
  */
 export async function drawStatementHighlights(
   page: number,
@@ -447,20 +501,32 @@ export async function drawStatementHighlights(
   const pool = getPool();
   for (const r of rects) {
     const color = normalizeColor(r.color ?? "yellow");
+    const note = r.note?.trim() || null;
+    // Marker zuerst anlegen, damit die Markierung direkt mit dessen ID
+    // verknüpft werden kann (beide gehören zusammen und sollen sich beim
+    // Löschen gegenseitig mitnehmen).
+    const markerId = note ? await addStatementMarker({ page, note, color, userId }) : null;
     await pool.query(
-      `INSERT INTO bank_statement_highlights (page, x, y, width, height, color, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [page, r.x, r.y, r.width, r.height, color, userId]
+      `INSERT INTO bank_statement_highlights (page, x, y, width, height, color, note, marker_id, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [page, r.x, r.y, r.width, r.height, color, note?.slice(0, 1000) ?? null, markerId, userId]
     );
-    if (r.note?.trim()) {
-      await addStatementMarker({ page, note: r.note, color, userId });
-    }
   }
   await rebuildDisplayFile();
 }
 
-/** Löscht ein Textmarker-Rechteck und baut die angezeigte Datei neu auf. */
+/**
+ * Löscht ein Textmarker-Rechteck und baut die angezeigte Datei neu auf. War
+ * es mit einem Seiten-Marker verknüpft (Notiz beim Markieren im PDF), wird
+ * dessen Eintrag in der Markierungs-Liste gleich mitgelöscht.
+ */
 export async function deleteStatementHighlight(id: number): Promise<void> {
   await ensureTables();
-  await getPool().query(`DELETE FROM bank_statement_highlights WHERE id = ?`, [id]);
+  const pool = getPool();
+  const [rows] = await pool.query<RowDataPacket[]>(`SELECT marker_id FROM bank_statement_highlights WHERE id = ?`, [id]);
+  const markerId = rows[0]?.marker_id ? Number(rows[0].marker_id) : null;
+  await pool.query(`DELETE FROM bank_statement_highlights WHERE id = ?`, [id]);
+  if (markerId) {
+    await pool.query(`DELETE FROM bank_statement_markers WHERE id = ?`, [markerId]);
+  }
   await rebuildDisplayFile();
 }

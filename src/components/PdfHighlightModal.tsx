@@ -314,8 +314,9 @@ export default function PdfHighlightModal({
             {existing.map((h) => (
               <div key={`existing-${h.id}`} className="flex items-center gap-2">
                 <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: markerColorHex(h.color) }} />
-                <span className="min-w-0 flex-1 truncate text-xs text-gray-500">
-                  Gespeicherte Markierung{h.createdByName ? ` · ${h.createdByName}` : ""}
+                <span className="min-w-0 flex-1 truncate text-xs text-gray-500" title={h.note ?? undefined}>
+                  {h.note ? h.note : <em className="not-italic text-gray-400">Ohne Notiz</em>}
+                  {h.createdByName ? ` · ${h.createdByName}` : ""}
                 </span>
                 <button
                   type="button"
