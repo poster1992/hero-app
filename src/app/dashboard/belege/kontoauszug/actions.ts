@@ -7,6 +7,8 @@ import {
   undoLastStatementUpload,
   addStatementMarker,
   deleteStatementMarker,
+  drawStatementHighlights,
+  type HighlightRect,
 } from "@/lib/kontoauszuege";
 
 const MAX_SIZE = 25 * 1024 * 1024;
@@ -68,4 +70,18 @@ export async function addStatementMarkerAction(formData: FormData): Promise<Acti
 export async function deleteStatementMarkerAction(id: number): Promise<ActionResult> {
   await deleteStatementMarker(id);
   return { ok: true };
+}
+
+/** Zeichnet echte Textmarker-Rechtecke dauerhaft auf eine Seite der Sammel-Datei. */
+export async function addPdfHighlightsAction(page: number, rects: HighlightRect[]): Promise<ActionResult> {
+  const userId = await currentUserId();
+  if (userId == null) return { ok: false, error: "Nicht angemeldet." };
+  if (!Number.isFinite(page) || page < 1) return { ok: false, error: "Ungültige Seite." };
+  if (!Array.isArray(rects) || rects.length === 0) return { ok: false, error: "Keine Markierung." };
+  try {
+    await drawStatementHighlights(page, rects);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Markieren fehlgeschlagen." };
+  }
 }

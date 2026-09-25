@@ -10,6 +10,7 @@ import {
 } from "@/app/dashboard/belege/kontoauszug/actions";
 import type { StatementUpload, StatementMarker } from "@/lib/kontoauszuege";
 import { MARKER_COLORS, markerColorHex, type MarkerColor } from "@/lib/kontoauszug-colors";
+import PdfHighlightModal from "@/components/PdfHighlightModal";
 
 function fmtDateTime(iso: string | null): string {
   if (!iso) return "";
@@ -41,6 +42,10 @@ export default function KontoauszugClient({
   const [search, setSearch] = useState("");
   const [colorFilter, setColorFilter] = useState<MarkerColor | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [highlightOpen, setHighlightOpen] = useState(false);
+  // Erzwingt ein Neuladen des PDF-iframes (die Sammel-Datei ändert sich serverseitig
+  // z. B. beim Markieren, ohne dass sich Seitenzahl/URL sonst ändern würde).
+  const [reloadToken, setReloadToken] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const hasFile = initialPageCount > 0;
@@ -73,6 +78,7 @@ export default function KontoauszugClient({
       const res = await uploadStatementAction(fd);
       if (res.ok) {
         if (fileInputRef.current) fileInputRef.current.value = "";
+        setReloadToken((t) => t + 1);
         router.refresh();
       } else {
         setUploadError(res.error ?? "Anhängen fehlgeschlagen.");
@@ -90,6 +96,7 @@ export default function KontoauszugClient({
       return;
     startUndo(async () => {
       await undoLastStatementUploadAction();
+      setReloadToken((t) => t + 1);
       router.refresh();
     });
   };
@@ -129,6 +136,7 @@ export default function KontoauszugClient({
   };
 
   return (
+    <>
     <div className="flex min-h-0 flex-1 flex-col gap-4 md:flex-row">
       {/* Links: PDF-Vorschau */}
       <div className="flex min-h-[70vh] flex-1 flex-col gap-2 md:min-h-0">
@@ -161,12 +169,22 @@ export default function KontoauszugClient({
               </button>
             </form>
           )}
+          {hasFile && (
+            <button
+              type="button"
+              onClick={() => setHighlightOpen(true)}
+              title="Auf der aktuell angezeigten Seite mit der Maus markieren (wird dauerhaft ins PDF eingebrannt)"
+              className="rounded border border-gray-300 px-2 py-0.5 text-xs font-medium text-gray-700 hover:border-brand-red/50 hover:bg-gray-50"
+            >
+              🖍 Seite {viewPage} markieren
+            </button>
+          )}
         </div>
         <div className="min-h-0 flex-1 border border-line bg-gray-100">
           {hasFile ? (
             <iframe
-              key={`${initialPageCount}-${viewPage}`}
-              src={`/api/kontoauszug-datei?v=${initialPageCount}#page=${viewPage}`}
+              key={`${initialPageCount}-${reloadToken}-${viewPage}`}
+              src={`/api/kontoauszug-datei?v=${initialPageCount}-${reloadToken}#page=${viewPage}`}
               title="Kontoauszüge"
               className="h-full min-h-[70vh] w-full md:min-h-0"
             />
@@ -365,5 +383,17 @@ export default function KontoauszugClient({
         )}
       </div>
     </div>
+    {highlightOpen && (
+      <PdfHighlightModal
+        page={viewPage}
+        onClose={() => setHighlightOpen(false)}
+        onSaved={() => {
+          setHighlightOpen(false);
+          setReloadToken((t) => t + 1);
+          router.refresh();
+        }}
+      />
+    )}
+    </>
   );
 }

@@ -1,11 +1,11 @@
 import "server-only";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { PDFDocument } from "pdf-lib";
+import { PDFDocument, rgb } from "pdf-lib";
 import type { RowDataPacket } from "mysql2";
 import { getPool } from "./db";
 import { sniffMime } from "./file-sniff";
-import { MARKER_COLORS, type MarkerColor } from "./kontoauszug-colors";
+import { MARKER_COLORS, type MarkerColor, markerColorRgb01 } from "./kontoauszug-colors";
 
 /**
  * Kontoauszüge (privat, ein Bankkonto): PDF-Auszüge werden nicht mehr
@@ -273,4 +273,41 @@ export async function addStatementMarker(input: {
 export async function deleteStatementMarker(id: number): Promise<void> {
   await ensureTables();
   await getPool().query(`DELETE FROM bank_statement_markers WHERE id = ?`, [id]);
+}
+
+/** Ein Textmarker-Rechteck in PDF-Punkten (Ursprung unten links), wie von pdf-lib erwartet. */
+export interface HighlightRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  color?: string;
+}
+
+/**
+ * Zeichnet echte Textmarker-Rechtecke (halbtransparent) dauerhaft auf eine
+ * Seite der Sammel-Datei – wie ein Textmarker auf Papier, nicht rückgängig
+ * machbar (auch ein echter Textmarker lässt sich nicht wieder entfernen).
+ */
+export async function drawStatementHighlights(page: number, rects: HighlightRect[]): Promise<void> {
+  if (rects.length === 0) return;
+  const existing = await getStatementFile();
+  if (!existing) throw new Error("Noch keine Kontoauszüge hochgeladen.");
+  const pdf = await PDFDocument.load(existing, { ignoreEncryption: true });
+  const index = page - 1;
+  if (index < 0 || index >= pdf.getPageCount()) throw new Error("Ungültige Seite.");
+  const pdfPage = pdf.getPage(index);
+  for (const r of rects) {
+    const [red, green, blue] = markerColorRgb01(r.color ?? "yellow");
+    pdfPage.drawRectangle({
+      x: r.x,
+      y: r.y,
+      width: r.width,
+      height: r.height,
+      color: rgb(red, green, blue),
+      opacity: 0.35,
+      borderWidth: 0,
+    });
+  }
+  await writeFile(ARCHIVE_PATH, await pdf.save());
 }

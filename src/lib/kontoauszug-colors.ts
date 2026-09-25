@@ -16,3 +16,10 @@ export type MarkerColor = (typeof MARKER_COLORS)[number]["key"];
 export function markerColorHex(key: string): string {
   return MARKER_COLORS.find((c) => c.key === key)?.hex ?? MARKER_COLORS[0].hex;
 }
+
+/** Hex-Farbe (#rrggbb) als [r,g,b] im 0..1-Bereich (für pdf-lib `rgb()`). */
+export function markerColorRgb01(key: string): [number, number, number] {
+  const hex = markerColorHex(key);
+  const n = parseInt(hex.slice(1), 16);
+  return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
+}
