@@ -1,23 +1,26 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
-import { getPendingBankList, getStatementHistory } from "@/app/dashboard/belege/bank-import";
+import { listStatementUploads, listStatementMarkers, getStatementPageCount } from "@/lib/kontoauszuege";
 import KontoauszugClient from "@/components/KontoauszugClient";
 
 export default async function KontoauszugPage() {
   if (!(await getSession())) redirect("/login");
 
-  const [initial, initialHistory] = await Promise.all([getPendingBankList(), getStatementHistory()]);
+  const [uploads, markers, pageCount] = await Promise.all([
+    listStatementUploads(),
+    listStatementMarkers(),
+    getStatementPageCount(),
+  ]);
 
   return (
     <div className="flex w-full max-w-full flex-1 flex-col gap-6 px-6 py-8">
-      <header className="border-b-2 border-brand-red pb-2.5 flex flex-wrap items-center justify-between gap-4">
+      <header className="flex flex-wrap items-center justify-between gap-4 border-b-2 border-brand-red pb-2.5">
         <div>
-          <h1 className="text-2xl font-extrabold tracking-tight text-ink">Kontoauszug einlesen</h1>
+          <h1 className="text-2xl font-extrabold tracking-tight text-ink">Kontoauszüge</h1>
           <p className="mt-1 text-sm text-gray-600">
-            Auszug hochladen (PDF/CSV/XLSX) → Abgänge kommen in die Liste und werden den offenen
-            Belegen zugeordnet. Beim Speichern verschwinden die zugeordneten Buchungen; offene bleiben
-            (auch über mehrere Auszüge hinweg).
+            Neue PDF-Kontoauszüge werden hinten an eine gemeinsame Sammel-Datei angehängt. Seiten lassen sich
+            mit einer Notiz markieren, um sie später wiederzufinden.
           </p>
         </div>
         <Link
@@ -28,7 +31,7 @@ export default async function KontoauszugPage() {
         </Link>
       </header>
 
-      <KontoauszugClient initial={initial} initialHistory={initialHistory} />
+      <KontoauszugClient initialUploads={uploads} initialMarkers={markers} initialPageCount={pageCount} />
     </div>
   );
 }
