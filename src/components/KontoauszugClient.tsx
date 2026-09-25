@@ -11,7 +11,6 @@ import {
 import type { StatementUpload, StatementMarker } from "@/lib/kontoauszuege";
 import { MARKER_COLORS, markerColorHex, type MarkerColor } from "@/lib/kontoauszug-colors";
 import PdfHighlightModal from "@/components/PdfHighlightModal";
-import KontoauszugPdfViewer, { type KontoauszugPdfViewerHandle } from "@/components/KontoauszugPdfViewer";
 
 function fmtDateTime(iso: string | null): string {
   if (!iso) return "";
@@ -30,9 +29,6 @@ export default function KontoauszugClient({
   initialPageCount: number;
 }) {
   const router = useRouter();
-  const viewerRef = useRef<KontoauszugPdfViewerHandle>(null);
-  // "Gerade sichtbare Seite" – wird sowohl beim gezielten Springen (Suche,
-  // Marker-Klick) als auch automatisch beim Scrollen im Viewer aktualisiert.
   const [activePage, setActivePage] = useState(1);
   const [pageInput, setPageInput] = useState("1");
   const [uploadBusy, startUpload] = useTransition();
@@ -47,8 +43,8 @@ export default function KontoauszugClient({
   const [colorFilter, setColorFilter] = useState<MarkerColor | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [highlightOpen, setHighlightOpen] = useState(false);
-  // Erzwingt ein Neuladen des PDF-Viewers (die Sammel-Datei ändert sich serverseitig
-  // z. B. beim Markieren, ohne dass sich die Seitenzahl sonst ändern würde).
+  // Erzwingt ein Neuladen des PDF-iframes (die Sammel-Datei ändert sich serverseitig
+  // z. B. beim Markieren, ohne dass sich Seitenzahl/URL sonst ändern würde).
   const [reloadToken, setReloadToken] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -64,18 +60,9 @@ export default function KontoauszugClient({
 
   const goToPage = (p: number) => {
     const clamped = Math.max(1, Math.min(p, initialPageCount || p));
-    viewerRef.current?.scrollToPage(clamped);
     setActivePage(clamped);
     setPageInput(String(clamped));
     setMarkerPage(String(clamped));
-  };
-
-  // Beim freien Scrollen im Viewer automatisch mitziehen (wie im PDF-Dokument
-  // selbst üblich) – Seitenzahl oben und Marker-Formular folgen der Ansicht.
-  const handleViewerPageChange = (p: number) => {
-    setActivePage(p);
-    setPageInput(String(p));
-    setMarkerPage(String(p));
   };
 
   const handleUpload = () => {
@@ -195,10 +182,11 @@ export default function KontoauszugClient({
         </div>
         <div className="min-h-0 flex-1 border border-line bg-gray-100">
           {hasFile ? (
-            <KontoauszugPdfViewer
-              ref={viewerRef}
-              reloadKey={`${initialPageCount}-${reloadToken}`}
-              onPageChange={handleViewerPageChange}
+            <iframe
+              key={`${initialPageCount}-${reloadToken}-${activePage}`}
+              src={`/api/kontoauszug-datei?v=${initialPageCount}-${reloadToken}#page=${activePage}`}
+              title="Kontoauszüge"
+              className="h-full min-h-[70vh] w-full md:min-h-0"
             />
           ) : (
             <div className="flex h-full min-h-[40vh] items-center justify-center p-6 text-center text-sm text-gray-500">
