@@ -1,5 +1,5 @@
 import "server-only";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { PDFDocument, rgb } from "pdf-lib";
 import type { RowDataPacket } from "mysql2";
@@ -11,11 +11,21 @@ import { MARKER_COLORS, type MarkerColor, markerColorRgb01 } from "./kontoauszug
  * Kontoauszüge (privat, ein Bankkonto): PDF-Auszüge werden nicht mehr
  * ausgelesen/automatisch zugeordnet, sondern hinten an eine gemeinsame
  * Sammel-PDF angehängt. Dazu lassen sich Seiten mit einer durchsuchbaren
- * Notiz markieren, um sie später wiederzufinden.
+ * Notiz markieren, um sie später wiederzufinden, oder direkt mit der Maus
+ * im PDF markieren (Textmarker-Rechtecke).
+ *
+ * Zwei Dateien: `BASE_PATH` ist die reine, unmarkierte Sammlung der
+ * hochgeladenen Auszüge (worauf Anhängen/Rückgängig arbeiten). `DISPLAY_PATH`
+ * ist die ausgelieferte/angezeigte Datei = Basis + alle aktiven
+ * Textmarker-Rechtecke (aus `bank_statement_highlights`) neu eingezeichnet.
+ * So bleiben einzelne Markierungen jederzeit löschbar, statt unwiderruflich
+ * in eine einzige Datei gebrannt zu sein: Löschen entfernt nur die Zeile und
+ * baut die Anzeige-Datei aus der sauberen Basis neu auf.
  */
 
 const KONTOAUSZUEGE_DIR = process.env.KONTOAUSZUEGE_DIR || path.join(process.cwd(), "data", "kontoauszuege");
-const ARCHIVE_PATH = path.join(KONTOAUSZUEGE_DIR, "kontoauszuege.pdf");
+const BASE_PATH = path.join(KONTOAUSZUEGE_DIR, "kontoauszuege.base.pdf");
+const DISPLAY_PATH = path.join(KONTOAUSZUEGE_DIR, "kontoauszuege.pdf");
 
 let tableReady = false;
 async function ensureTables(): Promise<void> {
@@ -43,6 +53,22 @@ async function ensureTables(): Promise<void> {
          created_by INT NULL,
          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
          INDEX idx_bsm_page (page)
+       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+    )
+    .catch(() => {});
+  await pool
+    .query(
+      `CREATE TABLE IF NOT EXISTS bank_statement_highlights (
+         id INT AUTO_INCREMENT PRIMARY KEY,
+         page INT NOT NULL,
+         x DOUBLE NOT NULL,
+         y DOUBLE NOT NULL,
+         width DOUBLE NOT NULL,
+         height DOUBLE NOT NULL,
+         color VARCHAR(10) NOT NULL DEFAULT 'yellow',
+         created_by INT NULL,
+         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+         INDEX idx_bsh_page (page)
        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
     )
     .catch(() => {});
@@ -107,12 +133,72 @@ function mapUploadRow(r: UploadRow): StatementUpload {
   };
 }
 
-/** Liest die aktuelle Sammel-Datei (oder null, wenn noch keine existiert). */
+/**
+ * Liest die saubere Basis-Datei (ohne Textmarker). Migriert einmalig von einer
+ * alten Sammel-Datei (vor der Trennung Basis/Anzeige), falls vorhanden.
+ */
+async function getBaseFile(): Promise<Buffer | null> {
+  try {
+    return await readFile(BASE_PATH);
+  } catch {
+    try {
+      const legacy = await readFile(DISPLAY_PATH);
+      await mkdir(KONTOAUSZUEGE_DIR, { recursive: true });
+      await writeFile(BASE_PATH, legacy);
+      return legacy;
+    } catch {
+      return null;
+    }
+  }
+}
+
+/** Baut die angezeigte Datei (Basis + alle aktiven Textmarker) aus der Basis neu auf. */
+async function rebuildDisplayFile(): Promise<void> {
+  const base = await getBaseFile();
+  if (!base) {
+    await unlink(DISPLAY_PATH).catch(() => {});
+    return;
+  }
+  const pdf = await PDFDocument.load(base, { ignoreEncryption: true });
+  const pageCount = pdf.getPageCount();
+  await ensureTables();
+  const [rows] = await getPool().query<RowDataPacket[]>(
+    `SELECT page, x, y, width, height, color FROM bank_statement_highlights ORDER BY id ASC`
+  );
+  for (const r of rows) {
+    const index = Number(r.page) - 1;
+    if (index < 0 || index >= pageCount) continue; // Sicherheitsnetz, sollte nicht vorkommen
+    const pdfPage = pdf.getPage(index);
+    const [red, green, blue] = markerColorRgb01(normalizeColor(r.color));
+    pdfPage.drawRectangle({
+      x: Number(r.x),
+      y: Number(r.y),
+      width: Number(r.width),
+      height: Number(r.height),
+      color: rgb(red, green, blue),
+      opacity: 0.35,
+      borderWidth: 0,
+    });
+  }
+  await mkdir(KONTOAUSZUEGE_DIR, { recursive: true });
+  await writeFile(DISPLAY_PATH, await pdf.save());
+}
+
+/** Liest die angezeigte Datei (Basis + Textmarker) zum Anzeigen/Herunterladen. */
 export async function getStatementFile(): Promise<Buffer | null> {
   try {
-    return await readFile(ARCHIVE_PATH);
+    return await readFile(DISPLAY_PATH);
   } catch {
-    return null;
+    // Erster Aufruf nach dem Umstieg auf Basis/Anzeige getrennt: Anzeige-Datei
+    // fehlt evtl. noch, obwohl schon Auszüge/eine alte Datei vorhanden sind.
+    const base = await getBaseFile();
+    if (!base) return null;
+    await rebuildDisplayFile();
+    try {
+      return await readFile(DISPLAY_PATH);
+    } catch {
+      return null;
+    }
   }
 }
 
@@ -126,10 +212,10 @@ export async function getStatementPageCount(): Promise<number> {
 }
 
 /**
- * Fügt eine neue PDF-Datei VORN in die Sammel-Datei ein (neuester Auszug =
- * Seite 1); bestehende Seiten rutschen nach hinten. Bisherige Marker und
- * Upload-Einträge werden dabei automatisch um die Anzahl neuer Seiten
- * verschoben, damit sie weiter auf dieselbe Stelle zeigen.
+ * Fügt eine neue PDF-Datei VORN in die Basis-Sammel-Datei ein (neuester
+ * Auszug = Seite 1); bestehende Seiten rutschen nach hinten. Bisherige
+ * Marker, Textmarker und Upload-Einträge werden dabei automatisch um die
+ * Anzahl neuer Seiten verschoben, damit sie weiter auf dieselbe Stelle zeigen.
  */
 export async function appendStatementPdf(input: {
   buffer: Buffer;
@@ -142,7 +228,7 @@ export async function appendStatementPdf(input: {
   }
   await mkdir(KONTOAUSZUEGE_DIR, { recursive: true });
 
-  const existing = await getStatementFile();
+  const existing = await getBaseFile();
   let pageCount: number;
   try {
     // Neues Dokument: erst die neuen Seiten, danach die bisherigen (falls vorhanden).
@@ -157,7 +243,7 @@ export async function appendStatementPdf(input: {
       const existingPages = await merged.copyPages(existingDoc, existingDoc.getPageIndices());
       for (const page of existingPages) merged.addPage(page);
     }
-    await writeFile(ARCHIVE_PATH, await merged.save());
+    await writeFile(BASE_PATH, await merged.save());
   } catch (e) {
     if (e instanceof Error && e.message.includes("angehängt")) throw e;
     throw new Error("PDF konnte nicht gelesen/angehängt werden (beschädigt oder kein gültiges PDF?).");
@@ -166,11 +252,13 @@ export async function appendStatementPdf(input: {
   const pool = getPool();
   // Bisherige Seitenzahlen rutschen um `pageCount` nach hinten.
   await pool.query(`UPDATE bank_statement_markers SET page = page + ?`, [pageCount]);
+  await pool.query(`UPDATE bank_statement_highlights SET page = page + ?`, [pageCount]);
   await pool.query(`UPDATE bank_statement_uploads SET page_start = page_start + ?`, [pageCount]);
   await pool.query(
     `INSERT INTO bank_statement_uploads (filename, page_start, page_count, added_by) VALUES (?, 1, ?, ?)`,
     [input.originalName.slice(0, 255), pageCount, input.userId]
   );
+  await rebuildDisplayFile();
   return { pageStart: 1, pageCount };
 }
 
@@ -189,9 +277,9 @@ export async function listStatementUploads(): Promise<StatementUpload[]> {
 
 /**
  * Macht den zuletzt angehängten Upload rückgängig (z. B. falsche Datei erwischt):
- * entfernt dessen Seiten vom Anfang der Sammel-Datei (neue Anhänge landen immer
- * vorn, Seite 1..N) und löscht Marker auf diesen Seiten. Die übrigen Marker und
- * Upload-Einträge rutschen wieder um die entfernte Seitenzahl nach vorn.
+ * entfernt dessen Seiten vom Anfang der Basis-Datei (neue Anhänge landen immer
+ * vorn, Seite 1..N) und löscht Marker/Textmarker auf diesen Seiten. Die übrigen
+ * Einträge rutschen wieder um die entfernte Seitenzahl nach vorn.
  */
 export async function undoLastStatementUpload(): Promise<void> {
   await ensureTables();
@@ -203,23 +291,24 @@ export async function undoLastStatementUpload(): Promise<void> {
   if (!last) return;
   const removeCount = last.page_count;
 
-  const existing = await getStatementFile();
+  const existing = await getBaseFile();
   if (existing) {
     const pdf = await PDFDocument.load(existing, { ignoreEncryption: true });
     // Die ersten `removeCount` Seiten entfernen; von hinten nach vorn, sonst
     // verschieben sich die Indizes der noch zu entfernenden Seiten.
     for (let i = removeCount - 1; i >= 0; i--) pdf.removePage(i);
-    await writeFile(ARCHIVE_PATH, await pdf.save());
+    await writeFile(BASE_PATH, await pdf.save());
   }
 
-  await pool.query(`DELETE FROM bank_statement_markers WHERE page >= ? AND page <= ?`, [
-    last.page_start,
-    last.page_start + last.page_count - 1,
-  ]);
+  const range: number[] = [last.page_start, last.page_start + last.page_count - 1];
+  await pool.query(`DELETE FROM bank_statement_markers WHERE page >= ? AND page <= ?`, range);
+  await pool.query(`DELETE FROM bank_statement_highlights WHERE page >= ? AND page <= ?`, range);
   await pool.query(`DELETE FROM bank_statement_uploads WHERE id = ?`, [last.id]);
-  // Verbleibende Marker/Uploads wieder nach vorn rutschen lassen.
+  // Verbleibende Marker/Textmarker/Uploads wieder nach vorn rutschen lassen.
   await pool.query(`UPDATE bank_statement_markers SET page = page - ?`, [removeCount]);
+  await pool.query(`UPDATE bank_statement_highlights SET page = page - ?`, [removeCount]);
   await pool.query(`UPDATE bank_statement_uploads SET page_start = page_start - ?`, [removeCount]);
+  await rebuildDisplayFile();
 }
 
 interface MarkerRow extends RowDataPacket {
@@ -286,12 +375,61 @@ export interface HighlightRect {
   note?: string;
 }
 
+export interface StatementHighlight {
+  id: number;
+  page: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  color: MarkerColor;
+  createdByName: string | null;
+  createdAt: string | null;
+}
+
+interface HighlightRow extends RowDataPacket {
+  id: number;
+  page: number;
+  x: number | string;
+  y: number | string;
+  width: number | string;
+  height: number | string;
+  color: string;
+  created_at: string | null;
+  created_by_name: string | null;
+}
+
+/** Textmarker-Rechtecke einer Seite (zum Anzeigen/Löschen im Markieren-Fenster). */
+export async function listStatementHighlights(page: number): Promise<StatementHighlight[]> {
+  await ensureTables();
+  const [rows] = await getPool().query<HighlightRow[]>(
+    `SELECT h.id, h.page, h.x, h.y, h.width, h.height, h.color, h.created_at,
+            COALESCE(NULLIF(u.display_name, ''), u.username) AS created_by_name
+     FROM bank_statement_highlights h
+     LEFT JOIN users u ON u.id = h.created_by
+     WHERE h.page = ?
+     ORDER BY h.id ASC`,
+    [page]
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    page: r.page,
+    x: Number(r.x),
+    y: Number(r.y),
+    width: Number(r.width),
+    height: Number(r.height),
+    color: normalizeColor(r.color),
+    createdByName: r.created_by_name,
+    createdAt: r.created_at ? String(r.created_at) : null,
+  }));
+}
+
 /**
- * Zeichnet echte Textmarker-Rechtecke (halbtransparent) dauerhaft auf eine
- * Seite der Sammel-Datei – wie ein Textmarker auf Papier, nicht rückgängig
- * machbar (auch ein echter Textmarker lässt sich nicht wieder entfernen).
- * Rechtecke mit Notiz legen zusätzlich einen durchsuchbaren Seiten-Marker an
- * (dieselbe Tabelle wie `addStatementMarker`), damit man sie später wiederfindet.
+ * Legt Textmarker-Rechtecke auf einer Seite an (als Daten, nicht direkt ins
+ * PDF gebrannt) und baut danach die angezeigte Datei neu auf. Rechtecke mit
+ * Notiz legen zusätzlich einen durchsuchbaren Seiten-Marker an (dieselbe
+ * Tabelle wie `addStatementMarker`). Anders als vorher jederzeit über
+ * `deleteStatementHighlight` einzeln wieder entfernbar.
  */
 export async function drawStatementHighlights(
   page: number,
@@ -299,29 +437,30 @@ export async function drawStatementHighlights(
   userId: number | null
 ): Promise<void> {
   if (rects.length === 0) return;
-  const existing = await getStatementFile();
-  if (!existing) throw new Error("Noch keine Kontoauszüge hochgeladen.");
-  const pdf = await PDFDocument.load(existing, { ignoreEncryption: true });
+  await ensureTables();
+  const base = await getBaseFile();
+  if (!base) throw new Error("Noch keine Kontoauszüge hochgeladen.");
+  const pdf = await PDFDocument.load(base, { ignoreEncryption: true });
   const index = page - 1;
   if (index < 0 || index >= pdf.getPageCount()) throw new Error("Ungültige Seite.");
-  const pdfPage = pdf.getPage(index);
-  for (const r of rects) {
-    const [red, green, blue] = markerColorRgb01(r.color ?? "yellow");
-    pdfPage.drawRectangle({
-      x: r.x,
-      y: r.y,
-      width: r.width,
-      height: r.height,
-      color: rgb(red, green, blue),
-      opacity: 0.35,
-      borderWidth: 0,
-    });
-  }
-  await writeFile(ARCHIVE_PATH, await pdf.save());
 
+  const pool = getPool();
   for (const r of rects) {
+    const color = normalizeColor(r.color ?? "yellow");
+    await pool.query(
+      `INSERT INTO bank_statement_highlights (page, x, y, width, height, color, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [page, r.x, r.y, r.width, r.height, color, userId]
+    );
     if (r.note?.trim()) {
-      await addStatementMarker({ page, note: r.note, color: r.color, userId });
+      await addStatementMarker({ page, note: r.note, color, userId });
     }
   }
+  await rebuildDisplayFile();
+}
+
+/** Löscht ein Textmarker-Rechteck und baut die angezeigte Datei neu auf. */
+export async function deleteStatementHighlight(id: number): Promise<void> {
+  await ensureTables();
+  await getPool().query(`DELETE FROM bank_statement_highlights WHERE id = ?`, [id]);
+  await rebuildDisplayFile();
 }

@@ -1,9 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { addPdfHighlightsAction } from "@/app/dashboard/belege/kontoauszug/actions";
+import {
+  addPdfHighlightsAction,
+  listPageHighlightsAction,
+  deletePdfHighlightAction,
+} from "@/app/dashboard/belege/kontoauszug/actions";
 import { MARKER_COLORS, markerColorHex, type MarkerColor } from "@/lib/kontoauszug-colors";
-import type { HighlightRect } from "@/lib/kontoauszuege";
+import type { HighlightRect, StatementHighlight } from "@/lib/kontoauszuege";
 
 /** Nur der Ausschnitt der pdfjs-`PageViewport`/`PDFPageProxy`, den wir brauchen. */
 interface MinimalViewport {
@@ -33,18 +37,23 @@ const ZOOM_STEP = 0.25;
  * Echter Textmarker: rendert eine einzelne PDF-Seite (via pdfjs-dist) auf ein
  * Canvas, lässt per Maus-Ziehen halbtransparente Rechtecke aufziehen (optional
  * mit Notiz, die zusätzlich als durchsuchbarer Seiten-Marker gespeichert wird)
- * und brennt sie beim Speichern dauerhaft in die PDF-Datei ein (server-seitig
- * via pdf-lib). Bewusst als eigenes Fenster statt den Haupt-Viewer zu ersetzen
- * – der bleibt der native, schnelle Browser-PDF-Viewer zum Lesen/Blättern.
+ * und speichert sie beim Speichern als eigene Datenzeilen (Tabelle
+ * `bank_statement_highlights`), aus denen die angezeigte PDF-Datei serverseitig
+ * neu zusammengesetzt wird – dadurch bleibt jede einzelne Markierung später
+ * über die Liste unten wieder löschbar. Bewusst als eigenes Fenster statt den
+ * Haupt-Viewer zu ersetzen – der bleibt der native, schnelle Browser-Viewer.
  */
 export default function PdfHighlightModal({
   page,
   onClose,
   onSaved,
+  onDeleted,
 }: {
   page: number;
   onClose: () => void;
   onSaved: () => void;
+  /** Wird nach dem Löschen einer bereits gespeicherten Markierung aufgerufen (Fenster bleibt offen). */
+  onDeleted: () => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -59,6 +68,8 @@ export default function PdfHighlightModal({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [color, setColor] = useState<MarkerColor>("yellow");
   const [rects, setRects] = useState<PendingRect[]>([]);
+  const [existing, setExisting] = useState<StatementHighlight[]>([]);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
   const [dragCurrent, setDragCurrent] = useState<{ x: number; y: number } | null>(null);
   const [saving, setSaving] = useState(false);
@@ -75,33 +86,36 @@ export default function PdfHighlightModal({
     await proxy.render({ canvas, viewport: newViewport }).promise;
   };
 
-  // Beim Öffnen (bzw. Seitenwechsel) die Seite laden und auf Container-Breite einpassen.
+  // Seite (neu) laden: PDF-Seite rendern + bereits gespeicherte Markierungen
+  // dieser Seite abrufen. Auch nach dem Löschen einer Markierung erneut
+  // aufgerufen, damit Canvas und Liste den aktuellen Stand zeigen.
+  const loadPage = async () => {
+    try {
+      const [pdfjsLib, existingList] = await Promise.all([import("pdfjs-dist"), listPageHighlightsAction(page)]);
+      pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+      const doc = await pdfjsLib.getDocument({ url: "/api/kontoauszug-datei" }).promise;
+      const pdfPage = await doc.getPage(page);
+      pdfPageRef.current = pdfPage as unknown as MinimalPdfPage;
+      setExisting(existingList);
+      const baseViewport = pdfPage.getViewport({ scale: 1 });
+      const targetWidth = Math.max(320, (containerRef.current?.clientWidth || 900) - 24);
+      fitScaleRef.current = targetWidth / baseViewport.width;
+      await renderAtScale(fitScaleRef.current * zoom);
+      setLoading(false);
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : "Seite konnte nicht geladen werden.");
+      setLoading(false);
+    }
+  };
+
+  // Läuft einmalig beim Mounten. `loading`/`loadError` starten bereits korrekt
+  // über ihren useState-Initialwert – ein Seitenwechsel bei offenem Fenster
+  // remountet die Komponente über den `key` in der Elternkomponente neu,
+  // statt hier den State manuell zurückzusetzen.
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const pdfjsLib = await import("pdfjs-dist");
-        pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
-        const doc = await pdfjsLib.getDocument({ url: "/api/kontoauszug-datei" }).promise;
-        const pdfPage = await doc.getPage(page);
-        if (cancelled) return;
-        pdfPageRef.current = pdfPage as unknown as MinimalPdfPage;
-        const baseViewport = pdfPage.getViewport({ scale: 1 });
-        const targetWidth = Math.max(320, (containerRef.current?.clientWidth || 900) - 24);
-        fitScaleRef.current = targetWidth / baseViewport.width;
-        await renderAtScale(fitScaleRef.current);
-        if (!cancelled) setLoading(false);
-      } catch (e) {
-        if (!cancelled) {
-          setLoadError(e instanceof Error ? e.message : "Seite konnte nicht geladen werden.");
-          setLoading(false);
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [page]);
+    void loadPage();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const applyZoom = (next: number) => {
     const clamped = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, next));
@@ -172,6 +186,19 @@ export default function PdfHighlightModal({
       onSaved();
     } else {
       setSaveError(res.error ?? "Speichern fehlgeschlagen.");
+    }
+  };
+
+  const handleDeleteExisting = async (id: number) => {
+    if (!window.confirm("Diese Markierung endgültig entfernen?")) return;
+    setDeletingId(id);
+    const res = await deletePdfHighlightAction(id);
+    setDeletingId(null);
+    if (res.ok) {
+      onDeleted();
+      await loadPage(); // Canvas + Liste neu laden, damit die Löschung sichtbar wird.
+    } else {
+      setSaveError("Löschen fehlgeschlagen.");
     }
   };
 
@@ -253,6 +280,9 @@ export default function PdfHighlightModal({
           {loading && !loadError && <p className="p-4 text-sm text-gray-500">Seite wird geladen …</p>}
           <div className="relative inline-block touch-none select-none">
             <canvas ref={canvasRef} className="block" />
+            {/* Bereits gespeicherte Markierungen sind schon Teil des gerenderten
+                Bilds (in der Anzeige-Datei eingezeichnet) – hier keine zweite
+                Überlagerung, nur die neuen (noch nicht gespeicherten). */}
             {rects.map((r, i) => {
               const box = toCanvasRect(r);
               return (
@@ -279,8 +309,25 @@ export default function PdfHighlightModal({
           </div>
         </div>
 
-        {rects.length > 0 && (
-          <div className="flex max-h-32 flex-col gap-1.5 overflow-y-auto border-t border-gray-200 px-4 py-2">
+        {(existing.length > 0 || rects.length > 0) && (
+          <div className="flex max-h-36 flex-col gap-1.5 overflow-y-auto border-t border-gray-200 px-4 py-2">
+            {existing.map((h) => (
+              <div key={`existing-${h.id}`} className="flex items-center gap-2">
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: markerColorHex(h.color) }} />
+                <span className="min-w-0 flex-1 truncate text-xs text-gray-500">
+                  Gespeicherte Markierung{h.createdByName ? ` · ${h.createdByName}` : ""}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handleDeleteExisting(h.id)}
+                  disabled={deletingId === h.id}
+                  title="Markierung endgültig entfernen"
+                  className="shrink-0 text-gray-400 transition-colors hover:text-rose-600 disabled:opacity-40"
+                >
+                  {deletingId === h.id ? "…" : "✕"}
+                </button>
+              </div>
+            ))}
             {rects.map((r, i) => (
               <div key={i} className="flex items-center gap-2">
                 <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: markerColorHex(r.color) }} />
@@ -306,7 +353,7 @@ export default function PdfHighlightModal({
 
         <div className="flex items-center justify-between gap-2 border-t border-gray-200 px-4 py-3">
           <span className="text-xs text-gray-500">
-            {rects.length > 0 ? `${rects.length} Markierung(en) bereit zum Speichern` : "Noch keine Markierung gezogen."}
+            {rects.length > 0 ? `${rects.length} neue Markierung(en) bereit zum Speichern` : "Noch keine neue Markierung gezogen."}
           </span>
           <div className="flex items-center gap-2">
             {saveError && <span className="text-xs text-rose-600">{saveError}</span>}
@@ -315,7 +362,7 @@ export default function PdfHighlightModal({
               onClick={onClose}
               className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50"
             >
-              Abbrechen
+              {rects.length > 0 ? "Abbrechen" : "Schließen"}
             </button>
             <button
               type="button"

@@ -385,10 +385,15 @@ export default function KontoauszugClient({
     </div>
     {highlightOpen && (
       <PdfHighlightModal
+        key={activePage}
         page={activePage}
         onClose={() => setHighlightOpen(false)}
         onSaved={() => {
           setHighlightOpen(false);
+          setReloadToken((t) => t + 1);
+          router.refresh();
+        }}
+        onDeleted={() => {
           setReloadToken((t) => t + 1);
           router.refresh();
         }}

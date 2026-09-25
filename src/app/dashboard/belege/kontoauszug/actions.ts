@@ -8,7 +8,10 @@ import {
   addStatementMarker,
   deleteStatementMarker,
   drawStatementHighlights,
+  listStatementHighlights,
+  deleteStatementHighlight,
   type HighlightRect,
+  type StatementHighlight,
 } from "@/lib/kontoauszuege";
 
 const MAX_SIZE = 25 * 1024 * 1024;
@@ -72,7 +75,7 @@ export async function deleteStatementMarkerAction(id: number): Promise<ActionRes
   return { ok: true };
 }
 
-/** Zeichnet echte Textmarker-Rechtecke dauerhaft auf eine Seite der Sammel-Datei. */
+/** Zeichnet echte Textmarker-Rechtecke auf eine Seite der Sammel-Datei (einzeln wieder löschbar). */
 export async function addPdfHighlightsAction(page: number, rects: HighlightRect[]): Promise<ActionResult> {
   const userId = await currentUserId();
   if (userId == null) return { ok: false, error: "Nicht angemeldet." };
@@ -84,4 +87,16 @@ export async function addPdfHighlightsAction(page: number, rects: HighlightRect[
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Markieren fehlgeschlagen." };
   }
+}
+
+/** Bereits vorhandene Textmarker-Rechtecke einer Seite (zum Anzeigen/Löschen im Markieren-Fenster). */
+export async function listPageHighlightsAction(page: number): Promise<StatementHighlight[]> {
+  if (!Number.isFinite(page) || page < 1) return [];
+  return listStatementHighlights(page);
+}
+
+/** Löscht ein Textmarker-Rechteck (baut die angezeigte Datei ohne diese Markierung neu auf). */
+export async function deletePdfHighlightAction(id: number): Promise<ActionResult> {
+  await deleteStatementHighlight(id);
+  return { ok: true };
 }
