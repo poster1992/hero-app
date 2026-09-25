@@ -52,6 +52,8 @@ export default function KontoauszugClient({
   const [viewFragment, setViewFragment] = useState("page=1");
   // Erzwingt ein erneutes Springen im iframe, auch wenn dieselbe Stelle nochmal angeklickt wird.
   const [jumpToken, setJumpToken] = useState(0);
+  // Textmarker-ID, die gerade blau umrandet angezeigt werden soll (per Marker-Klick gesetzt).
+  const [selectedHighlightId, setSelectedHighlightId] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const hasFile = initialPageCount > 0;
@@ -64,7 +66,10 @@ export default function KontoauszugClient({
     );
   }, [initialMarkers, search, colorFilter]);
 
-  const goToPage = (p: number, highlight?: { x: number; y: number; width: number; height: number } | null) => {
+  const goToPage = (
+    p: number,
+    highlight?: { id: number; x: number; y: number; width: number; height: number } | null
+  ) => {
     const clamped = Math.max(1, Math.min(p, initialPageCount || p));
     setActivePage(clamped);
     setPageInput(String(clamped));
@@ -74,8 +79,10 @@ export default function KontoauszugClient({
       // damit sie nicht direkt am oberen Rand klebt.
       const top = Math.round(highlight.y + highlight.height + 40);
       setViewFragment(`page=${clamped}&zoom=100,0,${top}`);
+      setSelectedHighlightId(highlight.id);
     } else {
       setViewFragment(`page=${clamped}`);
+      setSelectedHighlightId(null);
     }
     setJumpToken((t) => t + 1);
   };
@@ -201,7 +208,9 @@ export default function KontoauszugClient({
           {hasFile ? (
             <iframe
               key={`${initialPageCount}-${reloadToken}-${jumpToken}`}
-              src={`/api/kontoauszug-datei?v=${initialPageCount}-${reloadToken}#${viewFragment}`}
+              src={`/api/kontoauszug-datei?v=${initialPageCount}-${reloadToken}${
+                selectedHighlightId != null ? `&highlight=${selectedHighlightId}` : ""
+              }#${viewFragment}`}
               title="Kontoauszüge"
               className="h-full min-h-[70vh] w-full md:min-h-0"
             />

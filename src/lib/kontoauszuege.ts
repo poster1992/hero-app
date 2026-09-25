@@ -146,7 +146,7 @@ export interface StatementMarker {
   createdByName: string | null;
   createdAt: string | null;
   /** Position im PDF (nur gesetzt, wenn beim Markieren mit einem Textmarker-Rechteck verknüpft). */
-  highlight: { x: number; y: number; width: number; height: number } | null;
+  highlight: { id: number; x: number; y: number; width: number; height: number } | null;
 }
 
 interface UploadRow extends RowDataPacket {
@@ -235,6 +235,42 @@ export async function getStatementFile(): Promise<Buffer | null> {
     } catch {
       return null;
     }
+  }
+}
+
+/**
+ * Wie `getStatementFile`, zeichnet aber zusätzlich (nur für diese eine
+ * Anfrage, nicht dauerhaft gespeichert) einen blauen Rahmen um eine
+ * bestimmte Markierung – damit beim Springen von einem Marker aus sofort
+ * erkennbar ist, welche der Markierungen auf der Seite gemeint ist.
+ */
+export async function getStatementFileWithSelection(highlightId: number | null): Promise<Buffer | null> {
+  const display = await getStatementFile();
+  if (!display || highlightId == null) return display;
+  await ensureTables();
+  const [rows] = await getPool().query<RowDataPacket[]>(
+    `SELECT page, x, y, width, height FROM bank_statement_highlights WHERE id = ?`,
+    [highlightId]
+  );
+  const h = rows[0];
+  if (!h) return display;
+  try {
+    const pdf = await PDFDocument.load(display, { ignoreEncryption: true });
+    const index = Number(h.page) - 1;
+    if (index < 0 || index >= pdf.getPageCount()) return display;
+    const pdfPage = pdf.getPage(index);
+    const pad = 3; // etwas Abstand, damit der Rahmen nicht direkt auf der Markierung liegt
+    pdfPage.drawRectangle({
+      x: Number(h.x) - pad,
+      y: Number(h.y) - pad,
+      width: Number(h.width) + pad * 2,
+      height: Number(h.height) + pad * 2,
+      borderColor: rgb(0.15, 0.39, 0.92),
+      borderWidth: 2.5,
+    });
+    return Buffer.from(await pdf.save());
+  } catch {
+    return display;
   }
 }
 
@@ -354,6 +390,7 @@ interface MarkerRow extends RowDataPacket {
   color: string;
   created_at: string | null;
   created_by_name: string | null;
+  hid: number | null;
   hx: number | string | null;
   hy: number | string | null;
   hwidth: number | string | null;
@@ -366,7 +403,7 @@ export async function listStatementMarkers(): Promise<StatementMarker[]> {
   const [rows] = await getPool().query<MarkerRow[]>(
     `SELECT m.id, m.page, m.note, m.color, m.created_at,
             COALESCE(NULLIF(u.display_name, ''), u.username) AS created_by_name,
-            h.x AS hx, h.y AS hy, h.width AS hwidth, h.height AS hheight
+            h.id AS hid, h.x AS hx, h.y AS hy, h.width AS hwidth, h.height AS hheight
      FROM bank_statement_markers m
      LEFT JOIN users u ON u.id = m.created_by
      LEFT JOIN bank_statement_highlights h ON h.marker_id = m.id
@@ -380,8 +417,8 @@ export async function listStatementMarkers(): Promise<StatementMarker[]> {
     createdByName: r.created_by_name,
     createdAt: r.created_at ? String(r.created_at) : null,
     highlight:
-      r.hx != null && r.hy != null && r.hwidth != null && r.hheight != null
-        ? { x: Number(r.hx), y: Number(r.hy), width: Number(r.hwidth), height: Number(r.hheight) }
+      r.hid != null && r.hx != null && r.hy != null && r.hwidth != null && r.hheight != null
+        ? { id: r.hid, x: Number(r.hx), y: Number(r.hy), width: Number(r.hwidth), height: Number(r.hheight) }
         : null,
   }));
 }
