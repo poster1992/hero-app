@@ -55,7 +55,7 @@ export default function PdfHighlightModal({
         const doc = await pdfjsLib.getDocument({ url: "/api/kontoauszug-datei" }).promise;
         const pdfPage = await doc.getPage(page);
         const baseViewport = pdfPage.getViewport({ scale: 1 });
-        const targetWidth = Math.min(900, containerRef.current?.clientWidth || 900);
+        const targetWidth = Math.max(320, (containerRef.current?.clientWidth || 900) - 24);
         const scale = targetWidth / baseViewport.width;
         const viewport = pdfPage.getViewport({ scale });
         if (cancelled) return;
@@ -151,7 +151,7 @@ export default function PdfHighlightModal({
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
       <div
-        className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden border border-line bg-white shadow-2xl"
+        className="flex h-[90vh] w-[90vw] max-w-none flex-col overflow-hidden border border-line bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
