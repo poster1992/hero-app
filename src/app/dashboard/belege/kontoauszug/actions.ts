@@ -51,15 +51,16 @@ export async function undoLastStatementUploadAction(): Promise<ActionResult> {
   }
 }
 
-/** Legt eine Markierung (Seite + Notiz) an. */
+/** Legt eine Markierung (Seite + Notiz + Farbe) an. */
 export async function addStatementMarkerAction(formData: FormData): Promise<ActionResult> {
   const userId = await currentUserId();
   if (userId == null) return { ok: false, error: "Nicht angemeldet." };
   const page = Number(formData.get("page"));
   const note = String(formData.get("note") ?? "");
+  const color = String(formData.get("color") ?? "red");
   if (!Number.isFinite(page) || page < 1) return { ok: false, error: "Ungültige Seite." };
   if (!note.trim()) return { ok: false, error: "Notiz fehlt." };
-  await addStatementMarker({ page, note, userId });
+  await addStatementMarker({ page, note, color, userId });
   return { ok: true };
 }
 

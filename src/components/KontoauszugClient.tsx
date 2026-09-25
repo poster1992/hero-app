@@ -9,6 +9,7 @@ import {
   deleteStatementMarkerAction,
 } from "@/app/dashboard/belege/kontoauszug/actions";
 import type { StatementUpload, StatementMarker } from "@/lib/kontoauszuege";
+import { MARKER_COLORS, markerColorHex, type MarkerColor } from "@/lib/kontoauszug-colors";
 
 function fmtDateTime(iso: string | null): string {
   if (!iso) return "";
@@ -36,7 +37,9 @@ export default function KontoauszugClient({
   const [markerError, setMarkerError] = useState<string | null>(null);
   const [markerPage, setMarkerPage] = useState("1");
   const [markerNote, setMarkerNote] = useState("");
+  const [markerColor, setMarkerColor] = useState<MarkerColor>("red");
   const [search, setSearch] = useState("");
+  const [colorFilter, setColorFilter] = useState<MarkerColor | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const hasFile = initialPageCount > 0;
@@ -44,9 +47,10 @@ export default function KontoauszugClient({
 
   const filteredMarkers = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return initialMarkers;
-    return initialMarkers.filter((m) => m.note.toLowerCase().includes(q));
-  }, [initialMarkers, search]);
+    return initialMarkers.filter(
+      (m) => (!q || m.note.toLowerCase().includes(q)) && (!colorFilter || m.color === colorFilter)
+    );
+  }, [initialMarkers, search, colorFilter]);
 
   const goToPage = (p: number) => {
     const clamped = Math.max(1, Math.min(p, initialPageCount || p));
@@ -104,6 +108,7 @@ export default function KontoauszugClient({
       const fd = new FormData();
       fd.set("page", String(page));
       fd.set("note", markerNote);
+      fd.set("color", markerColor);
       const res = await addStatementMarkerAction(fd);
       if (res.ok) {
         setMarkerNote("");
@@ -261,10 +266,25 @@ export default function KontoauszugClient({
               Markieren
             </button>
           </div>
+          <div className="mb-3 flex items-center gap-1.5">
+            <span className="text-xs text-gray-500">Farbe:</span>
+            {MARKER_COLORS.map((c) => (
+              <button
+                key={c.key}
+                type="button"
+                onClick={() => setMarkerColor(c.key)}
+                title={c.label}
+                style={{ backgroundColor: c.hex }}
+                className={`h-5 w-5 rounded-full border-2 ${
+                  markerColor === c.key ? "border-gray-900" : "border-transparent"
+                }`}
+              />
+            ))}
+          </div>
           {markerError && <p className="mb-2 text-xs text-rose-600">{markerError}</p>}
 
           <h2 className="mb-2 text-sm font-semibold text-gray-900">
-            Markierungen ({initialMarkers.length})
+            Markierungen ({filteredMarkers.length}/{initialMarkers.length})
           </h2>
           <input
             type="text"
@@ -273,14 +293,42 @@ export default function KontoauszugClient({
             placeholder="Markierungen durchsuchen …"
             className="mb-2 w-full border border-line px-2 py-1 text-xs outline-none focus:border-brand-red/60"
           />
+          <div className="mb-2 flex items-center gap-1.5">
+            <span className="text-xs text-gray-500">Filter:</span>
+            {MARKER_COLORS.map((c) => (
+              <button
+                key={c.key}
+                type="button"
+                onClick={() => setColorFilter((cur) => (cur === c.key ? null : c.key))}
+                title={c.label}
+                style={{ backgroundColor: c.hex }}
+                className={`h-5 w-5 rounded-full border-2 ${
+                  colorFilter === c.key ? "border-gray-900" : "border-transparent opacity-60"
+                }`}
+              />
+            ))}
+            {colorFilter && (
+              <button
+                type="button"
+                onClick={() => setColorFilter(null)}
+                className="text-[10px] text-gray-400 hover:text-gray-700"
+              >
+                zurücksetzen
+              </button>
+            )}
+          </div>
           <ul className="min-h-0 flex-1 space-y-1.5 overflow-y-auto">
             {filteredMarkers.length === 0 ? (
               <li className="text-xs text-gray-500">
-                {search ? "Keine Treffer." : "Noch keine Markierungen."}
+                {search || colorFilter ? "Keine Treffer." : "Noch keine Markierungen."}
               </li>
             ) : (
               filteredMarkers.map((m) => (
-                <li key={m.id} className="flex items-start justify-between gap-2 border border-line bg-white p-2 text-xs">
+                <li
+                  key={m.id}
+                  style={{ borderLeftColor: markerColorHex(m.color), borderLeftWidth: 4 }}
+                  className="flex items-start justify-between gap-2 border border-line bg-white p-2 text-xs"
+                >
                   <button type="button" onClick={() => goToPage(m.page)} className="min-w-0 flex-1 text-left">
                     <div className="font-semibold text-brand-red">Seite {m.page}</div>
                     <div className="whitespace-pre-line text-gray-700">{m.note}</div>

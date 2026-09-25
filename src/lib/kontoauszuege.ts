@@ -5,6 +5,7 @@ import { PDFDocument } from "pdf-lib";
 import type { RowDataPacket } from "mysql2";
 import { getPool } from "./db";
 import { sniffMime } from "./file-sniff";
+import { MARKER_COLORS, type MarkerColor } from "./kontoauszug-colors";
 
 /**
  * Kontoauszüge (privat, ein Bankkonto): PDF-Auszüge werden nicht mehr
@@ -38,13 +39,34 @@ async function ensureTables(): Promise<void> {
          id INT AUTO_INCREMENT PRIMARY KEY,
          page INT NOT NULL,
          note VARCHAR(1000) NOT NULL,
+         color VARCHAR(10) NOT NULL DEFAULT 'red',
          created_by INT NULL,
          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
          INDEX idx_bsm_page (page)
        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
     )
     .catch(() => {});
+  await ensureMarkerColorColumn();
   tableReady = true;
+}
+
+/** Self-healing: `color`-Spalte nachrüsten, falls die Tabelle schon vor der Farbfunktion existierte. */
+let colorColumnReady = false;
+async function ensureMarkerColorColumn(): Promise<void> {
+  if (colorColumnReady) return;
+  const pool = getPool();
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT COUNT(*) AS n FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'bank_statement_markers' AND COLUMN_NAME = 'color'`
+  );
+  if ((rows[0]?.n ?? 0) === 0) {
+    await pool.query("ALTER TABLE bank_statement_markers ADD COLUMN color VARCHAR(10) NOT NULL DEFAULT 'red'").catch(() => {});
+  }
+  colorColumnReady = true;
+}
+
+function normalizeColor(v: unknown): MarkerColor {
+  return MARKER_COLORS.some((c) => c.key === v) ? (v as MarkerColor) : "red";
 }
 
 export interface StatementUpload {
@@ -60,6 +82,7 @@ export interface StatementMarker {
   id: number;
   page: number;
   note: string;
+  color: MarkerColor;
   createdByName: string | null;
   createdAt: string | null;
 }
@@ -191,6 +214,7 @@ interface MarkerRow extends RowDataPacket {
   id: number;
   page: number;
   note: string;
+  color: string;
   created_at: string | null;
   created_by_name: string | null;
 }
@@ -199,7 +223,7 @@ interface MarkerRow extends RowDataPacket {
 export async function listStatementMarkers(): Promise<StatementMarker[]> {
   await ensureTables();
   const [rows] = await getPool().query<MarkerRow[]>(
-    `SELECT m.id, m.page, m.note, m.created_at,
+    `SELECT m.id, m.page, m.note, m.color, m.created_at,
             COALESCE(NULLIF(u.display_name, ''), u.username) AS created_by_name
      FROM bank_statement_markers m
      LEFT JOIN users u ON u.id = m.created_by
@@ -209,22 +233,28 @@ export async function listStatementMarkers(): Promise<StatementMarker[]> {
     id: r.id,
     page: r.page,
     note: r.note,
+    color: normalizeColor(r.color),
     createdByName: r.created_by_name,
     createdAt: r.created_at ? String(r.created_at) : null,
   }));
 }
 
-/** Legt eine Markierung (Seite + Notiz) an. */
-export async function addStatementMarker(input: { page: number; note: string; userId: number | null }): Promise<void> {
+/** Legt eine Markierung (Seite + Notiz + Farbe) an. */
+export async function addStatementMarker(input: {
+  page: number;
+  note: string;
+  color?: string;
+  userId: number | null;
+}): Promise<void> {
   await ensureTables();
   const note = input.note.trim().slice(0, 1000);
   if (!note) return;
   const page = Math.max(1, Math.trunc(input.page));
-  await getPool().query(`INSERT INTO bank_statement_markers (page, note, created_by) VALUES (?, ?, ?)`, [
-    page,
-    note,
-    input.userId,
-  ]);
+  const color = normalizeColor(input.color);
+  await getPool().query(
+    `INSERT INTO bank_statement_markers (page, note, color, created_by) VALUES (?, ?, ?, ?)`,
+    [page, note, color, input.userId]
+  );
 }
 
 /** Löscht eine Markierung. */
