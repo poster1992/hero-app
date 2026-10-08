@@ -30,7 +30,14 @@ export interface MinimalTextItem {
 // Zusammensetzen der Zeile (join(" ")) fügt zwischen getrennten Textelementen
 // ohnehin ein normales Leerzeichen ein, falls die Bank den Tausenderteil als
 // eigenes PDF-Textelement ausgibt.
-const AMOUNT_RE = /-?\d{1,3}(?:[.  ]\d{3})*,\d{2}/g;
+// `\b` vor der ersten Ziffer ist wichtig: ohne Wortgrenze kann die Suche sonst
+// MITTEN in einer fremden Zahl (z.B. den letzten 3 Ziffern einer IBAN wie
+// "...0065 8328") zu matchen anfangen und diese fälschlich als Tausender-
+// Vorsilbe an einen danebenstehenden echten Betrag anhängen (reproduzierter
+// Bug: "...8328" + " 402,36" -> "328.402,36" statt korrekt "402,36"). Digit-
+// Digit-Übergänge sind in `\b`-Logik keine Wortgrenze, Zahlen können also nur
+// an ihrem echten Anfang (nach Leerzeichen/Satzzeichen) zu matchen beginnen.
+const AMOUNT_RE = /-?\b\d{1,3}(?:[.  ]\d{3})*,\d{2}/g;
 // Zeilen, die nur aus Datum(en) bestehen, sind keine Beträge – grobe Heuristik reicht hier nicht,
 // die Betragssuche selbst filtert über das Dezimalkomma-Format ausreichend genau.
 
