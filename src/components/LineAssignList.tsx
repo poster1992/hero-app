@@ -12,10 +12,11 @@ import {
 import type { StatementLine, AssignableReceiptOption } from "@/lib/kontoauszuege";
 import CreateReceiptInline from "@/components/CreateReceiptInline";
 
+// Erlaubt auch negative Beträge (Gutschriften), nur 0/ungültig wird abgelehnt.
 function parseGermanAmount(s: string): number | null {
   const clean = s.trim().replace(/\./g, "").replace(",", ".");
   const n = Number(clean);
-  return Number.isFinite(n) && n > 0 ? n : null;
+  return Number.isFinite(n) && n !== 0 ? n : null;
 }
 
 function fmtEur(n: number): string {
@@ -266,6 +267,7 @@ export default function LineAssignList({
                   <li key={r.id} className="flex items-center justify-between gap-1 border-t border-gray-100 pt-1">
                     <span className="min-w-0 flex-1 truncate text-gray-600" title={`${r.supplier ?? ""} ${r.invoiceNumber ?? ""}`}>
                       {r.kind === "hero" ? "HERO" : "Manuell"} · {r.supplier ?? "—"} · {fmtEur(r.amount)}
+                      {r.amount < 0 && <span className="ml-1 text-sky-600">(Gutschrift)</span>}
                       {r.settlementKind !== "full" && (
                         <span className="ml-1 text-amber-600">
                           ({r.settlementKind === "skonto" ? "Skonto" : "Teilzahlung"})
@@ -299,9 +301,15 @@ export default function LineAssignList({
                       {pickedReceipt.invoiceNumber ? ` · ${pickedReceipt.invoiceNumber}` : ""}
                     </p>
                     <p className="text-gray-500">
-                      Offen: {fmtEur(pickedReceipt.amount)}
+                      {pickedReceipt.amount < 0 ? "Gutschrift: " : "Offen: "}
+                      {fmtEur(pickedReceipt.amount)}
                       {pickedReceipt.skontoPayAmount != null && ` · Skonto: ${fmtEur(pickedReceipt.skontoPayAmount)}`}
                     </p>
+                    {pickedReceipt.amount < 0 && (
+                      <p className="mt-0.5 text-[11px] text-sky-700">
+                        Gutschriften lassen sich nur vollständig zuordnen (Betrag muss exakt passen).
+                      </p>
+                    )}
                     <div className="mt-1.5 flex items-center gap-2">
                       <label className="flex items-center gap-1">
                         Zugeordneter Betrag:
@@ -375,6 +383,7 @@ export default function LineAssignList({
                               <span className="font-medium">{r.supplier ?? "—"}</span>{" "}
                               <span className="text-gray-400">
                                 {r.invoiceNumber ? `· ${r.invoiceNumber} ` : ""}· {fmtEur(r.amount)}
+                                {r.amount < 0 && <span className="text-sky-600"> (Gutschrift)</span>}
                                 {r.date ? ` · ${r.date.split("-").reverse().join(".")}` : ""}
                               </span>
                             </button>

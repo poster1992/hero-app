@@ -192,21 +192,27 @@ export async function addReceiptToLineAction(
 ): Promise<ActionResult> {
   const userId = await currentUserId();
   if (userId == null) return { ok: false, error: "Nicht angemeldet." };
-  if (!Number.isFinite(confirmedAmount) || confirmedAmount <= 0) return { ok: false, error: "Ungültiger Betrag." };
-  await addReceiptToLine(
-    lineId,
-    {
-      kind: receipt.kind,
-      ref: receipt.ref,
-      amount: confirmedAmount,
-      openAmount: receipt.amount,
-      skontoPayAmount: receipt.skontoPayAmount,
-      supplier: receipt.supplier,
-      invoiceNumber: receipt.invoiceNumber,
-    },
-    userId
-  );
-  return { ok: true };
+  // Gutschriften haben einen negativen offenen Betrag – dort ist auch ein negativer
+  // bestätigter Betrag gültig (nur exakt 0 bzw. keine Zahl ist ungültig).
+  if (!Number.isFinite(confirmedAmount) || confirmedAmount === 0) return { ok: false, error: "Ungültiger Betrag." };
+  try {
+    await addReceiptToLine(
+      lineId,
+      {
+        kind: receipt.kind,
+        ref: receipt.ref,
+        amount: confirmedAmount,
+        openAmount: receipt.amount,
+        skontoPayAmount: receipt.skontoPayAmount,
+        supplier: receipt.supplier,
+        invoiceNumber: receipt.invoiceNumber,
+      },
+      userId
+    );
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Zuordnen fehlgeschlagen." };
+  }
 }
 
 /** Entfernt einen zugeordneten Beleg von einer Zeile (nimmt ggf. bereits gesetzten Zahlstatus zurück auf "offen"). */

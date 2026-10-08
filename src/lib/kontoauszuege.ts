@@ -1125,11 +1125,17 @@ export async function deleteStatementLine(id: number, userId: number | null = nu
   await rebuildDisplayFile();
 }
 
-/** full = voller offener Betrag, skonto = exakt der hinterlegte Skonto-Zahlbetrag, partial = weniger (Teilzahlung). */
+/**
+ * full = voller offener Betrag, skonto = exakt der hinterlegte Skonto-Zahlbetrag,
+ * partial = betragsmäßig weniger (Teilzahlung). Vergleicht über den Betrag
+ * (nicht das Vorzeichen), damit das auch für Gutschriften funktioniert (dort
+ * sind `confirmedAmount`/`openAmount` negativ – betragsmäßig "weniger" heißt
+ * dort trotzdem, dass der Betrag NÄHER AN NULL liegt als der offene Betrag).
+ */
 function classifySettlement(confirmedAmount: number, openAmount: number, skontoPayAmount: number | null): "full" | "skonto" | "partial" {
   if (Math.abs(confirmedAmount - openAmount) < 0.01) return "full";
   if (skontoPayAmount != null && Math.abs(confirmedAmount - skontoPayAmount) < 0.01) return "skonto";
-  if (confirmedAmount < openAmount) return "partial";
+  if (Math.abs(confirmedAmount) < Math.abs(openAmount)) return "partial";
   return "full"; // Ausnahmefall (zugeordnet > offen) – wie voll behandeln
 }
 
@@ -1142,6 +1148,10 @@ function classifySettlement(confirmedAmount: number, openAmount: number, skontoP
  * `applyReceiptPaymentEffect`) – unabhängig davon, ob die Zeile insgesamt
  * schon ihren Soll-Betrag erreicht hat (z. B. deckt eine Bank-Sammel-
  * überweisung mehrere Rechnungen ab, ohne dass die Summe exakt passen muss).
+ * Gutschriften (negativer `openAmount`) lassen sich nur VOLLSTÄNDIG zuordnen
+ * (`amount` muss exakt `openAmount` entsprechen) – eine Teilzahlung in
+ * negativer Richtung kann die manuelle Belegverwaltung nicht abbilden
+ * (`addManualReceiptPartialPayment` setzt positive Beträge voraus).
  */
 export async function addReceiptToLine(
   lineId: number,
@@ -1157,6 +1167,9 @@ export async function addReceiptToLine(
   userId: number | null
 ): Promise<void> {
   await ensureTables();
+  if (receipt.openAmount < 0 && Math.abs(receipt.amount - receipt.openAmount) >= 0.01) {
+    throw new Error("Gutschriften können nur vollständig (mit dem kompletten Gutschriftsbetrag) zugeordnet werden.");
+  }
   const settlementKind = classifySettlement(receipt.amount, receipt.openAmount, receipt.skontoPayAmount);
   const [result] = await getPool().query(
     `INSERT INTO bank_statement_line_receipts (line_id, receipt_kind, receipt_ref, amount, settlement_kind, supplier, invoice_number) VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -1357,7 +1370,10 @@ export async function searchAssignableReceipts(query: string): Promise<{ results
   try {
     const [manualReceipts, manualOcrIds] = await Promise.all([listAllManualReceipts(), searchManualOcrIds(q)]);
     for (const r of manualReceipts) {
-      if (r.openAmount <= 0.01) continue; // nur offene (bzw. teilweise bezahlte) Belege
+      // Nur offene (bzw. teilweise bezahlte) Belege ODER noch nicht verwendete Gutschriften
+      // (negativer Betrag) – `Math.abs` statt direktem Vergleich, damit Gutschriften (negativer
+      // offener Betrag) nicht fälschlich als "bereits erledigt" herausgefiltert werden.
+      if (Math.abs(r.openAmount) <= 0.01) continue;
       const hit =
         (r.supplier ?? "").toLowerCase().includes(q) ||
         (r.invoiceNumber ?? "").toLowerCase().includes(q) ||
