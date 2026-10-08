@@ -23,6 +23,7 @@ import {
   type StatementLine,
   type AssignableReceiptOption,
 } from "@/lib/kontoauszuege";
+import { extractLineAmount } from "@/lib/kontoauszug-line-ocr";
 
 const MAX_SIZE = 25 * 1024 * 1024;
 
@@ -186,4 +187,11 @@ export async function removeReceiptFromLineAction(linkId: number): Promise<Actio
 /** Sucht Belege (manuell + HERO) nach Lieferant/Belegnummer, zum Zuordnen zu einer Zeile. */
 export async function searchAssignableReceiptsAction(query: string): Promise<AssignableReceiptOption[]> {
   return searchAssignableReceipts(query);
+}
+
+/** Liest den Betrag aus dem gezogenen Rechteck per KI aus (zum Vorausfüllen, bleibt korrigierbar). */
+export async function extractLineAmountAction(imageBase64Png: string): Promise<{ amount: number | null; error?: string }> {
+  const userId = await currentUserId();
+  if (userId == null) return { amount: null, error: "Nicht angemeldet." };
+  return extractLineAmount(imageBase64Png);
 }

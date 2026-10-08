@@ -8,6 +8,7 @@ import {
   addReceiptToLineAction,
   removeReceiptFromLineAction,
   searchAssignableReceiptsAction,
+  extractLineAmountAction,
 } from "@/app/dashboard/belege/kontoauszug/actions";
 import type { StatementLine, AssignableReceiptOption } from "@/lib/kontoauszuege";
 
@@ -29,6 +30,19 @@ function parseGermanAmount(s: string): number | null {
   const clean = s.trim().replace(/\./g, "").replace(",", ".");
   const n = Number(clean);
   return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/** Schneidet einen Bereich aus einem Canvas aus und liefert ihn als Base64-PNG (ohne data:-Prefix). */
+function cropCanvasToPngBase64(source: HTMLCanvasElement, left: number, top: number, width: number, height: number): string | null {
+  const w = Math.max(1, Math.round(width));
+  const h = Math.max(1, Math.round(height));
+  const crop = document.createElement("canvas");
+  crop.width = w;
+  crop.height = h;
+  const ctx = crop.getContext("2d");
+  if (!ctx) return null;
+  ctx.drawImage(source, Math.round(left), Math.round(top), w, h, 0, 0, w, h);
+  return crop.toDataURL("image/png").split(",")[1] ?? null;
 }
 
 function fmtEur(n: number): string {
@@ -69,6 +83,8 @@ export default function PdfLineAssignModal({
   const [pendingAmount, setPendingAmount] = useState("");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  // Betrag wird per KI aus dem gezogenen Ausschnitt vorausgefüllt (bleibt korrigierbar).
+  const [ocrBusy, setOcrBusy] = useState(false);
 
   const [searchOpenFor, setSearchOpenFor] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -137,6 +153,8 @@ export default function PdfLineAssignModal({
   };
   const handlePointerUp = () => {
     if (dragStart && dragCurrent && viewport) {
+      const left = Math.min(dragStart.x, dragCurrent.x);
+      const top = Math.min(dragStart.y, dragCurrent.y);
       const width = Math.abs(dragCurrent.x - dragStart.x);
       const height = Math.abs(dragCurrent.y - dragStart.y);
       if (width >= 4 && height >= 4) {
@@ -150,6 +168,19 @@ export default function PdfLineAssignModal({
         });
         setPendingAmount("");
         setCreateError(null);
+
+        // Betrag aus dem gezogenen Ausschnitt per KI vorausfüllen (korrigierbar).
+        const canvas = canvasRef.current;
+        const crop = canvas ? cropCanvasToPngBase64(canvas, left, top, width, height) : null;
+        if (crop) {
+          setOcrBusy(true);
+          void extractLineAmountAction(crop).then((res) => {
+            setOcrBusy(false);
+            if (res.amount != null) {
+              setPendingAmount(res.amount.toFixed(2).replace(".", ","));
+            }
+          });
+        }
       }
     }
     setDragStart(null);
@@ -281,7 +312,7 @@ export default function PdfLineAssignModal({
             </button>
           </div>
           <span className="text-xs text-gray-400">
-            Mit der Maus einen Rahmen um eine Zeile ziehen, Betrag eingeben, dann Belege zuordnen.
+            Mit der Maus einen Rahmen um eine Zeile ziehen – Betrag wird automatisch erkannt (korrigierbar), dann Belege zuordnen.
           </span>
         </div>
 
@@ -324,13 +355,14 @@ export default function PdfLineAssignModal({
                     value={pendingAmount}
                     onChange={(e) => setPendingAmount(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && void confirmNewLine()}
-                    placeholder="z. B. 1646,80"
-                    className="w-28 border border-line px-2 py-1 text-xs outline-none focus:border-brand-red/60"
+                    placeholder={ocrBusy ? "Wird erkannt …" : "z. B. 1646,80"}
+                    disabled={ocrBusy}
+                    className="w-28 border border-line px-2 py-1 text-xs outline-none focus:border-brand-red/60 disabled:bg-gray-100"
                   />
                   <button
                     type="button"
                     onClick={confirmNewLine}
-                    disabled={creating}
+                    disabled={creating || ocrBusy}
                     className="rounded-md bg-brand-red px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
                   >
                     {creating ? "…" : "Anlegen"}
@@ -339,6 +371,7 @@ export default function PdfLineAssignModal({
                     Abbrechen
                   </button>
                 </div>
+                {ocrBusy && <p className="mt-1 text-xs text-gray-400">Betrag wird aus dem Ausschnitt erkannt …</p>}
                 {createError && <p className="mt-1 text-xs text-rose-600">{createError}</p>}
               </div>
             )}
