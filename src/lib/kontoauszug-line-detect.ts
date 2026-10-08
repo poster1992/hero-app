@@ -23,14 +23,18 @@ export interface MinimalTextItem {
   height: number;
 }
 
-// Deutsches Betragsformat: 1.234,56 oder 1234,56, optional führendes Minus.
-const AMOUNT_RE = /-?\d{1,3}(?:\.\d{3})*,\d{2}/g;
+// Deutsches Betragsformat: Tausendertrenner als Punkt ODER (normales/geschütztes)
+// Leerzeichen – je nach Bank z.B. "1.234,56" oder "2 330,90". Unser eigenes
+// Zusammensetzen der Zeile (join(" ")) fügt zwischen getrennten Textelementen
+// ohnehin ein normales Leerzeichen ein, falls die Bank den Tausenderteil als
+// eigenes PDF-Textelement ausgibt.
+const AMOUNT_RE = /-?\d{1,3}(?:[.  ]\d{3})*,\d{2}/g;
 // Zeilen, die nur aus Datum(en) bestehen, sind keine Beträge – grobe Heuristik reicht hier nicht,
 // die Betragssuche selbst filtert über das Dezimalkomma-Format ausreichend genau.
 
-// Eröffnungs-/Schluss-/Anfangs-/Endsaldo sind keine Buchungen (Eingänge/Abgänge), sondern
-// Kontostände – sollen nicht als Zeile erkannt werden.
-const EXCLUDE_RE = /saldo|kontostand/i;
+// Eröffnungs-/Schluss-/Anfangs-/Endsaldo, Tagesabschluss-Summenzeilen und
+// Kontostände sind keine einzelnen Buchungen (Eingänge/Abgänge) – nicht erkennen.
+const EXCLUDE_RE = /saldo|kontostand|summe|tagesabschluss/i;
 
 /** Gruppiert Textelemente einer Seite zu Zeilen (nach Y-Position) und erkennt je Zeile einen Betrag. */
 export function detectLinesOnPage(page: number, items: MinimalTextItem[]): DetectedLine[] {
@@ -59,7 +63,7 @@ export function detectLinesOnPage(page: number, items: MinimalTextItem[]): Detec
     if (!matches || matches.length === 0) continue;
     // Der Betrag steht in Kontoauszügen fast immer am Zeilenende.
     const last = matches[matches.length - 1];
-    const amount = Number(last.replace(/\./g, "").replace(",", ".").replace(/^-/, ""));
+    const amount = Number(last.replace(/[.  ]/g, "").replace(",", ".").replace(/^-/, ""));
     if (!Number.isFinite(amount) || amount <= 0) continue;
 
     const minX = Math.min(...g.items.map((it) => it.transform[4]));
