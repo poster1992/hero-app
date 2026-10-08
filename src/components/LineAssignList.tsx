@@ -23,11 +23,11 @@ function fmtEur(n: number): string {
 
 /**
  * Liste der Zeilen-Zuordnungen (Soll-Betrag, Status, zugeordnete Belege,
- * Beleg suchen/zuordnen, Beleg/Zeile entfernen) – als eigene Komponente, damit
- * sie sowohl im "Belege zuordnen"-Fenster (`PdfLineAssignModal`, dort zusammen
- * mit dem Rechteck-Zeichnen) als auch direkt in der Seitenleiste
- * (`LineAssignPanel`, ohne Zeichnen) verwendet werden kann, ohne die Logik
- * doppelt zu pflegen.
+ * Beleg suchen/zuordnen, Beleg/Zeile entfernen) – eingebunden über
+ * `LineAssignPanel` in der Seitenleiste. (Ursprünglich auch im separaten
+ * "Belege zuordnen"-Fenster `PdfLineAssignModal` verwendet; der Button dafür
+ * wurde auf Nutzerwunsch entfernt, die Komponente blieb als eigenständige
+ * Logik erhalten statt dupliziert zu werden.)
  */
 export default function LineAssignList({
   lines,

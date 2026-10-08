@@ -14,8 +14,6 @@ import {
 import type { StatementUpload, StatementMarker, StatementStamp } from "@/lib/kontoauszuege";
 import { MARKER_COLORS, markerColorHex, type MarkerColor } from "@/lib/kontoauszug-colors";
 import { detectLinesOnPage, type DetectedLine, type MinimalTextItem } from "@/lib/kontoauszug-line-detect";
-import PdfHighlightModal from "@/components/PdfHighlightModal";
-import PdfLineAssignModal from "@/components/PdfLineAssignModal";
 import LineAssignPanel from "@/components/LineAssignPanel";
 
 function fmtDateTime(iso: string | null): string {
@@ -51,8 +49,6 @@ export default function KontoauszugClient({
   const [search, setSearch] = useState("");
   const [colorFilter, setColorFilter] = useState<MarkerColor | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [highlightOpen, setHighlightOpen] = useState(false);
-  const [lineAssignOpen, setLineAssignOpen] = useState(false);
   // Erzwingt ein Neuladen des PDF-iframes (die Sammel-Datei ändert sich serverseitig
   // z. B. beim Markieren, ohne dass sich Seitenzahl/URL sonst ändern würde).
   const [reloadToken, setReloadToken] = useState(0);
@@ -287,16 +283,6 @@ export default function KontoauszugClient({
           {hasFile && (
             <button
               type="button"
-              onClick={() => setHighlightOpen(true)}
-              title="Auf der aktuell angezeigten Seite mit der Maus markieren (wird dauerhaft ins PDF eingebrannt)"
-              className="rounded border border-gray-300 px-2 py-0.5 text-xs font-medium text-gray-700 hover:border-brand-red/50 hover:bg-gray-50"
-            >
-              🖍 Seite {activePage} markieren
-            </button>
-          )}
-          {hasFile && (
-            <button
-              type="button"
               onClick={handleToggleStamp}
               disabled={stampBusy}
               title={
@@ -311,16 +297,6 @@ export default function KontoauszugClient({
               }`}
             >
               {stampBusy ? "…" : currentStamp ? "✓ Geprüft · entfernen" : "📋 Seite stempeln"}
-            </button>
-          )}
-          {hasFile && (
-            <button
-              type="button"
-              onClick={() => setLineAssignOpen(true)}
-              title="Zeilen im Kontoauszug mit Belegen abgleichen (grün = Betrag stimmt, rot = fehlt noch)"
-              className="rounded border border-gray-300 px-2 py-0.5 text-xs font-medium text-gray-700 hover:border-brand-red/50 hover:bg-gray-50"
-            >
-              🧾 Belege zuordnen
             </button>
           )}
           {hasFile && (
@@ -558,33 +534,6 @@ export default function KontoauszugClient({
         )}
       </div>
     </div>
-    {highlightOpen && (
-      <PdfHighlightModal
-        key={activePage}
-        page={activePage}
-        onClose={() => setHighlightOpen(false)}
-        onSaved={() => {
-          setHighlightOpen(false);
-          setReloadToken((t) => t + 1);
-          router.refresh();
-        }}
-        onDeleted={() => {
-          setReloadToken((t) => t + 1);
-          router.refresh();
-        }}
-      />
-    )}
-    {lineAssignOpen && (
-      <PdfLineAssignModal
-        key={activePage}
-        page={activePage}
-        onClose={() => setLineAssignOpen(false)}
-        onChanged={() => {
-          setReloadToken((t) => t + 1);
-          router.refresh();
-        }}
-      />
-    )}
     </>
   );
 }

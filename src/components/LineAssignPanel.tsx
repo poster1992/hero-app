@@ -8,11 +8,10 @@ import LineAssignList from "@/components/LineAssignList";
 /**
  * Zeigt die Zeilen-Zuordnungen der aktuell angezeigten Seite direkt in der
  * Seitenleiste (Soll-Betrag, Status, zugeordnete Belege, Beleg suchen +
- * zuordnen/entfernen) – ohne dafür das separate "Belege zuordnen"-Fenster
- * öffnen zu müssen. Neue Zeilen (Rechteck um eine Buchungszeile ziehen)
- * legt weiterhin nur das Fenster bzw. „Zeilen automatisch erkennen" an, da
- * das Ziehen eine eigene Canvas-Darstellung der Seite braucht (die
- * Hauptansicht ist bewusst ein natives iframe, siehe Suche-vs-Scroll-Trade-off).
+ * zuordnen/entfernen). Neue Zeilen legt ausschließlich „Zeilen automatisch
+ * erkennen" (Toolbar, ganzes Dokument über den PDF-Text-Layer) an – der
+ * frühere Button zum manuellen Rechteck-Ziehen (eigenes Fenster) wurde auf
+ * Nutzerwunsch entfernt.
  */
 export default function LineAssignPanel({
   page,
@@ -54,8 +53,8 @@ export default function LineAssignPanel({
         <p className="text-xs text-gray-500">Wird geladen …</p>
       ) : lines.length === 0 ? (
         <p className="text-xs text-gray-500">
-          Noch keine Zeile auf dieser Seite markiert. Über &bdquo;🧾 Belege zuordnen&ldquo; oben einen Rahmen um eine
-          Buchungszeile ziehen oder &bdquo;🔍 Zeilen automatisch erkennen&ldquo; für das ganze Dokument nutzen.
+          Noch keine Zeile auf dieser Seite erkannt. Oben &bdquo;🔍 Zeilen automatisch erkennen&ldquo; nutzen (gesamtes
+          Dokument, Text-Layer der PDF).
         </p>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto">
