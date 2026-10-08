@@ -199,7 +199,7 @@ export default function LineAssignList({
                 : l.confirmedWithoutReceipt
                   ? "✓ Manuell geprüft (ohne Beleg)"
                   : `Fehlt ${fmtEur(diff)}`}
-              {sumMatched && l.paidApplied && " · Zahlstatus der Belege aktualisiert"}
+              {l.paidApplied && " · Zahlstatus der Belege aktualisiert"}
             </div>
             {!sumMatched && (
               <button
@@ -269,6 +269,11 @@ export default function LineAssignList({
                       {r.settlementKind !== "full" && (
                         <span className="ml-1 text-amber-600">
                           ({r.settlementKind === "skonto" ? "Skonto" : "Teilzahlung"})
+                        </span>
+                      )}
+                      {r.paidApplied && (
+                        <span className="ml-1 text-emerald-600" title="Zahlstatus dieses Belegs wurde übernommen">
+                          ✓
                         </span>
                       )}
                     </span>

@@ -135,6 +135,7 @@ async function ensureTables(): Promise<void> {
   await ensureHighlightMarkerIdColumn();
   await ensureLineDateColumns();
   await ensureLineReceiptSettlementColumn();
+  await ensureLineReceiptPaidAppliedColumn();
   await ensureLineConfirmedColumn();
   await ensureLineNoteColumn();
   tableReady = true;
@@ -218,6 +219,30 @@ async function ensureLineReceiptSettlementColumn(): Promise<void> {
       .catch(() => {});
   }
   lineReceiptSettlementColumnReady = true;
+}
+
+/**
+ * Self-healing: `paid_applied`-Spalte auf bank_statement_line_receipts (NICHT
+ * zu verwechseln mit der alten, gleichnamigen Spalte auf bank_statement_lines)
+ * – trackt den Zahlstatus-Abgleich jetzt JE ZUGEORDNETEM BELEG statt nur
+ * einmalig für die ganze Zeile, damit ein Beleg sofort bei der Zuordnung
+ * abgehakt wird, auch wenn die Zeilensumme insgesamt (noch) nicht exakt zum
+ * Soll-Betrag passt (z. B. Bank-Sammelüberweisung über mehrere Rechnungen).
+ */
+let lineReceiptPaidAppliedColumnReady = false;
+async function ensureLineReceiptPaidAppliedColumn(): Promise<void> {
+  if (lineReceiptPaidAppliedColumnReady) return;
+  const pool = getPool();
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT COUNT(*) AS n FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'bank_statement_line_receipts' AND COLUMN_NAME = 'paid_applied'`
+  );
+  if ((rows[0]?.n ?? 0) === 0) {
+    await pool
+      .query("ALTER TABLE bank_statement_line_receipts ADD COLUMN paid_applied TINYINT NOT NULL DEFAULT 0")
+      .catch(() => {});
+  }
+  lineReceiptPaidAppliedColumnReady = true;
 }
 
 /** Self-healing: `note`-Spalte nachrüsten, falls die Tabelle schon vor der Notiz-Funktion existierte. */
@@ -875,6 +900,8 @@ export interface LineReceipt {
   supplier: string | null;
   invoiceNumber: string | null;
   settlementKind: "full" | "skonto" | "partial";
+  /** true, sobald der Zahlstatus dieses einzelnen Belegs übernommen wurde. */
+  paidApplied: boolean;
 }
 
 export interface StatementLine {
@@ -892,7 +919,7 @@ export interface StatementLine {
   receipts: LineReceipt[];
   /** true, wenn die Summe der zugeordneten Belege passt ODER die Zeile manuell ohne Beleg bestätigt wurde. */
   matched: boolean;
-  /** true, sobald beim Matchen der Zahlstatus der zugeordneten Belege gesetzt wurde (einmalig). */
+  /** true, wenn für ALLE zugeordneten Belege der Zahlstatus bereits übernommen wurde (siehe `LineReceipt.paidApplied`). */
   paidApplied: boolean;
   /** true, wenn die Zeile manuell "geprüft" ohne Beleg-Zuordnung abgehakt wurde (z. B. Zahlungseingänge). */
   confirmedWithoutReceipt: boolean;
@@ -912,7 +939,6 @@ interface LineRow extends RowDataPacket {
   amount: number | string;
   date: string | null;
   note: string | null;
-  paid_applied: number;
   confirmed_without_receipt: number;
   confirmed_at: string | null;
   confirmed_by_name: string | null;
@@ -927,6 +953,7 @@ interface LineReceiptRow extends RowDataPacket {
   receipt_ref: string;
   amount: number | string;
   settlement_kind: string;
+  paid_applied: number;
   supplier: string | null;
   invoice_number: string | null;
 }
@@ -935,7 +962,7 @@ interface LineReceiptRow extends RowDataPacket {
 export async function listStatementLines(page: number): Promise<StatementLine[]> {
   await ensureTables();
   const [lineRows] = await getPool().query<LineRow[]>(
-    `SELECT l.id, l.page, l.x, l.y, l.width, l.height, l.amount, l.date, l.note, l.paid_applied,
+    `SELECT l.id, l.page, l.x, l.y, l.width, l.height, l.amount, l.date, l.note,
             l.confirmed_without_receipt, l.confirmed_at, l.created_at,
             COALESCE(NULLIF(u.display_name, ''), u.username) AS created_by_name,
             COALESCE(NULLIF(cu.display_name, ''), cu.username) AS confirmed_by_name
@@ -949,7 +976,7 @@ export async function listStatementLines(page: number): Promise<StatementLine[]>
   if (lineRows.length === 0) return [];
   const ids = lineRows.map((r) => r.id);
   const [receiptRows] = await getPool().query<LineReceiptRow[]>(
-    `SELECT id, line_id, receipt_kind, receipt_ref, amount, settlement_kind, supplier, invoice_number
+    `SELECT id, line_id, receipt_kind, receipt_ref, amount, settlement_kind, paid_applied, supplier, invoice_number
      FROM bank_statement_line_receipts WHERE line_id IN (${ids.map(() => "?").join(",")}) ORDER BY id ASC`,
     ids
   );
@@ -964,6 +991,7 @@ export async function listStatementLines(page: number): Promise<StatementLine[]>
       supplier: r.supplier,
       invoiceNumber: r.invoice_number,
       settlementKind: r.settlement_kind === "skonto" || r.settlement_kind === "partial" ? r.settlement_kind : "full",
+      paidApplied: Number(r.paid_applied) === 1,
     });
     byLine.set(r.line_id, list);
   }
@@ -983,7 +1011,7 @@ export async function listStatementLines(page: number): Promise<StatementLine[]>
       note: r.note,
       receipts,
       matched: Math.abs(sum - amount) < 0.01 || Number(r.confirmed_without_receipt) === 1,
-      paidApplied: Number(r.paid_applied) === 1,
+      paidApplied: receipts.length > 0 && receipts.every((x) => x.paidApplied),
       confirmedWithoutReceipt: Number(r.confirmed_without_receipt) === 1,
       confirmedByName: r.confirmed_by_name,
       confirmedAt: r.confirmed_at ? String(r.confirmed_at) : null,
@@ -1069,32 +1097,28 @@ export async function addStatementLinesBatch(
 
 /**
  * Löscht eine Zeilen-Zuordnung samt zugeordneter Belege und baut die
- * angezeigte Datei neu auf. War der Zahlstatus für diese Zeile bereits
- * gesetzt (`paid_applied`), wird er für jeden zugeordneten Beleg vorher
- * zurückgenommen (siehe `revertReceiptPaymentEffect`).
+ * angezeigte Datei neu auf. Für jeden zugeordneten Beleg, dessen Zahlstatus
+ * bereits übernommen war (`paid_applied`), wird dieser vorher zurückgenommen
+ * (siehe `revertReceiptPaymentEffect`).
  */
 export async function deleteStatementLine(id: number, userId: number | null = null): Promise<void> {
   await ensureTables();
   const pool = getPool();
-  const [lineRows] = await pool.query<RowDataPacket[]>(`SELECT paid_applied FROM bank_statement_lines WHERE id = ?`, [
-    id,
-  ]);
-  if (Number(lineRows[0]?.paid_applied) === 1) {
-    const [receiptRows] = await pool.query<RowDataPacket[]>(
-      `SELECT receipt_kind, receipt_ref, amount, settlement_kind FROM bank_statement_line_receipts WHERE line_id = ?`,
-      [id]
+  const [receiptRows] = await pool.query<RowDataPacket[]>(
+    `SELECT receipt_kind, receipt_ref, amount, settlement_kind, paid_applied FROM bank_statement_line_receipts WHERE line_id = ?`,
+    [id]
+  );
+  for (const r of receiptRows) {
+    if (Number(r.paid_applied) !== 1) continue;
+    await revertReceiptPaymentEffect(
+      {
+        kind: r.receipt_kind === "hero" ? "hero" : "manual",
+        ref: String(r.receipt_ref),
+        amount: Number(r.amount),
+        settlementKind: String(r.settlement_kind),
+      },
+      userId
     );
-    for (const r of receiptRows) {
-      await revertReceiptPaymentEffect(
-        {
-          kind: r.receipt_kind === "hero" ? "hero" : "manual",
-          ref: String(r.receipt_ref),
-          amount: Number(r.amount),
-          settlementKind: String(r.settlement_kind),
-        },
-        userId
-      );
-    }
   }
   await pool.query(`DELETE FROM bank_statement_line_receipts WHERE line_id = ?`, [id]);
   await pool.query(`DELETE FROM bank_statement_lines WHERE id = ?`, [id]);
@@ -1114,8 +1138,10 @@ function classifySettlement(confirmedAmount: number, openAmount: number, skontoP
  * `amount` ist der vom Nutzer bestätigte (ggf. angepasste) Betrag; `openAmount`
  * und `skontoPayAmount` (nur manuell, sonst null) stammen aus der Suche und
  * bestimmen, ob dies als volle Zahlung, Skonto-Zahlung oder Teilzahlung gilt.
- * Erreicht die Zeile danach ihren Soll-Betrag, wird der Zahlstatus automatisch
- * gesetzt (siehe `applyLineReceiptPaymentEffects`).
+ * Der Zahlstatus dieses Belegs wird SOFORT übernommen (siehe
+ * `applyReceiptPaymentEffect`) – unabhängig davon, ob die Zeile insgesamt
+ * schon ihren Soll-Betrag erreicht hat (z. B. deckt eine Bank-Sammel-
+ * überweisung mehrere Rechnungen ab, ohne dass die Summe exakt passen muss).
  */
 export async function addReceiptToLine(
   lineId: number,
@@ -1132,68 +1158,58 @@ export async function addReceiptToLine(
 ): Promise<void> {
   await ensureTables();
   const settlementKind = classifySettlement(receipt.amount, receipt.openAmount, receipt.skontoPayAmount);
-  await getPool().query(
+  const [result] = await getPool().query(
     `INSERT INTO bank_statement_line_receipts (line_id, receipt_kind, receipt_ref, amount, settlement_kind, supplier, invoice_number) VALUES (?, ?, ?, ?, ?, ?, ?)`,
     [lineId, receipt.kind, receipt.ref, receipt.amount, settlementKind, receipt.supplier, receipt.invoiceNumber]
   );
+  const linkId = (result as { insertId?: number }).insertId ?? 0;
   await rebuildDisplayFile();
-  await applyLineReceiptPaymentEffects(lineId, userId);
+  await applyReceiptPaymentEffect(linkId, userId);
 }
 
 /**
- * Setzt, sobald eine Zeile ihren Soll-Betrag erreicht hat (grün), einmalig den
- * Zahlstatus der zugeordneten Belege – passend zur beim Zuordnen ermittelten
- * Art (voll/Skonto/Teilzahlung). Bezahldatum = Buchungsdatum der Zeile, falls
- * bekannt, sonst heute. Läuft nur EINMAL pro Zeile (Flag `paid_applied`) –
- * nachträgliches Entfernen/Hinzufügen von Belegen auf einer bereits
- * abgeschlossenen Zeile ändert den Zahlstatus NICHT nochmal automatisch
- * (bewusst, um Doppel-Verbuchungen bei Teilzahlungen zu vermeiden; manuelle
- * Korrektur dann über die normale Belegliste).
+ * Setzt den Zahlstatus GENAU EINES zugeordneten Belegs – passend zur beim
+ * Zuordnen ermittelten Art (voll/Skonto/Teilzahlung). Bezahldatum =
+ * Buchungsdatum der Zeile, falls bekannt, sonst heute. Läuft nur EINMAL je
+ * Beleg-Zuordnung (Flag `paid_applied` auf `bank_statement_line_receipts`).
  */
-async function applyLineReceiptPaymentEffects(lineId: number, userId: number | null): Promise<void> {
+async function applyReceiptPaymentEffect(linkId: number, userId: number | null): Promise<void> {
   const pool = getPool();
-  const [lineRows] = await pool.query<RowDataPacket[]>(
-    `SELECT amount, date, paid_applied FROM bank_statement_lines WHERE id = ?`,
-    [lineId]
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT lr.receipt_kind, lr.receipt_ref, lr.amount, lr.settlement_kind, lr.paid_applied, l.date
+     FROM bank_statement_line_receipts lr
+     JOIN bank_statement_lines l ON l.id = lr.line_id
+     WHERE lr.id = ?`,
+    [linkId]
   );
-  const line = lineRows[0];
-  if (!line || Number(line.paid_applied) === 1) return;
+  const row = rows[0];
+  if (!row || Number(row.paid_applied) === 1) return;
 
-  const [receiptRows] = await pool.query<RowDataPacket[]>(
-    `SELECT receipt_kind, receipt_ref, amount, settlement_kind FROM bank_statement_line_receipts WHERE line_id = ?`,
-    [lineId]
-  );
-  if (receiptRows.length === 0) return;
-  const sum = receiptRows.reduce((s, r) => s + Number(r.amount), 0);
-  if (Math.abs(sum - Number(line.amount)) >= 0.01) return; // noch nicht vollständig zugeordnet
-
-  const paidDate: string | undefined = line.date ? String(line.date).slice(0, 10) : undefined;
-  for (const r of receiptRows) {
-    const kind = r.settlement_kind === "skonto" || r.settlement_kind === "partial" ? r.settlement_kind : "full";
-    const amount = Number(r.amount);
-    if (r.receipt_kind === "manual") {
-      const id = Number(r.receipt_ref);
-      if (kind === "partial") {
-        await addManualReceiptPartialPayment(id, amount, userId, paidDate).catch(() => {});
-      } else {
-        await setManualReceiptPaid(id, true, kind === "skonto", userId, paidDate).catch(() => {});
-      }
+  const paidDate: string | undefined = row.date ? String(row.date).slice(0, 10) : undefined;
+  const kind = row.settlement_kind === "skonto" || row.settlement_kind === "partial" ? row.settlement_kind : "full";
+  const amount = Number(row.amount);
+  if (row.receipt_kind === "manual") {
+    const id = Number(row.receipt_ref);
+    if (kind === "partial") {
+      await addManualReceiptPartialPayment(id, amount, userId, paidDate).catch(() => {});
     } else {
-      const eur = amount.toLocaleString("de-DE", { style: "currency", currency: "EUR" });
-      const kindLabel = kind === "partial" ? "Teilzahlung" : kind === "skonto" ? "mit Skonto" : "voll";
-      const remark = `Kontoauszug-Abgleich${paidDate ? ` vom ${paidDate}` : ""}: ${eur} (${kindLabel})`;
-      // HERO kennt lokal nur "bezahlt"/"offen" (kein Skonto-Flag, keine Teilzahlungs-
-      // Summierung) – bei Teilzahlung bleibt der Status "offen", nur als Notiz vermerkt.
-      await setPaymentOverride(r.receipt_ref, kind === "partial" ? "offen" : "bezahlt", userId, undefined, remark).catch(
-        () => {}
-      );
+      await setManualReceiptPaid(id, true, kind === "skonto", userId, paidDate).catch(() => {});
     }
+  } else {
+    const eur = amount.toLocaleString("de-DE", { style: "currency", currency: "EUR" });
+    const kindLabel = kind === "partial" ? "Teilzahlung" : kind === "skonto" ? "mit Skonto" : "voll";
+    const remark = `Kontoauszug-Abgleich${paidDate ? ` vom ${paidDate}` : ""}: ${eur} (${kindLabel})`;
+    // HERO kennt lokal nur "bezahlt"/"offen" (kein Skonto-Flag, keine Teilzahlungs-
+    // Summierung) – bei Teilzahlung bleibt der Status "offen", nur als Notiz vermerkt.
+    await setPaymentOverride(row.receipt_ref, kind === "partial" ? "offen" : "bezahlt", userId, undefined, remark).catch(
+      () => {}
+    );
   }
-  await pool.query(`UPDATE bank_statement_lines SET paid_applied = 1 WHERE id = ?`, [lineId]);
+  await pool.query(`UPDATE bank_statement_line_receipts SET paid_applied = 1 WHERE id = ?`, [linkId]);
 }
 
 /**
- * Macht den in `applyLineReceiptPaymentEffects` gesetzten Zahlstatus für
+ * Macht den in `applyReceiptPaymentEffect` gesetzten Zahlstatus für
  * EINEN zugeordneten Beleg wieder rückgängig (Gegenstück dazu). Wird
  * aufgerufen, bevor eine Beleg-Zuordnung entfernt oder eine ganze Zeile
  * gelöscht wird, deren Zahlstatus bereits übernommen war.
@@ -1219,19 +1235,15 @@ async function revertReceiptPaymentEffect(
 
 /**
  * Entfernt einen zugeordneten Beleg von einer Zeile und baut die angezeigte
- * Datei neu auf. War der Zahlstatus für diese Zeile bereits übernommen
- * (`paid_applied`), wird er für diesen Beleg vorher zurückgenommen und das
- * Flag der Zeile wieder auf "noch nicht gesetzt" zurückgestellt, damit eine
- * spätere korrekte Zuordnung den Status erneut setzen kann.
+ * Datei neu auf. War der Zahlstatus für GENAU DIESEN Beleg bereits übernommen
+ * (`paid_applied`), wird er vorher zurückgenommen (siehe `revertReceiptPaymentEffect`).
  */
 export async function removeReceiptFromLine(linkId: number, userId: number | null = null): Promise<void> {
   await ensureTables();
   const pool = getPool();
   const [rows] = await pool.query<RowDataPacket[]>(
-    `SELECT lr.line_id, lr.receipt_kind, lr.receipt_ref, lr.amount, lr.settlement_kind, l.paid_applied
-     FROM bank_statement_line_receipts lr
-     JOIN bank_statement_lines l ON l.id = lr.line_id
-     WHERE lr.id = ?`,
+    `SELECT receipt_kind, receipt_ref, amount, settlement_kind, paid_applied
+     FROM bank_statement_line_receipts WHERE id = ?`,
     [linkId]
   );
   const row = rows[0];
@@ -1245,7 +1257,6 @@ export async function removeReceiptFromLine(linkId: number, userId: number | nul
       },
       userId
     );
-    await pool.query(`UPDATE bank_statement_lines SET paid_applied = 0 WHERE id = ?`, [row.line_id]);
   }
   await pool.query(`DELETE FROM bank_statement_line_receipts WHERE id = ?`, [linkId]);
   await rebuildDisplayFile();
