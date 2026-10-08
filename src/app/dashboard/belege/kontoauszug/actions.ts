@@ -25,6 +25,8 @@ import {
   type AssignableReceiptOption,
 } from "@/lib/kontoauszuege";
 import { extractLineAmount } from "@/lib/kontoauszug-line-ocr";
+import { getBookAccounts, getProjects, getSupplierContacts, type BookAccount } from "@/lib/hero-api";
+import type { ProjectOption, SupplierOption } from "@/components/ManualBelegeForm";
 
 const MAX_SIZE = 25 * 1024 * 1024;
 
@@ -244,4 +246,23 @@ export async function autoDetectLinesAction(
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Erkennung fehlgeschlagen." };
   }
+}
+
+/**
+ * Lädt die Auswahllisten (Konten/Projekte/Lieferanten) für das Formular
+ * „Neuen Beleg erstellen" direkt in der Kontoauszug-Zuordnung – bewusst erst
+ * bei Bedarf (Button-Klick) geladen statt beim Seitenaufruf, da das Formular
+ * meist gar nicht gebraucht wird.
+ */
+export async function getBelegFormOptionsAction(): Promise<{
+  accounts: BookAccount[];
+  projects: ProjectOption[];
+  suppliers: SupplierOption[];
+}> {
+  const [accounts, projects, suppliers] = await Promise.all([
+    getBookAccounts().catch(() => []),
+    getProjects().catch(() => []),
+    getSupplierContacts().catch(() => []),
+  ]);
+  return { accounts, projects, suppliers };
 }

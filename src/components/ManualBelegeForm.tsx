@@ -128,6 +128,7 @@ export function ManualBelegeFormFields({
   projects,
   suppliers,
   receipt,
+  defaultValues,
   onSuccess,
   onCancel,
   formClassName = "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3",
@@ -138,8 +139,10 @@ export function ManualBelegeFormFields({
   suppliers: SupplierOption[];
   /** When set, the form edits this receipt instead of creating a new one. */
   receipt?: EditableReceipt;
-  /** Nach erfolgreichem Speichern aufgerufen (z. B. Modal schließen). */
-  onSuccess?: () => void;
+  /** Nur bei Neuanlage (kein `receipt`): Datum/Betrag vorausfüllen (bleibt frei änderbar). */
+  defaultValues?: { date?: string | null; gross?: number | null };
+  /** Nach erfolgreichem Speichern aufgerufen (z. B. Modal schließen). Bei Neuanlage mit den Kerndaten des neuen Belegs. */
+  onSuccess?: (createdReceipt?: UploadBelegState["createdReceipt"]) => void;
   /** Wenn gesetzt, wird ein Abbrechen-Button angezeigt. */
   onCancel?: () => void;
   /** CSS-Klassen für das Formular-Grid (Layout je Einsatzort). */
@@ -292,10 +295,10 @@ export function ManualBelegeFormFields({
     if (!state.success || state.success === lastSuccess.current) return;
     lastSuccess.current = state.success;
     const t = setTimeout(() => {
-      onSuccess?.();
+      onSuccess?.(state.createdReceipt);
     }, 0);
     return () => clearTimeout(t);
-  }, [state.success, onSuccess]);
+  }, [state.success, state.createdReceipt, onSuccess]);
 
   const accountMatches = (() => {
     const words = accountQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
@@ -337,7 +340,11 @@ export function ManualBelegeFormFields({
   const inputClass =
     "w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-brand-red/60";
 
-  const grossDefault = receipt ? String(Math.abs(receipt.gross)).replace(".", ",") : "";
+  const grossDefault = receipt
+    ? String(Math.abs(receipt.gross)).replace(".", ",")
+    : defaultValues?.gross != null
+      ? String(defaultValues.gross).replace(".", ",")
+      : "";
   const vatDefault = receipt?.vatRate != null ? String(receipt.vatRate) : "";
   const invoiceDefault = receipt?.invoiceNumber ?? "";
   const skontoDefault = receipt?.skontoAmount != null ? String(receipt.skontoAmount).replace(".", ",") : "";
@@ -435,7 +442,13 @@ export function ManualBelegeFormFields({
               </div>
               <div>
                 <label className="mb-1 block text-sm text-gray-600">Belegdatum</label>
-                <input ref={dateInputRef} name="date" type="date" defaultValue={receipt?.date ?? ""} className={inputClass} />
+                <input
+                  ref={dateInputRef}
+                  name="date"
+                  type="date"
+                  defaultValue={receipt?.date ?? defaultValues?.date ?? ""}
+                  className={inputClass}
+                />
               </div>
               <div>
                 <label className="mb-1 block text-sm text-gray-600">Lieferant</label>

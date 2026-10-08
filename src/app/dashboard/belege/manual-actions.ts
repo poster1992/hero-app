@@ -79,6 +79,16 @@ export async function loadEditableReceiptAction(
 export interface UploadBelegState {
   error?: string;
   success?: string;
+  /** Nur bei Neuanlage gesetzt: Kerndaten des frisch angelegten Belegs. */
+  createdReceipt?: {
+    id: number;
+    gross: number;
+    openAmount: number;
+    skontoPayAmount: number | null;
+    supplier: string | null;
+    date: string | null;
+    invoiceNumber: string | null;
+  };
 }
 
 export async function uploadBelegAction(
@@ -154,8 +164,9 @@ export async function uploadBelegAction(
     };
   }
 
+  let createdId: number;
   try {
-    await createManualReceipt({
+    createdId = await createManualReceipt({
       date,
       supplier,
       description,
@@ -179,7 +190,23 @@ export async function uploadBelegAction(
   }
 
   revalidatePath(PATH);
-  return { success: "Beleg gespeichert." };
+  // Direkt den frisch angelegten Beleg mitliefern (z. B. für die sofortige
+  // Kontoauszug-Zuordnung, ohne erneut danach suchen zu müssen).
+  const created = await getManualReceipt(createdId).catch(() => null);
+  return {
+    success: "Beleg gespeichert.",
+    createdReceipt: created
+      ? {
+          id: created.id,
+          gross: created.gross,
+          openAmount: created.openAmount,
+          skontoPayAmount: created.skontoPayAmount,
+          supplier: created.supplier,
+          date: created.date,
+          invoiceNumber: created.invoiceNumber,
+        }
+      : undefined,
+  };
 }
 
 export async function updateBelegAction(

@@ -8,6 +8,7 @@ import {
   searchAssignableReceiptsAction,
 } from "@/app/dashboard/belege/kontoauszug/actions";
 import type { StatementLine, AssignableReceiptOption } from "@/lib/kontoauszuege";
+import CreateReceiptInline from "@/components/CreateReceiptInline";
 
 function parseGermanAmount(s: string): number | null {
   const clean = s.trim().replace(/\./g, "").replace(",", ".");
@@ -36,6 +37,7 @@ export default function LineAssignList({
   onReload: () => void | Promise<void>;
 }) {
   const [busyLineId, setBusyLineId] = useState<number | null>(null);
+  const [creatingForLine, setCreatingForLine] = useState<number | null>(null);
   const [searchOpenFor, setSearchOpenFor] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<AssignableReceiptOption[]>([]);
@@ -56,11 +58,29 @@ export default function LineAssignList({
 
   const openSearch = (lineId: number) => {
     setSearchOpenFor(lineId);
+    setCreatingForLine(null);
     setSearchQuery("");
     setSearchResults([]);
     setSearchError(null);
     setPickedReceipt(null);
     setConfirmAmount("");
+  };
+
+  const openCreate = (lineId: number) => {
+    // Nutzt dieselbe "Beleg ausgewählt → Betrag bestätigen"-Ansicht wie die Suche,
+    // damit der frisch angelegte Beleg sofort zugeordnet werden kann.
+    setSearchOpenFor(lineId);
+    setCreatingForLine(lineId);
+    setSearchQuery("");
+    setSearchResults([]);
+    setSearchError(null);
+    setPickedReceipt(null);
+    setConfirmAmount("");
+  };
+
+  const handleCreated = (receipt: AssignableReceiptOption) => {
+    setCreatingForLine(null);
+    pickReceipt(receipt);
   };
 
   const runSearch = async () => {
@@ -214,6 +234,13 @@ export default function LineAssignList({
                       automatisch als bezahlt abgehakt; ein kleinerer Betrag gilt als Teilzahlung.
                     </p>
                   </div>
+                ) : creatingForLine === l.id ? (
+                  <CreateReceiptInline
+                    defaultAmount={Math.max(0, diff)}
+                    defaultDate={l.date}
+                    onCreated={handleCreated}
+                    onCancel={() => setCreatingForLine(null)}
+                  />
                 ) : (
                   <>
                     <div className="flex items-center gap-1">
@@ -261,17 +288,33 @@ export default function LineAssignList({
                     {!searching && !searchError && searchQuery.trim().length >= 2 && searchResults.length === 0 && (
                       <p className="mt-1 text-gray-400">Keine Treffer.</p>
                     )}
+                    <button
+                      type="button"
+                      onClick={() => openCreate(l.id)}
+                      className="mt-1.5 text-gray-500 underline-offset-2 hover:text-brand-red hover:underline"
+                    >
+                      Kein Treffer? Neuen Beleg erstellen …
+                    </button>
                   </>
                 )}
               </div>
             ) : (
-              <button
-                type="button"
-                onClick={() => openSearch(l.id)}
-                className="mt-2 rounded border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:border-brand-red/50 hover:bg-gray-50"
-              >
-                + Beleg zuordnen
-              </button>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => openSearch(l.id)}
+                  className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:border-brand-red/50 hover:bg-gray-50"
+                >
+                  + Beleg zuordnen
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openCreate(l.id)}
+                  className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:border-brand-red/50 hover:bg-gray-50"
+                >
+                  + Neuen Beleg erstellen
+                </button>
+              </div>
             )}
           </li>
         );
