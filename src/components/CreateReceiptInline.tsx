@@ -8,13 +8,13 @@ import type { BookAccount } from "@/lib/hero-api";
 import type { AssignableReceiptOption } from "@/lib/kontoauszuege";
 
 /**
- * Formular „Neuen Beleg erstellen" direkt innerhalb der Kontoauszug-
- * Zuordnung (für Zeilen, zu denen noch kein passender Beleg existiert –
- * bisher musste man dafür auf die Belege-Seite wechseln). Nutzt dasselbe
- * Formular wie „+ Beleg hochladen" (inkl. Pflichtfeld Konto), damit auch
- * hier angelegte Belege vollständig/korrekt verbucht sind. Nach dem
- * Speichern wird der neue Beleg direkt als Zuordnungs-Vorschlag übergeben
- * (kein erneutes Suchen nötig).
+ * Öffnet dasselbe Popup-Fenster wie „+ Beleg hochladen" auf der normalen
+ * Belege-Seite (gleiches Formular `ManualBelegeFormFields`, gleiche
+ * Modal-Optik) – aufrufbar direkt aus der Kontoauszug-Zuordnung, für Zeilen,
+ * zu denen noch kein passender Beleg existiert (bisher musste man dafür auf
+ * die Belege-Seite wechseln). Betrag/Datum werden aus der Zeile
+ * vorausgefüllt; nach dem Speichern wird der neue Beleg direkt als
+ * Zuordnungs-Vorschlag übergeben (kein erneutes Suchen nötig).
  */
 export default function CreateReceiptInline({
   defaultAmount,
@@ -63,21 +63,41 @@ export default function CreateReceiptInline({
     });
   };
 
-  if (loadError) return <p className="text-xs text-rose-600">Fehler: {loadError}</p>;
-  if (!options) return <p className="text-xs text-gray-500">Formular wird geladen …</p>;
-
   return (
-    <div className="border border-blue-300 bg-blue-50 p-2.5">
-      <p className="mb-2 text-xs font-semibold text-gray-700">Neuen Beleg erstellen:</p>
-      <ManualBelegeFormFields
-        accounts={options.accounts}
-        projects={options.projects}
-        suppliers={options.suppliers}
-        defaultValues={{ date: defaultDate, gross: defaultAmount > 0 ? defaultAmount : null }}
-        onSuccess={handleSuccess}
-        onCancel={onCancel}
-        formClassName="grid grid-cols-1 gap-2 text-xs"
-      />
+    <div
+      className="fixed inset-0 z-[130] flex items-start justify-center overflow-y-auto bg-black/60 p-4 sm:items-center"
+      onClick={onCancel}
+    >
+      <div
+        className="w-full max-w-3xl border border-line bg-white p-6 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-gray-900">Beleg manuell hochladen</h2>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="text-gray-400 transition-colors hover:text-gray-700"
+            aria-label="Schließen"
+          >
+            ✕
+          </button>
+        </div>
+        {loadError ? (
+          <p className="text-sm text-rose-600">Fehler: {loadError}</p>
+        ) : !options ? (
+          <p className="text-sm text-gray-500">Formular wird geladen …</p>
+        ) : (
+          <ManualBelegeFormFields
+            accounts={options.accounts}
+            projects={options.projects}
+            suppliers={options.suppliers}
+            defaultValues={{ date: defaultDate, gross: defaultAmount > 0 ? defaultAmount : null }}
+            onSuccess={handleSuccess}
+            onCancel={onCancel}
+          />
+        )}
+      </div>
     </div>
   );
 }
