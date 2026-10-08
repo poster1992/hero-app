@@ -13,6 +13,8 @@ export interface DetectedLine {
   width: number;
   height: number;
   amount: number;
+  /** Buchungsdatum (ISO yyyy-mm-dd), falls in der Zeile ein Datum erkannt wurde. */
+  date: string | null;
 }
 
 /** Nur der Ausschnitt eines pdfjs-`TextItem`, den wir brauchen. */
@@ -35,6 +37,22 @@ const AMOUNT_RE = /-?\d{1,3}(?:[.  ]\d{3})*,\d{2}/g;
 // Eröffnungs-/Schluss-/Anfangs-/Endsaldo, Tagesabschluss-Summenzeilen und
 // Kontostände sind keine einzelnen Buchungen (Eingänge/Abgänge) – nicht erkennen.
 const EXCLUDE_RE = /saldo|kontostand|summe|tagesabschluss/i;
+
+// Datum als DD/MM/YY(YY) oder DD.MM.YY(YY) – Kontoauszüge zeigen oft zwei Daten
+// (Wertstellung/Buchung) am Zeilenanfang, wir nehmen das erste.
+const DATE_RE = /(\d{2})[./](\d{2})[./](\d{2,4})/;
+
+/** Wandelt das erste gefundene Datum einer Zeile in ISO (yyyy-mm-dd) um, oder null. */
+function parseLineDate(text: string): string | null {
+  const m = text.match(DATE_RE);
+  if (!m) return null;
+  const day = Number(m[1]);
+  const month = Number(m[2]);
+  let year = Number(m[3]);
+  if (m[3].length === 2) year += 2000;
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
 
 /** Gruppiert Textelemente einer Seite zu Zeilen (nach Y-Position) und erkennt je Zeile einen Betrag. */
 export function detectLinesOnPage(page: number, items: MinimalTextItem[]): DetectedLine[] {
@@ -77,6 +95,7 @@ export function detectLinesOnPage(page: number, items: MinimalTextItem[]): Detec
       width: maxX - minX + 4,
       height: maxY - minY,
       amount,
+      date: parseLineDate(text),
     });
   }
   return result;

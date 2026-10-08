@@ -81,9 +81,10 @@ export default function PdfLineAssignModal({
   const [dragCurrent, setDragCurrent] = useState<{ x: number; y: number } | null>(null);
   const [pendingPdfRect, setPendingPdfRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
   const [pendingAmount, setPendingAmount] = useState("");
+  const [pendingDate, setPendingDate] = useState(""); // yyyy-mm-dd, für <input type="date">
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
-  // Betrag wird per KI aus dem gezogenen Ausschnitt vorausgefüllt (bleibt korrigierbar).
+  // Betrag/Datum werden per KI aus dem gezogenen Ausschnitt vorausgefüllt (bleiben korrigierbar).
   const [ocrBusy, setOcrBusy] = useState(false);
 
   const [searchOpenFor, setSearchOpenFor] = useState<number | null>(null);
@@ -92,6 +93,10 @@ export default function PdfLineAssignModal({
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [busyLineId, setBusyLineId] = useState<number | null>(null);
+  // Beleg aus der Suche ausgewählt, aber Betrag noch nicht bestätigt (editierbar wegen Skonto/Teilzahlung).
+  const [pickedReceipt, setPickedReceipt] = useState<AssignableReceiptOption | null>(null);
+  const [confirmAmount, setConfirmAmount] = useState("");
+  const [assigning, setAssigning] = useState(false);
 
   const renderAtScale = async (scale: number) => {
     const proxy = pdfPageRef.current;
@@ -168,9 +173,10 @@ export default function PdfLineAssignModal({
           height: Math.abs(y2 - y1),
         });
         setPendingAmount("");
+        setPendingDate("");
         setCreateError(null);
 
-        // Betrag aus dem gezogenen Ausschnitt per KI vorausfüllen (korrigierbar).
+        // Betrag + Datum aus dem gezogenen Ausschnitt per KI vorausfüllen (korrigierbar).
         const canvas = canvasRef.current;
         const crop = canvas ? cropCanvasToPngBase64(canvas, left, top, width, height) : null;
         if (crop) {
@@ -179,6 +185,9 @@ export default function PdfLineAssignModal({
             setOcrBusy(false);
             if (res.amount != null) {
               setPendingAmount(res.amount.toFixed(2).replace(".", ","));
+            }
+            if (res.date != null) {
+              setPendingDate(res.date);
             }
           });
         }
@@ -195,13 +204,18 @@ export default function PdfLineAssignModal({
       setCreateError("Bitte einen gültigen Betrag eingeben.");
       return;
     }
+    if (!pendingDate) {
+      setCreateError("Bitte das Buchungsdatum angeben (wird als Bezahldatum verwendet).");
+      return;
+    }
     setCreating(true);
     setCreateError(null);
-    const res = await addLineAction(page, pendingPdfRect, amount);
+    const res = await addLineAction(page, pendingPdfRect, amount, pendingDate);
     setCreating(false);
     if (res.ok) {
       setPendingPdfRect(null);
       setPendingAmount("");
+      setPendingDate("");
       onChanged();
       await loadPage();
     } else {
@@ -212,6 +226,7 @@ export default function PdfLineAssignModal({
   const cancelNewLine = () => {
     setPendingPdfRect(null);
     setPendingAmount("");
+    setPendingDate("");
     setCreateError(null);
   };
 
@@ -229,6 +244,8 @@ export default function PdfLineAssignModal({
     setSearchQuery("");
     setSearchResults([]);
     setSearchError(null);
+    setPickedReceipt(null);
+    setConfirmAmount("");
   };
 
   const runSearch = async () => {
@@ -241,10 +258,36 @@ export default function PdfLineAssignModal({
     if (res.error) setSearchError(res.error);
   };
 
-  const assignReceipt = async (lineId: number, receipt: AssignableReceiptOption) => {
-    setBusyLineId(lineId);
-    await addReceiptToLineAction(lineId, receipt);
-    setBusyLineId(null);
+  // Beleg aus der Trefferliste auswählen: Betrag erst bestätigen (editierbar –
+  // wichtig bei Skonto/Teilzahlung), bevor wirklich zugeordnet wird.
+  const pickReceipt = (receipt: AssignableReceiptOption) => {
+    setPickedReceipt(receipt);
+    setConfirmAmount(receipt.amount.toFixed(2).replace(".", ","));
+    setSearchError(null);
+  };
+
+  const cancelPick = () => {
+    setPickedReceipt(null);
+    setConfirmAmount("");
+  };
+
+  const confirmAssign = async (lineId: number) => {
+    if (!pickedReceipt) return;
+    const amount = parseGermanAmount(confirmAmount);
+    if (amount == null) {
+      setSearchError("Bitte einen gültigen Betrag eingeben.");
+      return;
+    }
+    setAssigning(true);
+    setSearchError(null);
+    const res = await addReceiptToLineAction(lineId, pickedReceipt, amount);
+    setAssigning(false);
+    if (!res.ok) {
+      setSearchError(res.error ?? "Zuordnen fehlgeschlagen.");
+      return;
+    }
+    setPickedReceipt(null);
+    setConfirmAmount("");
     setSearchOpenFor(null);
     onChanged();
     await loadPage();
@@ -350,8 +393,8 @@ export default function PdfLineAssignModal({
           <div className="flex w-[360px] flex-none flex-col overflow-y-auto border-l border-gray-200 bg-gray-50 p-3">
             {pendingPdfRect && (
               <div className="mb-3 border border-blue-300 bg-blue-50 p-2.5">
-                <p className="mb-1.5 text-xs font-semibold text-gray-700">Neue Zeile – Soll-Betrag:</p>
-                <div className="flex items-center gap-2">
+                <p className="mb-1.5 text-xs font-semibold text-gray-700">Neue Zeile – Soll-Betrag + Buchungsdatum:</p>
+                <div className="flex flex-wrap items-center gap-2">
                   <input
                     type="text"
                     inputMode="decimal"
@@ -362,6 +405,13 @@ export default function PdfLineAssignModal({
                     placeholder={ocrBusy ? "Wird erkannt …" : "z. B. 1646,80"}
                     disabled={ocrBusy}
                     className="w-28 border border-line px-2 py-1 text-xs outline-none focus:border-brand-red/60 disabled:bg-gray-100"
+                  />
+                  <input
+                    type="date"
+                    value={pendingDate}
+                    onChange={(e) => setPendingDate(e.target.value)}
+                    disabled={ocrBusy}
+                    className="border border-line px-2 py-1 text-xs outline-none focus:border-brand-red/60 disabled:bg-gray-100"
                   />
                   <button
                     type="button"
@@ -375,7 +425,10 @@ export default function PdfLineAssignModal({
                     Abbrechen
                   </button>
                 </div>
-                {ocrBusy && <p className="mt-1 text-xs text-gray-400">Betrag wird aus dem Ausschnitt erkannt …</p>}
+                {ocrBusy && <p className="mt-1 text-xs text-gray-400">Betrag/Datum werden aus dem Ausschnitt erkannt …</p>}
+                <p className="mt-1 text-[11px] text-gray-400">
+                  Das Datum wird als Bezahldatum verwendet, sobald hier zugeordnete Belege abgehakt werden.
+                </p>
                 {createError && <p className="mt-1 text-xs text-rose-600">{createError}</p>}
               </div>
             )}
@@ -399,6 +452,7 @@ export default function PdfLineAssignModal({
                           style={{ backgroundColor: l.matched ? "#16a34a" : "#dc2626" }}
                         />
                         Soll {fmtEur(l.amount)}
+                        {l.date && <span className="font-normal text-gray-400">· {l.date.split("-").reverse().join(".")}</span>}
                       </span>
                       <button
                         type="button"
@@ -412,6 +466,7 @@ export default function PdfLineAssignModal({
                     </div>
                     <div className={`mt-0.5 ${l.matched ? "text-emerald-600" : "text-rose-600"}`}>
                       {l.matched ? "✓ Summe passt" : `Fehlt ${fmtEur(diff)}`}
+                      {l.matched && l.paidApplied && " · Zahlstatus der Belege aktualisiert"}
                     </div>
 
                     {l.receipts.length > 0 && (
@@ -420,6 +475,11 @@ export default function PdfLineAssignModal({
                           <li key={r.id} className="flex items-center justify-between gap-1 border-t border-gray-100 pt-1">
                             <span className="min-w-0 flex-1 truncate text-gray-600" title={`${r.supplier ?? ""} ${r.invoiceNumber ?? ""}`}>
                               {r.kind === "hero" ? "HERO" : "Manuell"} · {r.supplier ?? "—"} · {fmtEur(r.amount)}
+                              {r.settlementKind !== "full" && (
+                                <span className="ml-1 text-amber-600">
+                                  ({r.settlementKind === "skonto" ? "Skonto" : "Teilzahlung"})
+                                </span>
+                              )}
                             </span>
                             <button
                               type="button"
@@ -436,50 +496,94 @@ export default function PdfLineAssignModal({
 
                     {searchOpenFor === l.id ? (
                       <div className="mt-2 border-t border-gray-100 pt-2">
-                        <div className="flex items-center gap-1">
-                          <input
-                            type="text"
-                            autoFocus
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            onKeyDown={(e) => e.key === "Enter" && void runSearch()}
-                            placeholder="Lieferant oder Belegnr. …"
-                            className="min-w-0 flex-1 border border-line px-2 py-1 text-xs outline-none focus:border-brand-red/60"
-                          />
-                          <button
-                            type="button"
-                            onClick={runSearch}
-                            disabled={searching}
-                            className="rounded border border-gray-300 px-2 py-1 text-xs hover:bg-gray-50 disabled:opacity-50"
-                          >
-                            {searching ? "…" : "Suchen"}
-                          </button>
-                          <button type="button" onClick={() => setSearchOpenFor(null)} className="text-gray-400 hover:text-gray-700">
-                            ✕
-                          </button>
-                        </div>
-                        {searchResults.length > 0 && (
-                          <ul className="mt-1.5 max-h-40 space-y-1 overflow-y-auto">
-                            {searchResults.map((r, i) => (
-                              <li key={`${r.kind}-${r.ref}-${i}`}>
-                                <button
-                                  type="button"
-                                  onClick={() => assignReceipt(l.id, r)}
-                                  className="block w-full border border-gray-200 px-2 py-1 text-left hover:border-brand-red/50 hover:bg-gray-50"
-                                >
-                                  <span className="font-medium">{r.supplier ?? "—"}</span>{" "}
-                                  <span className="text-gray-400">
-                                    {r.invoiceNumber ? `· ${r.invoiceNumber} ` : ""}· {fmtEur(r.amount)}
-                                    {r.date ? ` · ${r.date.split("-").reverse().join(".")}` : ""}
-                                  </span>
-                                </button>
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                        {searchError && <p className="mt-1 text-rose-600">Fehler bei der Suche: {searchError}</p>}
-                        {!searching && !searchError && searchQuery.trim().length >= 2 && searchResults.length === 0 && (
-                          <p className="mt-1 text-gray-400">Keine Treffer.</p>
+                        {pickedReceipt ? (
+                          <div className="border border-blue-300 bg-blue-50 p-2">
+                            <p className="font-medium">
+                              {pickedReceipt.supplier ?? "—"}
+                              {pickedReceipt.invoiceNumber ? ` · ${pickedReceipt.invoiceNumber}` : ""}
+                            </p>
+                            <p className="text-gray-500">
+                              Offen: {fmtEur(pickedReceipt.amount)}
+                              {pickedReceipt.skontoPayAmount != null && ` · Skonto: ${fmtEur(pickedReceipt.skontoPayAmount)}`}
+                            </p>
+                            <div className="mt-1.5 flex items-center gap-2">
+                              <label className="flex items-center gap-1">
+                                Zugeordneter Betrag:
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  autoFocus
+                                  value={confirmAmount}
+                                  onChange={(e) => setConfirmAmount(e.target.value)}
+                                  onKeyDown={(e) => e.key === "Enter" && void confirmAssign(l.id)}
+                                  className="w-24 border border-line px-2 py-1 text-xs outline-none focus:border-brand-red/60"
+                                />
+                              </label>
+                              <button
+                                type="button"
+                                onClick={() => confirmAssign(l.id)}
+                                disabled={assigning}
+                                className="rounded-md bg-brand-red px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
+                              >
+                                {assigning ? "…" : "Zuordnen"}
+                              </button>
+                              <button type="button" onClick={cancelPick} className="text-gray-500 hover:text-gray-800">
+                                Abbrechen
+                              </button>
+                            </div>
+                            <p className="mt-1 text-[11px] text-gray-400">
+                              Entspricht der Betrag genau dem offenen Betrag oder dem Skontobetrag, wird der Beleg
+                              automatisch als bezahlt abgehakt; ein kleinerer Betrag gilt als Teilzahlung.
+                            </p>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="text"
+                                autoFocus
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                onKeyDown={(e) => e.key === "Enter" && void runSearch()}
+                                placeholder="Lieferant oder Belegnr. …"
+                                className="min-w-0 flex-1 border border-line px-2 py-1 text-xs outline-none focus:border-brand-red/60"
+                              />
+                              <button
+                                type="button"
+                                onClick={runSearch}
+                                disabled={searching}
+                                className="rounded border border-gray-300 px-2 py-1 text-xs hover:bg-gray-50 disabled:opacity-50"
+                              >
+                                {searching ? "…" : "Suchen"}
+                              </button>
+                              <button type="button" onClick={() => setSearchOpenFor(null)} className="text-gray-400 hover:text-gray-700">
+                                ✕
+                              </button>
+                            </div>
+                            {searchResults.length > 0 && (
+                              <ul className="mt-1.5 max-h-40 space-y-1 overflow-y-auto">
+                                {searchResults.map((r, i) => (
+                                  <li key={`${r.kind}-${r.ref}-${i}`}>
+                                    <button
+                                      type="button"
+                                      onClick={() => pickReceipt(r)}
+                                      className="block w-full border border-gray-200 px-2 py-1 text-left hover:border-brand-red/50 hover:bg-gray-50"
+                                    >
+                                      <span className="font-medium">{r.supplier ?? "—"}</span>{" "}
+                                      <span className="text-gray-400">
+                                        {r.invoiceNumber ? `· ${r.invoiceNumber} ` : ""}· {fmtEur(r.amount)}
+                                        {r.date ? ` · ${r.date.split("-").reverse().join(".")}` : ""}
+                                      </span>
+                                    </button>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                            {searchError && <p className="mt-1 text-rose-600">Fehler: {searchError}</p>}
+                            {!searching && !searchError && searchQuery.trim().length >= 2 && searchResults.length === 0 && (
+                              <p className="mt-1 text-gray-400">Keine Treffer.</p>
+                            )}
+                          </>
                         )}
                       </div>
                     ) : (

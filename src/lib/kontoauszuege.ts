@@ -8,9 +8,14 @@ import { sniffMime } from "./file-sniff";
 import { MARKER_COLORS, type MarkerColor, markerColorRgb01 } from "./kontoauszug-colors";
 import { getReceiptsInRange } from "./hero-api";
 import { getCustomerName, effectiveReceiptStatus } from "./invoices";
-import { listAllManualReceipts, searchManualOcrIds } from "./manual-receipts";
+import {
+  listAllManualReceipts,
+  searchManualOcrIds,
+  setManualReceiptPaid,
+  addManualReceiptPartialPayment,
+} from "./manual-receipts";
 import { searchOcrHeroIds } from "./receipt-ocr";
-import { getPaymentOverrideMap } from "./receipt-payment-status";
+import { getPaymentOverrideMap, setPaymentOverride } from "./receipt-payment-status";
 
 /**
  * Kontoauszüge (privat, ein Bankkonto): PDF-Auszüge werden nicht mehr
@@ -100,6 +105,8 @@ async function ensureTables(): Promise<void> {
          width DOUBLE NOT NULL,
          height DOUBLE NOT NULL,
          amount DECIMAL(12,2) NOT NULL,
+         date DATE NULL,
+         paid_applied TINYINT NOT NULL DEFAULT 0,
          created_by INT NULL,
          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
          INDEX idx_bsl_page (page)
@@ -114,6 +121,7 @@ async function ensureTables(): Promise<void> {
          receipt_kind VARCHAR(10) NOT NULL,
          receipt_ref VARCHAR(64) NOT NULL,
          amount DECIMAL(12,2) NOT NULL,
+         settlement_kind VARCHAR(10) NOT NULL DEFAULT 'full',
          supplier VARCHAR(255) NULL,
          invoice_number VARCHAR(100) NULL,
          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -124,7 +132,45 @@ async function ensureTables(): Promise<void> {
   await ensureMarkerColorColumn();
   await ensureHighlightNoteColumn();
   await ensureHighlightMarkerIdColumn();
+  await ensureLineDateColumns();
+  await ensureLineReceiptSettlementColumn();
   tableReady = true;
+}
+
+/** Self-healing: `date`/`paid_applied`-Spalten auf bank_statement_lines nachrüsten. */
+let lineDateColumnsReady = false;
+async function ensureLineDateColumns(): Promise<void> {
+  if (lineDateColumnsReady) return;
+  const pool = getPool();
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'bank_statement_lines' AND COLUMN_NAME IN ('date', 'paid_applied')`
+  );
+  const existing = new Set(rows.map((r) => String(r.COLUMN_NAME)));
+  if (!existing.has("date")) {
+    await pool.query("ALTER TABLE bank_statement_lines ADD COLUMN date DATE NULL").catch(() => {});
+  }
+  if (!existing.has("paid_applied")) {
+    await pool.query("ALTER TABLE bank_statement_lines ADD COLUMN paid_applied TINYINT NOT NULL DEFAULT 0").catch(() => {});
+  }
+  lineDateColumnsReady = true;
+}
+
+/** Self-healing: `settlement_kind`-Spalte auf bank_statement_line_receipts nachrüsten. */
+let lineReceiptSettlementColumnReady = false;
+async function ensureLineReceiptSettlementColumn(): Promise<void> {
+  if (lineReceiptSettlementColumnReady) return;
+  const pool = getPool();
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT COUNT(*) AS n FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'bank_statement_line_receipts' AND COLUMN_NAME = 'settlement_kind'`
+  );
+  if ((rows[0]?.n ?? 0) === 0) {
+    await pool
+      .query("ALTER TABLE bank_statement_line_receipts ADD COLUMN settlement_kind VARCHAR(10) NOT NULL DEFAULT 'full'")
+      .catch(() => {});
+  }
+  lineReceiptSettlementColumnReady = true;
 }
 
 /** Self-healing: `note`-Spalte nachrüsten, falls die Tabelle schon vor der Notiz-Funktion existierte. */
@@ -777,6 +823,7 @@ export interface LineReceipt {
   amount: number;
   supplier: string | null;
   invoiceNumber: string | null;
+  settlementKind: "full" | "skonto" | "partial";
 }
 
 export interface StatementLine {
@@ -787,8 +834,12 @@ export interface StatementLine {
   width: number;
   height: number;
   amount: number;
+  /** Buchungsdatum (yyyy-mm-dd), falls erkannt/erfasst – wird als Bezahldatum verwendet. */
+  date: string | null;
   receipts: LineReceipt[];
   matched: boolean;
+  /** true, sobald beim Matchen der Zahlstatus der zugeordneten Belege gesetzt wurde (einmalig). */
+  paidApplied: boolean;
   createdByName: string | null;
   createdAt: string | null;
 }
@@ -801,6 +852,8 @@ interface LineRow extends RowDataPacket {
   width: number | string;
   height: number | string;
   amount: number | string;
+  date: string | null;
+  paid_applied: number;
   created_at: string | null;
   created_by_name: string | null;
 }
@@ -811,6 +864,7 @@ interface LineReceiptRow extends RowDataPacket {
   receipt_kind: string;
   receipt_ref: string;
   amount: number | string;
+  settlement_kind: string;
   supplier: string | null;
   invoice_number: string | null;
 }
@@ -819,7 +873,7 @@ interface LineReceiptRow extends RowDataPacket {
 export async function listStatementLines(page: number): Promise<StatementLine[]> {
   await ensureTables();
   const [lineRows] = await getPool().query<LineRow[]>(
-    `SELECT l.id, l.page, l.x, l.y, l.width, l.height, l.amount, l.created_at,
+    `SELECT l.id, l.page, l.x, l.y, l.width, l.height, l.amount, l.date, l.paid_applied, l.created_at,
             COALESCE(NULLIF(u.display_name, ''), u.username) AS created_by_name
      FROM bank_statement_lines l
      LEFT JOIN users u ON u.id = l.created_by
@@ -830,7 +884,7 @@ export async function listStatementLines(page: number): Promise<StatementLine[]>
   if (lineRows.length === 0) return [];
   const ids = lineRows.map((r) => r.id);
   const [receiptRows] = await getPool().query<LineReceiptRow[]>(
-    `SELECT id, line_id, receipt_kind, receipt_ref, amount, supplier, invoice_number
+    `SELECT id, line_id, receipt_kind, receipt_ref, amount, settlement_kind, supplier, invoice_number
      FROM bank_statement_line_receipts WHERE line_id IN (${ids.map(() => "?").join(",")}) ORDER BY id ASC`,
     ids
   );
@@ -844,6 +898,7 @@ export async function listStatementLines(page: number): Promise<StatementLine[]>
       amount: Number(r.amount),
       supplier: r.supplier,
       invoiceNumber: r.invoice_number,
+      settlementKind: r.settlement_kind === "skonto" || r.settlement_kind === "partial" ? r.settlement_kind : "full",
     });
     byLine.set(r.line_id, list);
   }
@@ -859,15 +914,17 @@ export async function listStatementLines(page: number): Promise<StatementLine[]>
       width: Number(r.width),
       height: Number(r.height),
       amount,
+      date: r.date ? String(r.date).slice(0, 10) : null,
       receipts,
       matched: Math.abs(sum - amount) < 0.01,
+      paidApplied: Number(r.paid_applied) === 1,
       createdByName: r.created_by_name,
       createdAt: r.created_at ? String(r.created_at) : null,
     };
   });
 }
 
-/** Legt eine neue Zeilen-Zuordnung an (Rechteck + Soll-Betrag). Gibt die neue ID zurück. */
+/** Legt eine neue Zeilen-Zuordnung an (Rechteck + Soll-Betrag + Buchungsdatum). Gibt die neue ID zurück. */
 export async function addStatementLine(input: {
   page: number;
   x: number;
@@ -875,6 +932,7 @@ export async function addStatementLine(input: {
   width: number;
   height: number;
   amount: number;
+  date: string | null;
   userId: number | null;
 }): Promise<number> {
   await ensureTables();
@@ -884,8 +942,8 @@ export async function addStatementLine(input: {
   const index = input.page - 1;
   if (index < 0 || index >= pdf.getPageCount()) throw new Error("Ungültige Seite.");
   const [result] = await getPool().query(
-    `INSERT INTO bank_statement_lines (page, x, y, width, height, amount, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [input.page, input.x, input.y, input.width, input.height, input.amount, input.userId]
+    `INSERT INTO bank_statement_lines (page, x, y, width, height, amount, date, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [input.page, input.x, input.y, input.width, input.height, input.amount, input.date, input.userId]
   );
   await rebuildDisplayFile();
   return (result as { insertId?: number }).insertId ?? 0;
@@ -899,7 +957,7 @@ export async function addStatementLine(input: {
  * Zeile auf derselben Seite haben (Dubletten-Schutz bei mehrfachem Ausführen).
  */
 export async function addStatementLinesBatch(
-  items: { page: number; x: number; y: number; width: number; height: number; amount: number }[],
+  items: { page: number; x: number; y: number; width: number; height: number; amount: number; date: string | null }[],
   userId: number | null
 ): Promise<number> {
   if (items.length === 0) return 0;
@@ -930,8 +988,8 @@ export async function addStatementLinesBatch(
     const isDuplicate = existing.some((r) => Math.abs(r.y + r.height / 2 - centerY) < 6);
     if (isDuplicate) continue;
     await pool.query(
-      `INSERT INTO bank_statement_lines (page, x, y, width, height, amount, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [it.page, it.x, it.y, it.width, it.height, it.amount, userId]
+      `INSERT INTO bank_statement_lines (page, x, y, width, height, amount, date, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [it.page, it.x, it.y, it.width, it.height, it.amount, it.date, userId]
     );
     existing.push({ y: it.y, height: it.height });
     created++;
@@ -949,17 +1007,95 @@ export async function deleteStatementLine(id: number): Promise<void> {
   await rebuildDisplayFile();
 }
 
-/** Ordnet einer Zeile einen weiteren Beleg zu (mehrere Belege je Zeile möglich). */
+/** full = voller offener Betrag, skonto = exakt der hinterlegte Skonto-Zahlbetrag, partial = weniger (Teilzahlung). */
+function classifySettlement(confirmedAmount: number, openAmount: number, skontoPayAmount: number | null): "full" | "skonto" | "partial" {
+  if (Math.abs(confirmedAmount - openAmount) < 0.01) return "full";
+  if (skontoPayAmount != null && Math.abs(confirmedAmount - skontoPayAmount) < 0.01) return "skonto";
+  if (confirmedAmount < openAmount) return "partial";
+  return "full"; // Ausnahmefall (zugeordnet > offen) – wie voll behandeln
+}
+
+/**
+ * Ordnet einer Zeile einen weiteren Beleg zu (mehrere Belege je Zeile möglich).
+ * `amount` ist der vom Nutzer bestätigte (ggf. angepasste) Betrag; `openAmount`
+ * und `skontoPayAmount` (nur manuell, sonst null) stammen aus der Suche und
+ * bestimmen, ob dies als volle Zahlung, Skonto-Zahlung oder Teilzahlung gilt.
+ * Erreicht die Zeile danach ihren Soll-Betrag, wird der Zahlstatus automatisch
+ * gesetzt (siehe `applyLineReceiptPaymentEffects`).
+ */
 export async function addReceiptToLine(
   lineId: number,
-  receipt: { kind: "manual" | "hero"; ref: string; amount: number; supplier: string | null; invoiceNumber: string | null }
+  receipt: {
+    kind: "manual" | "hero";
+    ref: string;
+    amount: number;
+    openAmount: number;
+    skontoPayAmount: number | null;
+    supplier: string | null;
+    invoiceNumber: string | null;
+  },
+  userId: number | null
 ): Promise<void> {
   await ensureTables();
+  const settlementKind = classifySettlement(receipt.amount, receipt.openAmount, receipt.skontoPayAmount);
   await getPool().query(
-    `INSERT INTO bank_statement_line_receipts (line_id, receipt_kind, receipt_ref, amount, supplier, invoice_number) VALUES (?, ?, ?, ?, ?, ?)`,
-    [lineId, receipt.kind, receipt.ref, receipt.amount, receipt.supplier, receipt.invoiceNumber]
+    `INSERT INTO bank_statement_line_receipts (line_id, receipt_kind, receipt_ref, amount, settlement_kind, supplier, invoice_number) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [lineId, receipt.kind, receipt.ref, receipt.amount, settlementKind, receipt.supplier, receipt.invoiceNumber]
   );
   await rebuildDisplayFile();
+  await applyLineReceiptPaymentEffects(lineId, userId);
+}
+
+/**
+ * Setzt, sobald eine Zeile ihren Soll-Betrag erreicht hat (grün), einmalig den
+ * Zahlstatus der zugeordneten Belege – passend zur beim Zuordnen ermittelten
+ * Art (voll/Skonto/Teilzahlung). Bezahldatum = Buchungsdatum der Zeile, falls
+ * bekannt, sonst heute. Läuft nur EINMAL pro Zeile (Flag `paid_applied`) –
+ * nachträgliches Entfernen/Hinzufügen von Belegen auf einer bereits
+ * abgeschlossenen Zeile ändert den Zahlstatus NICHT nochmal automatisch
+ * (bewusst, um Doppel-Verbuchungen bei Teilzahlungen zu vermeiden; manuelle
+ * Korrektur dann über die normale Belegliste).
+ */
+async function applyLineReceiptPaymentEffects(lineId: number, userId: number | null): Promise<void> {
+  const pool = getPool();
+  const [lineRows] = await pool.query<RowDataPacket[]>(
+    `SELECT amount, date, paid_applied FROM bank_statement_lines WHERE id = ?`,
+    [lineId]
+  );
+  const line = lineRows[0];
+  if (!line || Number(line.paid_applied) === 1) return;
+
+  const [receiptRows] = await pool.query<RowDataPacket[]>(
+    `SELECT receipt_kind, receipt_ref, amount, settlement_kind FROM bank_statement_line_receipts WHERE line_id = ?`,
+    [lineId]
+  );
+  if (receiptRows.length === 0) return;
+  const sum = receiptRows.reduce((s, r) => s + Number(r.amount), 0);
+  if (Math.abs(sum - Number(line.amount)) >= 0.01) return; // noch nicht vollständig zugeordnet
+
+  const paidDate: string | undefined = line.date ? String(line.date).slice(0, 10) : undefined;
+  for (const r of receiptRows) {
+    const kind = r.settlement_kind === "skonto" || r.settlement_kind === "partial" ? r.settlement_kind : "full";
+    const amount = Number(r.amount);
+    if (r.receipt_kind === "manual") {
+      const id = Number(r.receipt_ref);
+      if (kind === "partial") {
+        await addManualReceiptPartialPayment(id, amount, userId, paidDate).catch(() => {});
+      } else {
+        await setManualReceiptPaid(id, true, kind === "skonto", userId, paidDate).catch(() => {});
+      }
+    } else {
+      const eur = amount.toLocaleString("de-DE", { style: "currency", currency: "EUR" });
+      const kindLabel = kind === "partial" ? "Teilzahlung" : kind === "skonto" ? "mit Skonto" : "voll";
+      const remark = `Kontoauszug-Abgleich${paidDate ? ` vom ${paidDate}` : ""}: ${eur} (${kindLabel})`;
+      // HERO kennt lokal nur "bezahlt"/"offen" (kein Skonto-Flag, keine Teilzahlungs-
+      // Summierung) – bei Teilzahlung bleibt der Status "offen", nur als Notiz vermerkt.
+      await setPaymentOverride(r.receipt_ref, kind === "partial" ? "offen" : "bezahlt", userId, undefined, remark).catch(
+        () => {}
+      );
+    }
+  }
+  await pool.query(`UPDATE bank_statement_lines SET paid_applied = 1 WHERE id = ?`, [lineId]);
 }
 
 /** Entfernt einen zugeordneten Beleg von einer Zeile und baut die angezeigte Datei neu auf. */
@@ -972,10 +1108,13 @@ export async function removeReceiptFromLine(linkId: number): Promise<void> {
 export interface AssignableReceiptOption {
   kind: "manual" | "hero";
   ref: string;
+  /** Vorgeschlagener Betrag = offener Restbetrag (editierbar vor dem Zuordnen). */
   amount: number;
   supplier: string | null;
   invoiceNumber: string | null;
   date: string | null;
+  /** Skonto-Zahlbetrag (nur manuelle Belege, sonst null – HERO kennt keinen Skonto). */
+  skontoPayAmount: number | null;
 }
 
 /**
@@ -1012,6 +1151,7 @@ export async function searchAssignableReceipts(query: string): Promise<{ results
         supplier: r.supplier,
         invoiceNumber: r.invoiceNumber,
         date: r.date,
+        skontoPayAmount: r.skontoPayAmount,
       });
       if (results.length >= 20) break;
     }
@@ -1052,6 +1192,7 @@ export async function searchAssignableReceipts(query: string): Promise<{ results
         supplier: supplierName,
         invoiceNumber: r.number,
         date: r.receiptDate ? r.receiptDate.slice(0, 10) : null,
+        skontoPayAmount: null, // HERO kennt keinen Skonto-Zahlbetrag
       });
       if (results.length >= 40) break;
     }

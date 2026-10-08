@@ -234,7 +234,8 @@ export async function setManualReceiptPaid(
   id: number,
   paid: boolean,
   withSkonto = false,
-  actorId: number | null = null
+  actorId: number | null = null,
+  paidDateOverride?: string
 ): Promise<void> {
   await ensurePaidAmountColumn();
   const before = await getManualReceipt(id).catch(() => null);
@@ -242,9 +243,10 @@ export async function setManualReceiptPaid(
   // dabei auch etwaige vorher erfasste Teilzahlungen (bewusster Reset).
   const amount =
     paid && withSkonto && before?.skontoPayAmount != null ? before.skontoPayAmount : before?.gross ?? 0;
+  const paidDate = paidDateOverride ?? new Date().toISOString().slice(0, 10);
   await getPool().query(
     "UPDATE manual_receipts SET is_paid = ?, paid_with_skonto = ?, paid_amount = ?, paid_date = ? WHERE id = ?",
-    [paid ? 1 : 0, paid && withSkonto ? 1 : 0, paid ? amount : 0, paid ? new Date().toISOString().slice(0, 10) : null, id]
+    [paid ? 1 : 0, paid && withSkonto ? 1 : 0, paid ? amount : 0, paid ? paidDate : null, id]
   );
   await logReceiptEvent({
     kind: "manual",
@@ -277,7 +279,8 @@ export interface PartialPaymentResult {
 export async function addManualReceiptPartialPayment(
   id: number,
   amount: number,
-  actorId: number | null = null
+  actorId: number | null = null,
+  paidDateOverride?: string
 ): Promise<PartialPaymentResult> {
   await ensurePaidAmountColumn();
   const r = await getManualReceipt(id);
@@ -302,7 +305,7 @@ export async function addManualReceiptPartialPayment(
 
   const newPaidAmount = Math.round((r.paidAmount + amount) * 100) / 100;
   const fullyPaid = newPaidAmount >= r.gross - 0.01;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = paidDateOverride ?? new Date().toISOString().slice(0, 10);
   if (fullyPaid) {
     await getPool().query(
       "UPDATE manual_receipts SET is_paid = 1, paid_with_skonto = 0, paid_amount = ?, paid_date = ? WHERE id = ?",

@@ -138,18 +138,28 @@ export async function listPageLinesAction(page: number): Promise<StatementLine[]
   return listStatementLines(page);
 }
 
-/** Legt eine neue Zeilen-Zuordnung an (Rechteck um eine Kontoauszug-Zeile + Soll-Betrag). */
+/** Legt eine neue Zeilen-Zuordnung an (Rechteck um eine Kontoauszug-Zeile + Soll-Betrag + Buchungsdatum). */
 export async function addLineAction(
   page: number,
   rect: { x: number; y: number; width: number; height: number },
-  amount: number
+  amount: number,
+  date: string | null
 ): Promise<ActionResult & { id?: number }> {
   const userId = await currentUserId();
   if (userId == null) return { ok: false, error: "Nicht angemeldet." };
   if (!Number.isFinite(page) || page < 1) return { ok: false, error: "Ungültige Seite." };
   if (!Number.isFinite(amount) || amount <= 0) return { ok: false, error: "Ungültiger Betrag." };
   try {
-    const id = await addStatementLine({ page, x: rect.x, y: rect.y, width: rect.width, height: rect.height, amount, userId });
+    const id = await addStatementLine({
+      page,
+      x: rect.x,
+      y: rect.y,
+      width: rect.width,
+      height: rect.height,
+      amount,
+      date,
+      userId,
+    });
     return { ok: true, id };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Anlegen fehlgeschlagen." };
@@ -162,20 +172,34 @@ export async function deleteLineAction(id: number): Promise<ActionResult> {
   return { ok: true };
 }
 
-/** Ordnet einer Zeile einen weiteren Beleg zu. */
+/**
+ * Ordnet einer Zeile einen weiteren Beleg zu. `confirmedAmount` ist der vom
+ * Nutzer bestätigte (ggf. gegenüber dem Vorschlag angepasste) Betrag –
+ * bestimmt zusammen mit `receipt.amount` (offener Betrag) und
+ * `receipt.skontoPayAmount`, ob das als volle Zahlung, Skonto-Zahlung oder
+ * Teilzahlung gilt (siehe `addReceiptToLine`).
+ */
 export async function addReceiptToLineAction(
   lineId: number,
-  receipt: AssignableReceiptOption
+  receipt: AssignableReceiptOption,
+  confirmedAmount: number
 ): Promise<ActionResult> {
   const userId = await currentUserId();
   if (userId == null) return { ok: false, error: "Nicht angemeldet." };
-  await addReceiptToLine(lineId, {
-    kind: receipt.kind,
-    ref: receipt.ref,
-    amount: receipt.amount,
-    supplier: receipt.supplier,
-    invoiceNumber: receipt.invoiceNumber,
-  });
+  if (!Number.isFinite(confirmedAmount) || confirmedAmount <= 0) return { ok: false, error: "Ungültiger Betrag." };
+  await addReceiptToLine(
+    lineId,
+    {
+      kind: receipt.kind,
+      ref: receipt.ref,
+      amount: confirmedAmount,
+      openAmount: receipt.amount,
+      skontoPayAmount: receipt.skontoPayAmount,
+      supplier: receipt.supplier,
+      invoiceNumber: receipt.invoiceNumber,
+    },
+    userId
+  );
   return { ok: true };
 }
 
@@ -192,10 +216,12 @@ export async function searchAssignableReceiptsAction(
   return searchAssignableReceipts(query);
 }
 
-/** Liest den Betrag aus dem gezogenen Rechteck per KI aus (zum Vorausfüllen, bleibt korrigierbar). */
-export async function extractLineAmountAction(imageBase64Png: string): Promise<{ amount: number | null; error?: string }> {
+/** Liest Betrag + ggf. Datum aus dem gezogenen Rechteck per KI aus (zum Vorausfüllen, bleibt korrigierbar). */
+export async function extractLineAmountAction(
+  imageBase64Png: string
+): Promise<{ amount: number | null; date: string | null; error?: string }> {
   const userId = await currentUserId();
-  if (userId == null) return { amount: null, error: "Nicht angemeldet." };
+  if (userId == null) return { amount: null, date: null, error: "Nicht angemeldet." };
   return extractLineAmount(imageBase64Png);
 }
 
@@ -205,7 +231,7 @@ export async function extractLineAmountAction(imageBase64Png: string): Promise<{
  * angelegter Zeilen zurück (Dubletten werden übersprungen).
  */
 export async function autoDetectLinesAction(
-  items: { page: number; x: number; y: number; width: number; height: number; amount: number }[]
+  items: { page: number; x: number; y: number; width: number; height: number; amount: number; date: string | null }[]
 ): Promise<{ ok: boolean; created?: number; error?: string }> {
   const userId = await currentUserId();
   if (userId == null) return { ok: false, error: "Nicht angemeldet." };
