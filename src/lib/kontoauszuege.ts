@@ -7,9 +7,10 @@ import { getPool } from "./db";
 import { sniffMime } from "./file-sniff";
 import { MARKER_COLORS, type MarkerColor, markerColorRgb01 } from "./kontoauszug-colors";
 import { getReceiptsInRange } from "./hero-api";
-import { getCustomerName } from "./invoices";
+import { getCustomerName, effectiveReceiptStatus } from "./invoices";
 import { listAllManualReceipts, searchManualOcrIds } from "./manual-receipts";
 import { searchOcrHeroIds } from "./receipt-ocr";
+import { getPaymentOverrideMap } from "./receipt-payment-status";
 
 /**
  * Kontoauszüge (privat, ein Bankkonto): PDF-Auszüge werden nicht mehr
@@ -997,6 +998,7 @@ export async function searchAssignableReceipts(query: string): Promise<{ results
   try {
     const [manualReceipts, manualOcrIds] = await Promise.all([listAllManualReceipts(), searchManualOcrIds(q)]);
     for (const r of manualReceipts) {
+      if (r.openAmount <= 0.01) continue; // nur offene (bzw. teilweise bezahlte) Belege
       const hit =
         (r.supplier ?? "").toLowerCase().includes(q) ||
         (r.invoiceNumber ?? "").toLowerCase().includes(q) ||
@@ -1005,7 +1007,8 @@ export async function searchAssignableReceipts(query: string): Promise<{ results
       results.push({
         kind: "manual",
         ref: String(r.id),
-        amount: r.gross,
+        // Offener Restbetrag (bei Teilzahlung weniger als der volle Brutto-Betrag).
+        amount: r.openAmount,
         supplier: r.supplier,
         invoiceNumber: r.invoiceNumber,
         date: r.date,
@@ -1022,11 +1025,17 @@ export async function searchAssignableReceipts(query: string): Promise<{ results
     const from = new Date();
     from.setFullYear(from.getFullYear() - 3);
     const fmt = (d: Date) => d.toISOString().slice(0, 10);
-    const [heroReceipts, heroOcrIds] = await Promise.all([
+    const [heroReceipts, heroOcrIds, overrides] = await Promise.all([
       getReceiptsInRange(`${fmt(from)}T00:00:00Z`, `${fmt(to)}T23:59:59Z`),
       searchOcrHeroIds(q),
+      getPaymentOverrideMap(),
     ]);
     for (const r of heroReceipts) {
+      // Nur offene (inkl. überfällige) Belege – bereits bezahlte sind für den
+      // Abgleich nicht mehr relevant. Lokale Zahlstatus-Übersteuerung (falls
+      // gesetzt) hat Vorrang vor dem HERO-eigenen Status, wie im Rest der App.
+      const status = effectiveReceiptStatus(r, overrides.get(r.id)?.status ?? null);
+      if (status.tone === "paid") continue;
       // Beide Richtungen durchsuchen: "output" = Eingangsrechnungen (wir zahlen,
       // Abgänge vom Konto), "income" = Ausgangsrechnungen (Kunden zahlen uns,
       // Eingänge). Der Kontoauszug enthält beides.
@@ -1034,10 +1043,12 @@ export async function searchAssignableReceipts(query: string): Promise<{ results
       const hit =
         supplierName.toLowerCase().includes(q) || (r.number ?? "").toLowerCase().includes(q) || heroOcrIds.has(r.id);
       if (!hit) continue;
+      // Offener Restbetrag (bei Teilzahlung weniger als der volle Rechnungsbetrag).
+      const amount = r.openAmount > 0.005 ? r.openAmount : r.value;
       results.push({
         kind: "hero",
         ref: r.id,
-        amount: r.value,
+        amount,
         supplier: supplierName,
         invoiceNumber: r.number,
         date: r.receiptDate ? r.receiptDate.slice(0, 10) : null,
