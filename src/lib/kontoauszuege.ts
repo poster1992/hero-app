@@ -444,6 +444,8 @@ export async function appendStatementPdf(input: {
   // Bisherige Seitenzahlen rutschen um `pageCount` nach hinten.
   await pool.query(`UPDATE bank_statement_markers SET page = page + ?`, [pageCount]);
   await pool.query(`UPDATE bank_statement_highlights SET page = page + ?`, [pageCount]);
+  await pool.query(`UPDATE bank_statement_stamps SET page = page + ?`, [pageCount]);
+  await pool.query(`UPDATE bank_statement_lines SET page = page + ?`, [pageCount]);
   await pool.query(`UPDATE bank_statement_uploads SET page_start = page_start + ?`, [pageCount]);
   await pool.query(
     `INSERT INTO bank_statement_uploads (filename, page_start, page_count, added_by) VALUES (?, 1, ?, ?)`,
@@ -494,10 +496,20 @@ export async function undoLastStatementUpload(): Promise<void> {
   const range: number[] = [last.page_start, last.page_start + last.page_count - 1];
   await pool.query(`DELETE FROM bank_statement_markers WHERE page >= ? AND page <= ?`, range);
   await pool.query(`DELETE FROM bank_statement_highlights WHERE page >= ? AND page <= ?`, range);
+  await pool.query(`DELETE FROM bank_statement_stamps WHERE page >= ? AND page <= ?`, range);
+  await pool.query(
+    `DELETE FROM bank_statement_line_receipts WHERE line_id IN (
+       SELECT id FROM bank_statement_lines WHERE page >= ? AND page <= ?
+     )`,
+    range
+  );
+  await pool.query(`DELETE FROM bank_statement_lines WHERE page >= ? AND page <= ?`, range);
   await pool.query(`DELETE FROM bank_statement_uploads WHERE id = ?`, [last.id]);
-  // Verbleibende Marker/Textmarker/Uploads wieder nach vorn rutschen lassen.
+  // Verbleibende Marker/Textmarker/Stempel/Zeilen/Uploads wieder nach vorn rutschen lassen.
   await pool.query(`UPDATE bank_statement_markers SET page = page - ?`, [removeCount]);
   await pool.query(`UPDATE bank_statement_highlights SET page = page - ?`, [removeCount]);
+  await pool.query(`UPDATE bank_statement_stamps SET page = page - ?`, [removeCount]);
+  await pool.query(`UPDATE bank_statement_lines SET page = page - ?`, [removeCount]);
   await pool.query(`UPDATE bank_statement_uploads SET page_start = page_start - ?`, [removeCount]);
   await rebuildDisplayFile();
 }
