@@ -10,6 +10,7 @@ import {
   addStampAction,
   deleteStampAction,
   autoDetectLinesAction,
+  backfillReceiptPaymentEffectsAction,
 } from "@/app/dashboard/belege/kontoauszug/actions";
 import type { StatementUpload, StatementMarker, StatementStamp } from "@/lib/kontoauszuege";
 import { MARKER_COLORS, markerColorHex, type MarkerColor } from "@/lib/kontoauszug-colors";
@@ -63,6 +64,8 @@ export default function KontoauszugClient({
   const [autoDetecting, setAutoDetecting] = useState(false);
   const [autoDetectProgress, setAutoDetectProgress] = useState("");
   const [autoDetectError, setAutoDetectError] = useState<string | null>(null);
+  const [backfillBusy, setBackfillBusy] = useState(false);
+  const [backfillMsg, setBackfillMsg] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const isFirstReload = useRef(true);
@@ -210,6 +213,30 @@ export default function KontoauszugClient({
     }
   };
 
+  // Einmalig nutzbar: holt den Zahlstatus-Abgleich für Beleg-Zuordnungen nach,
+  // die VOR dem Umbau auf "sofort je Beleg" angelegt wurden (über alle Seiten
+  // hinweg) – betrifft nur Zuordnungen, deren Zahlstatus noch nicht übernommen wurde.
+  const handleBackfillPayments = async () => {
+    if (backfillBusy) return;
+    if (
+      !window.confirm(
+        "Prüft ALLE bereits zugeordneten Belege (über alle Seiten) und setzt den Zahlstatus nach, falls das beim Zuordnen noch nicht passiert ist. Fortfahren?"
+      )
+    )
+      return;
+    setBackfillBusy(true);
+    setBackfillMsg(null);
+    const res = await backfillReceiptPaymentEffectsAction();
+    setBackfillBusy(false);
+    if (res.ok) {
+      setBackfillMsg(`${res.applied ?? 0} von ${res.checked ?? 0} geprüften Zuordnungen aktualisiert.`);
+      setReloadToken((t) => t + 1);
+      router.refresh();
+    } else {
+      setBackfillMsg(res.error ?? "Fehlgeschlagen.");
+    }
+  };
+
   const handleAddMarker = () => {
     const page = Number(markerPage);
     if (!Number.isFinite(page) || page < 1) {
@@ -310,8 +337,20 @@ export default function KontoauszugClient({
               {autoDetecting ? autoDetectProgress || "…" : "🔍 Zeilen automatisch erkennen"}
             </button>
           )}
+          {hasFile && (
+            <button
+              type="button"
+              onClick={handleBackfillPayments}
+              disabled={backfillBusy}
+              title="Für bereits zugeordnete Belege (alle Seiten) nachträglich prüfen, ob der Zahlstatus schon übernommen wurde, und ggf. jetzt setzen."
+              className="rounded border border-gray-300 px-2 py-0.5 text-xs font-medium text-gray-700 hover:border-brand-red/50 hover:bg-gray-50 disabled:opacity-50"
+            >
+              {backfillBusy ? "…" : "🔄 Zahlstatus bestehender Zuordnungen prüfen"}
+            </button>
+          )}
         </div>
         {autoDetectError && <p className="px-0.5 text-xs text-rose-600">{autoDetectError}</p>}
+        {backfillMsg && <p className="px-0.5 text-xs text-gray-600">{backfillMsg}</p>}
         <div className="min-h-0 flex-1 border border-line bg-gray-100">
           {hasFile ? (
             <iframe

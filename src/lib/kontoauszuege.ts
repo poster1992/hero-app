@@ -1209,6 +1209,35 @@ async function applyReceiptPaymentEffect(linkId: number, userId: number | null):
 }
 
 /**
+ * Holt den Zahlstatus-Abgleich für bereits VOR dem Umbau auf „sofort je
+ * Beleg" zugeordnete Belege nach (die damals nicht abgehakt wurden, weil die
+ * Zeilen-Summe insgesamt nicht exakt zum Soll-Betrag passte). Prüft über
+ * ALLE Seiten/Zeilen hinweg jede Zuordnung mit `paid_applied = 0` und wendet
+ * `applyReceiptPaymentEffect` genau wie bei einer frischen Zuordnung an –
+ * einmalig nutzbar, idempotent (bereits abgehakte Zuordnungen werden
+ * übersprungen).
+ */
+export async function backfillReceiptPaymentEffects(
+  userId: number | null
+): Promise<{ checked: number; applied: number }> {
+  await ensureTables();
+  const [rows] = await getPool().query<RowDataPacket[]>(
+    `SELECT id FROM bank_statement_line_receipts WHERE paid_applied = 0 ORDER BY id ASC`
+  );
+  let applied = 0;
+  for (const r of rows) {
+    const linkId = Number(r.id);
+    await applyReceiptPaymentEffect(linkId, userId);
+    const [check] = await getPool().query<RowDataPacket[]>(
+      `SELECT paid_applied FROM bank_statement_line_receipts WHERE id = ?`,
+      [linkId]
+    );
+    if (Number(check[0]?.paid_applied) === 1) applied++;
+  }
+  return { checked: rows.length, applied };
+}
+
+/**
  * Macht den in `applyReceiptPaymentEffect` gesetzten Zahlstatus für
  * EINEN zugeordneten Beleg wieder rückgängig (Gegenstück dazu). Wird
  * aufgerufen, bevor eine Beleg-Zuordnung entfernt oder eine ganze Zeile

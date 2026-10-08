@@ -20,6 +20,7 @@ import {
   removeReceiptFromLine,
   setLineConfirmedWithoutReceipt,
   setLineNote,
+  backfillReceiptPaymentEffects,
   searchAssignableReceipts,
   type HighlightRect,
   type StatementHighlight,
@@ -232,6 +233,19 @@ export async function setLineNoteAction(lineId: number, note: string): Promise<A
   if (userId == null) return { ok: false, error: "Nicht angemeldet." };
   await setLineNote(lineId, note);
   return { ok: true };
+}
+
+/**
+ * Holt den Zahlstatus-Abgleich für bereits VOR dem Umbau auf „sofort je
+ * Beleg" zugeordnete Belege nach (über alle Seiten hinweg, einmalig nutzbar).
+ */
+export async function backfillReceiptPaymentEffectsAction(): Promise<
+  ActionResult & { checked?: number; applied?: number }
+> {
+  const userId = await currentUserId();
+  if (userId == null) return { ok: false, error: "Nicht angemeldet." };
+  const { checked, applied } = await backfillReceiptPaymentEffects(userId);
+  return { ok: true, checked, applied };
 }
 
 /** Sucht Belege (manuell + HERO) nach Lieferant/Belegnummer/Volltext, zum Zuordnen zu einer Zeile. */
