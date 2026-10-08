@@ -333,6 +333,44 @@ export async function addManualReceiptPartialPayment(
   return { ok: true, fullyPaid, openAmount: fullyPaid ? 0 : Math.round((r.gross - newPaidAmount) * 100) / 100 };
 }
 
+/**
+ * Macht eine zuvor erfasste Teilzahlung wieder rückgängig (zieht `amount` vom
+ * bisher gezahlten Betrag wieder ab, nie unter 0). Wird genutzt, wenn eine
+ * Kontoauszug-Zuordnung, die diese Teilzahlung ausgelöst hat, wieder entfernt
+ * wird. Hebt dabei auch eine evtl. zwischenzeitlich gesetzte "vollständig
+ * bezahlt"-Markierung wieder auf, falls der neue Betrag den Bruttobetrag
+ * nicht mehr erreicht.
+ */
+export async function reduceManualReceiptPartialPayment(
+  id: number,
+  amount: number,
+  actorId: number | null = null
+): Promise<void> {
+  await ensurePaidAmountColumn();
+  const r = await getManualReceipt(id);
+  if (!r) return;
+  const newPaidAmount = Math.max(0, Math.round((r.paidAmount - amount) * 100) / 100);
+  const stillFullyPaid = r.isPaid && newPaidAmount >= r.gross - 0.01;
+  await getPool().query(
+    "UPDATE manual_receipts SET is_paid = ?, paid_with_skonto = ?, paid_amount = ?, paid_date = ? WHERE id = ?",
+    [
+      stillFullyPaid ? 1 : 0,
+      stillFullyPaid ? (r.paidWithSkonto ? 1 : 0) : 0,
+      stillFullyPaid ? r.gross : newPaidAmount,
+      newPaidAmount > 0 ? r.paidDate : null,
+      id,
+    ]
+  );
+  const eur = (n: number) => n.toLocaleString("de-DE", { style: "currency", currency: "EUR" });
+  await logReceiptEvent({
+    kind: "manual",
+    receiptId: id,
+    action: newPaidAmount > 0 ? "partial_paid" : "unpaid",
+    detail: `Teilzahlung ${eur(amount)} zurückgenommen (Kontoauszug-Zuordnung entfernt) · jetzt ${eur(newPaidAmount)} von ${eur(r.gross)} bezahlt`,
+    userId: actorId,
+  });
+}
+
 /** Ein manueller Beleg, der an einem bestimmten Tag als bezahlt markiert wurde. */
 export interface PaidManualReceipt {
   id: number;

@@ -166,9 +166,10 @@ export async function addLineAction(
   }
 }
 
-/** Löscht eine Zeilen-Zuordnung samt zugeordneter Belege. */
+/** Löscht eine Zeilen-Zuordnung samt zugeordneter Belege (nimmt ggf. bereits gesetzten Zahlstatus zurück). */
 export async function deleteLineAction(id: number): Promise<ActionResult> {
-  await deleteStatementLine(id);
+  const userId = await currentUserId();
+  await deleteStatementLine(id, userId);
   return { ok: true };
 }
 
@@ -203,9 +204,10 @@ export async function addReceiptToLineAction(
   return { ok: true };
 }
 
-/** Entfernt einen zugeordneten Beleg von einer Zeile. */
+/** Entfernt einen zugeordneten Beleg von einer Zeile (nimmt ggf. bereits gesetzten Zahlstatus zurück auf "offen"). */
 export async function removeReceiptFromLineAction(linkId: number): Promise<ActionResult> {
-  await removeReceiptFromLine(linkId);
+  const userId = await currentUserId();
+  await removeReceiptFromLine(linkId, userId);
   return { ok: true };
 }
 

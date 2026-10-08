@@ -13,9 +13,10 @@ import {
   searchManualOcrIds,
   setManualReceiptPaid,
   addManualReceiptPartialPayment,
+  reduceManualReceiptPartialPayment,
 } from "./manual-receipts";
 import { searchOcrHeroIds } from "./receipt-ocr";
-import { getPaymentOverrideMap, setPaymentOverride } from "./receipt-payment-status";
+import { getPaymentOverrideMap, setPaymentOverride, clearPaymentOverride } from "./receipt-payment-status";
 
 /**
  * Kontoauszüge (privat, ein Bankkonto): PDF-Auszüge werden nicht mehr
@@ -998,10 +999,35 @@ export async function addStatementLinesBatch(
   return created;
 }
 
-/** Löscht eine Zeilen-Zuordnung samt zugeordneter Belege und baut die angezeigte Datei neu auf. */
-export async function deleteStatementLine(id: number): Promise<void> {
+/**
+ * Löscht eine Zeilen-Zuordnung samt zugeordneter Belege und baut die
+ * angezeigte Datei neu auf. War der Zahlstatus für diese Zeile bereits
+ * gesetzt (`paid_applied`), wird er für jeden zugeordneten Beleg vorher
+ * zurückgenommen (siehe `revertReceiptPaymentEffect`).
+ */
+export async function deleteStatementLine(id: number, userId: number | null = null): Promise<void> {
   await ensureTables();
   const pool = getPool();
+  const [lineRows] = await pool.query<RowDataPacket[]>(`SELECT paid_applied FROM bank_statement_lines WHERE id = ?`, [
+    id,
+  ]);
+  if (Number(lineRows[0]?.paid_applied) === 1) {
+    const [receiptRows] = await pool.query<RowDataPacket[]>(
+      `SELECT receipt_kind, receipt_ref, amount, settlement_kind FROM bank_statement_line_receipts WHERE line_id = ?`,
+      [id]
+    );
+    for (const r of receiptRows) {
+      await revertReceiptPaymentEffect(
+        {
+          kind: r.receipt_kind === "hero" ? "hero" : "manual",
+          ref: String(r.receipt_ref),
+          amount: Number(r.amount),
+          settlementKind: String(r.settlement_kind),
+        },
+        userId
+      );
+    }
+  }
   await pool.query(`DELETE FROM bank_statement_line_receipts WHERE line_id = ?`, [id]);
   await pool.query(`DELETE FROM bank_statement_lines WHERE id = ?`, [id]);
   await rebuildDisplayFile();
@@ -1098,10 +1124,62 @@ async function applyLineReceiptPaymentEffects(lineId: number, userId: number | n
   await pool.query(`UPDATE bank_statement_lines SET paid_applied = 1 WHERE id = ?`, [lineId]);
 }
 
-/** Entfernt einen zugeordneten Beleg von einer Zeile und baut die angezeigte Datei neu auf. */
-export async function removeReceiptFromLine(linkId: number): Promise<void> {
+/**
+ * Macht den in `applyLineReceiptPaymentEffects` gesetzten Zahlstatus für
+ * EINEN zugeordneten Beleg wieder rückgängig (Gegenstück dazu). Wird
+ * aufgerufen, bevor eine Beleg-Zuordnung entfernt oder eine ganze Zeile
+ * gelöscht wird, deren Zahlstatus bereits übernommen war.
+ */
+async function revertReceiptPaymentEffect(
+  receipt: { kind: "manual" | "hero"; ref: string; amount: number; settlementKind: string },
+  userId: number | null
+): Promise<void> {
+  if (receipt.kind === "manual") {
+    const id = Number(receipt.ref);
+    if (receipt.settlementKind === "partial") {
+      await reduceManualReceiptPartialPayment(id, receipt.amount, userId).catch(() => {});
+    } else {
+      await setManualReceiptPaid(id, false, false, userId).catch(() => {});
+    }
+  } else if (receipt.settlementKind !== "partial") {
+    // HERO kennt keine Teilzahlung – bei "partial" wurde der Status gar nicht
+    // verändert (blieb "offen"), nur eine Notiz vermerkt, also nichts zu tun.
+    // Bei voll/Skonto den Override entfernen → es gilt wieder der echte HERO-Status.
+    await clearPaymentOverride(receipt.ref).catch(() => {});
+  }
+}
+
+/**
+ * Entfernt einen zugeordneten Beleg von einer Zeile und baut die angezeigte
+ * Datei neu auf. War der Zahlstatus für diese Zeile bereits übernommen
+ * (`paid_applied`), wird er für diesen Beleg vorher zurückgenommen und das
+ * Flag der Zeile wieder auf "noch nicht gesetzt" zurückgestellt, damit eine
+ * spätere korrekte Zuordnung den Status erneut setzen kann.
+ */
+export async function removeReceiptFromLine(linkId: number, userId: number | null = null): Promise<void> {
   await ensureTables();
-  await getPool().query(`DELETE FROM bank_statement_line_receipts WHERE id = ?`, [linkId]);
+  const pool = getPool();
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT lr.line_id, lr.receipt_kind, lr.receipt_ref, lr.amount, lr.settlement_kind, l.paid_applied
+     FROM bank_statement_line_receipts lr
+     JOIN bank_statement_lines l ON l.id = lr.line_id
+     WHERE lr.id = ?`,
+    [linkId]
+  );
+  const row = rows[0];
+  if (row && Number(row.paid_applied) === 1) {
+    await revertReceiptPaymentEffect(
+      {
+        kind: row.receipt_kind === "hero" ? "hero" : "manual",
+        ref: String(row.receipt_ref),
+        amount: Number(row.amount),
+        settlementKind: String(row.settlement_kind),
+      },
+      userId
+    );
+    await pool.query(`UPDATE bank_statement_lines SET paid_applied = 0 WHERE id = ?`, [row.line_id]);
+  }
+  await pool.query(`DELETE FROM bank_statement_line_receipts WHERE id = ?`, [linkId]);
   await rebuildDisplayFile();
 }
 
