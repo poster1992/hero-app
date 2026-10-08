@@ -14,6 +14,7 @@ import {
   deleteStatementStamp,
   listStatementLines,
   addStatementLine,
+  addStatementLinesBatch,
   deleteStatementLine,
   addReceiptToLine,
   removeReceiptFromLine,
@@ -194,4 +195,23 @@ export async function extractLineAmountAction(imageBase64Png: string): Promise<{
   const userId = await currentUserId();
   if (userId == null) return { amount: null, error: "Nicht angemeldet." };
   return extractLineAmount(imageBase64Png);
+}
+
+/**
+ * Legt mehrere automatisch erkannte Zeilen auf einmal an (Erkennung passiert
+ * client-seitig über den PDF-Text-Layer). Gibt die Anzahl tatsächlich neu
+ * angelegter Zeilen zurück (Dubletten werden übersprungen).
+ */
+export async function autoDetectLinesAction(
+  items: { page: number; x: number; y: number; width: number; height: number; amount: number }[]
+): Promise<{ ok: boolean; created?: number; error?: string }> {
+  const userId = await currentUserId();
+  if (userId == null) return { ok: false, error: "Nicht angemeldet." };
+  if (!Array.isArray(items) || items.length === 0) return { ok: true, created: 0 };
+  try {
+    const created = await addStatementLinesBatch(items, userId);
+    return { ok: true, created };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Erkennung fehlgeschlagen." };
+  }
 }

@@ -889,6 +889,55 @@ export async function addStatementLine(input: {
   return (result as { insertId?: number }).insertId ?? 0;
 }
 
+/**
+ * Legt mehrere Zeilen-Zuordnungen auf einmal an (automatische Erkennung über
+ * den PDF-Text-Layer, client-seitig erkannt und hier nur noch gespeichert).
+ * Baut die angezeigte Datei erst am Ende EINMAL neu auf statt je Zeile.
+ * Überspringt Zeilen, die schon eine sehr ähnlich positionierte bestehende
+ * Zeile auf derselben Seite haben (Dubletten-Schutz bei mehrfachem Ausführen).
+ */
+export async function addStatementLinesBatch(
+  items: { page: number; x: number; y: number; width: number; height: number; amount: number }[],
+  userId: number | null
+): Promise<number> {
+  if (items.length === 0) return 0;
+  await ensureTables();
+  const base = await getBaseFile();
+  if (!base) throw new Error("Noch keine Kontoauszüge hochgeladen.");
+  const pdf = await PDFDocument.load(base, { ignoreEncryption: true });
+  const pageCount = pdf.getPageCount();
+  const pool = getPool();
+
+  // Bestehende Zeilen je betroffener Seite einmal laden (statt pro Element erneut).
+  const pages = [...new Set(items.map((it) => it.page))];
+  const existingByPage = new Map<number, { y: number; height: number }[]>();
+  for (const p of pages) {
+    const [rows] = await pool.query<RowDataPacket[]>(`SELECT y, height FROM bank_statement_lines WHERE page = ?`, [p]);
+    existingByPage.set(
+      p,
+      rows.map((r) => ({ y: Number(r.y), height: Number(r.height) }))
+    );
+  }
+
+  let created = 0;
+  for (const it of items) {
+    const index = it.page - 1;
+    if (index < 0 || index >= pageCount) continue;
+    const existing = existingByPage.get(it.page) ?? [];
+    const centerY = it.y + it.height / 2;
+    const isDuplicate = existing.some((r) => Math.abs(r.y + r.height / 2 - centerY) < 6);
+    if (isDuplicate) continue;
+    await pool.query(
+      `INSERT INTO bank_statement_lines (page, x, y, width, height, amount, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [it.page, it.x, it.y, it.width, it.height, it.amount, userId]
+    );
+    existing.push({ y: it.y, height: it.height });
+    created++;
+  }
+  if (created > 0) await rebuildDisplayFile();
+  return created;
+}
+
 /** Löscht eine Zeilen-Zuordnung samt zugeordneter Belege und baut die angezeigte Datei neu auf. */
 export async function deleteStatementLine(id: number): Promise<void> {
   await ensureTables();

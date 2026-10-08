@@ -9,9 +9,11 @@ import {
   deleteStatementMarkerAction,
   addStampAction,
   deleteStampAction,
+  autoDetectLinesAction,
 } from "@/app/dashboard/belege/kontoauszug/actions";
 import type { StatementUpload, StatementMarker, StatementStamp } from "@/lib/kontoauszuege";
 import { MARKER_COLORS, markerColorHex, type MarkerColor } from "@/lib/kontoauszug-colors";
+import { detectLinesOnPage, type DetectedLine, type MinimalTextItem } from "@/lib/kontoauszug-line-detect";
 import PdfHighlightModal from "@/components/PdfHighlightModal";
 import PdfLineAssignModal from "@/components/PdfLineAssignModal";
 
@@ -61,6 +63,9 @@ export default function KontoauszugClient({
   const [jumpToken, setJumpToken] = useState(0);
   // Textmarker-ID, die gerade blau umrandet angezeigt werden soll (per Marker-Klick gesetzt).
   const [selectedHighlightId, setSelectedHighlightId] = useState<number | null>(null);
+  const [autoDetecting, setAutoDetecting] = useState(false);
+  const [autoDetectProgress, setAutoDetectProgress] = useState("");
+  const [autoDetectError, setAutoDetectError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const hasFile = initialPageCount > 0;
@@ -141,6 +146,50 @@ export default function KontoauszugClient({
       setReloadToken((t) => t + 1);
       router.refresh();
     });
+  };
+
+  // Erkennt automatisch alle Buchungszeilen + Beträge über das GESAMTE Dokument
+  // (PDF-Text-Layer, kein Bild-OCR nötig) und legt sie als neue, noch unzugeordnete
+  // (rote) Zeilen-Zuordnungen an. Das Zuordnen der Belege bleibt danach manuell
+  // (über „Belege zuordnen" je Seite).
+  const handleAutoDetectLines = async () => {
+    if (!hasFile || autoDetecting) return;
+    setAutoDetecting(true);
+    setAutoDetectError(null);
+    setAutoDetectProgress("Wird vorbereitet …");
+    try {
+      const pdfjsLib = await import("pdfjs-dist");
+      pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+      const doc = await pdfjsLib.getDocument({ url: "/api/kontoauszug-datei" }).promise;
+      const all: DetectedLine[] = [];
+      for (let p = 1; p <= doc.numPages; p++) {
+        setAutoDetectProgress(`Seite ${p} von ${doc.numPages} wird analysiert …`);
+        const page = await doc.getPage(p);
+        const textContent = await page.getTextContent();
+        // `items` kann auch TextMarkedContent (ohne `str`) enthalten – nur echte Textelemente nutzen.
+        const textItems = textContent.items.filter((it) => typeof (it as { str?: unknown }).str === "string");
+        all.push(...detectLinesOnPage(p, textItems as unknown as MinimalTextItem[]));
+      }
+      setAutoDetectProgress("Wird gespeichert …");
+      const res = await autoDetectLinesAction(all);
+      if (res.ok) {
+        setAutoDetectProgress("");
+        setReloadToken((t) => t + 1);
+        router.refresh();
+        window.alert(
+          all.length === 0
+            ? "Es wurden keine Beträge im Text der PDF gefunden (evtl. eingescannt, ohne Text-Layer)."
+            : `${res.created ?? 0} neue Zeile(n) erkannt und angelegt (${all.length - (res.created ?? 0)} bereits vorhanden/übersprungen).`
+        );
+      } else {
+        setAutoDetectError(res.error ?? "Erkennung fehlgeschlagen.");
+      }
+    } catch (e) {
+      setAutoDetectError(e instanceof Error ? e.message : "Erkennung fehlgeschlagen.");
+    } finally {
+      setAutoDetecting(false);
+      setAutoDetectProgress("");
+    }
   };
 
   const handleAddMarker = () => {
@@ -252,7 +301,19 @@ export default function KontoauszugClient({
               🧾 Belege zuordnen
             </button>
           )}
+          {hasFile && (
+            <button
+              type="button"
+              onClick={handleAutoDetectLines}
+              disabled={autoDetecting}
+              title="Alle Buchungszeilen samt Beträgen im gesamten Dokument automatisch erkennen (PDF-Text, kein Bild-OCR). Start als rote, noch unzugeordnete Zeilen."
+              className="rounded border border-gray-300 px-2 py-0.5 text-xs font-medium text-gray-700 hover:border-brand-red/50 hover:bg-gray-50 disabled:opacity-50"
+            >
+              {autoDetecting ? autoDetectProgress || "…" : "🔍 Zeilen automatisch erkennen"}
+            </button>
+          )}
         </div>
+        {autoDetectError && <p className="px-0.5 text-xs text-rose-600">{autoDetectError}</p>}
         <div className="min-h-0 flex-1 border border-line bg-gray-100">
           {hasFile ? (
             <iframe
