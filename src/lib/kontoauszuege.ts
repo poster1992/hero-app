@@ -1011,7 +1011,9 @@ export async function searchAssignableReceipts(query: string): Promise<Assignabl
     const fmt = (d: Date) => d.toISOString().slice(0, 10);
     const heroReceipts = await getReceiptsInRange(`${fmt(from)}T00:00:00Z`, `${fmt(to)}T23:59:59Z`);
     for (const r of heroReceipts) {
-      if (r.type !== "output") continue; // nur Eingangsrechnungen
+      // Beide Richtungen durchsuchen: "output" = Eingangsrechnungen (wir zahlen,
+      // Abgänge vom Konto), "income" = Ausgangsrechnungen (Kunden zahlen uns,
+      // Eingänge). Der Kontoauszug enthält beides.
       const supplierName = getCustomerName(r);
       const hit = supplierName.toLowerCase().includes(q) || (r.number ?? "").toLowerCase().includes(q);
       if (!hit) continue;
