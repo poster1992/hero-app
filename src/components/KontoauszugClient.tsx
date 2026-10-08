@@ -16,6 +16,7 @@ import { MARKER_COLORS, markerColorHex, type MarkerColor } from "@/lib/kontoausz
 import { detectLinesOnPage, type DetectedLine, type MinimalTextItem } from "@/lib/kontoauszug-line-detect";
 import PdfHighlightModal from "@/components/PdfHighlightModal";
 import PdfLineAssignModal from "@/components/PdfLineAssignModal";
+import LineAssignPanel from "@/components/LineAssignPanel";
 
 function fmtDateTime(iso: string | null): string {
   if (!iso) return "";
@@ -401,6 +402,17 @@ export default function KontoauszugClient({
             </ul>
           )}
         </div>
+
+        {hasFile && (
+          <LineAssignPanel
+            page={activePage}
+            reloadToken={reloadToken}
+            onChanged={() => {
+              setReloadToken((t) => t + 1);
+              router.refresh();
+            }}
+          />
+        )}
 
         <div className="flex min-h-0 flex-1 flex-col border border-line bg-gray-50 p-3">
           <h2 className="mb-2 text-sm font-semibold text-gray-900">Markierung hinzufügen</h2>

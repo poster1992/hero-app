@@ -1,16 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import {
-  listPageLinesAction,
-  addLineAction,
-  deleteLineAction,
-  addReceiptToLineAction,
-  removeReceiptFromLineAction,
-  searchAssignableReceiptsAction,
-  extractLineAmountAction,
-} from "@/app/dashboard/belege/kontoauszug/actions";
-import type { StatementLine, AssignableReceiptOption } from "@/lib/kontoauszuege";
+import { listPageLinesAction, addLineAction, extractLineAmountAction } from "@/app/dashboard/belege/kontoauszug/actions";
+import type { StatementLine } from "@/lib/kontoauszuege";
+import LineAssignList from "@/components/LineAssignList";
 
 /** Nur der Ausschnitt der pdfjs-`PageViewport`/`PDFPageProxy`, den wir brauchen. */
 interface MinimalViewport {
@@ -43,10 +36,6 @@ function cropCanvasToPngBase64(source: HTMLCanvasElement, left: number, top: num
   if (!ctx) return null;
   ctx.drawImage(source, Math.round(left), Math.round(top), w, h, 0, 0, w, h);
   return crop.toDataURL("image/png").split(",")[1] ?? null;
-}
-
-function fmtEur(n: number): string {
-  return n.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €";
 }
 
 /**
@@ -86,17 +75,6 @@ export default function PdfLineAssignModal({
   const [createError, setCreateError] = useState<string | null>(null);
   // Betrag/Datum werden per KI aus dem gezogenen Ausschnitt vorausgefüllt (bleiben korrigierbar).
   const [ocrBusy, setOcrBusy] = useState(false);
-
-  const [searchOpenFor, setSearchOpenFor] = useState<number | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<AssignableReceiptOption[]>([]);
-  const [searching, setSearching] = useState(false);
-  const [searchError, setSearchError] = useState<string | null>(null);
-  const [busyLineId, setBusyLineId] = useState<number | null>(null);
-  // Beleg aus der Suche ausgewählt, aber Betrag noch nicht bestätigt (editierbar wegen Skonto/Teilzahlung).
-  const [pickedReceipt, setPickedReceipt] = useState<AssignableReceiptOption | null>(null);
-  const [confirmAmount, setConfirmAmount] = useState("");
-  const [assigning, setAssigning] = useState(false);
 
   const renderAtScale = async (scale: number) => {
     const proxy = pdfPageRef.current;
@@ -230,73 +208,9 @@ export default function PdfLineAssignModal({
     setCreateError(null);
   };
 
-  const handleDeleteLine = async (id: number) => {
-    if (!window.confirm("Diese Zeilen-Zuordnung samt zugeordneter Belege löschen?")) return;
-    setBusyLineId(id);
-    await deleteLineAction(id);
-    setBusyLineId(null);
-    onChanged();
-    await loadPage();
-  };
-
-  const openSearch = (lineId: number) => {
-    setSearchOpenFor(lineId);
-    setSearchQuery("");
-    setSearchResults([]);
-    setSearchError(null);
-    setPickedReceipt(null);
-    setConfirmAmount("");
-  };
-
-  const runSearch = async () => {
-    if (searchQuery.trim().length < 2) return;
-    setSearching(true);
-    setSearchError(null);
-    const res = await searchAssignableReceiptsAction(searchQuery);
-    setSearching(false);
-    setSearchResults(res.results);
-    if (res.error) setSearchError(res.error);
-  };
-
-  // Beleg aus der Trefferliste auswählen: Betrag erst bestätigen (editierbar –
-  // wichtig bei Skonto/Teilzahlung), bevor wirklich zugeordnet wird.
-  const pickReceipt = (receipt: AssignableReceiptOption) => {
-    setPickedReceipt(receipt);
-    setConfirmAmount(receipt.amount.toFixed(2).replace(".", ","));
-    setSearchError(null);
-  };
-
-  const cancelPick = () => {
-    setPickedReceipt(null);
-    setConfirmAmount("");
-  };
-
-  const confirmAssign = async (lineId: number) => {
-    if (!pickedReceipt) return;
-    const amount = parseGermanAmount(confirmAmount);
-    if (amount == null) {
-      setSearchError("Bitte einen gültigen Betrag eingeben.");
-      return;
-    }
-    setAssigning(true);
-    setSearchError(null);
-    const res = await addReceiptToLineAction(lineId, pickedReceipt, amount);
-    setAssigning(false);
-    if (!res.ok) {
-      setSearchError(res.error ?? "Zuordnen fehlgeschlagen.");
-      return;
-    }
-    setPickedReceipt(null);
-    setConfirmAmount("");
-    setSearchOpenFor(null);
-    onChanged();
-    await loadPage();
-  };
-
-  const removeReceipt = async (lineId: number, linkId: number) => {
-    setBusyLineId(lineId);
-    await removeReceiptFromLineAction(linkId);
-    setBusyLineId(null);
+  // Nach jeder Änderung über `LineAssignList` (zuordnen/entfernen/löschen): Elternkomponente
+  // informieren (PDF-Vorschau im Hintergrund neu laden) und die eigene Zeilenliste + Overlay neu holen.
+  const handleLinesReload = async () => {
     onChanged();
     await loadPage();
   };
@@ -439,166 +353,7 @@ export default function PdfLineAssignModal({
             {lines.length === 0 && !pendingPdfRect && (
               <p className="text-xs text-gray-500">Noch keine Zeile markiert. Mit der Maus einen Rahmen ziehen.</p>
             )}
-            <ul className="space-y-2">
-              {lines.map((l) => {
-                const sum = l.receipts.reduce((s, r) => s + r.amount, 0);
-                const diff = l.amount - sum;
-                return (
-                  <li key={l.id} className="border border-line bg-white p-2.5 text-xs">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="flex items-center gap-1.5 font-semibold">
-                        <span
-                          className="h-2.5 w-2.5 rounded-full"
-                          style={{ backgroundColor: l.matched ? "#16a34a" : "#dc2626" }}
-                        />
-                        Soll {fmtEur(l.amount)}
-                        {l.date && <span className="font-normal text-gray-400">· {l.date.split("-").reverse().join(".")}</span>}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteLine(l.id)}
-                        disabled={busyLineId === l.id}
-                        title="Zeile löschen"
-                        className="text-gray-400 hover:text-rose-600 disabled:opacity-40"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                    <div className={`mt-0.5 ${l.matched ? "text-emerald-600" : "text-rose-600"}`}>
-                      {l.matched ? "✓ Summe passt" : `Fehlt ${fmtEur(diff)}`}
-                      {l.matched && l.paidApplied && " · Zahlstatus der Belege aktualisiert"}
-                    </div>
-
-                    {l.receipts.length > 0 && (
-                      <ul className="mt-1.5 space-y-1">
-                        {l.receipts.map((r) => (
-                          <li key={r.id} className="flex items-center justify-between gap-1 border-t border-gray-100 pt-1">
-                            <span className="min-w-0 flex-1 truncate text-gray-600" title={`${r.supplier ?? ""} ${r.invoiceNumber ?? ""}`}>
-                              {r.kind === "hero" ? "HERO" : "Manuell"} · {r.supplier ?? "—"} · {fmtEur(r.amount)}
-                              {r.settlementKind !== "full" && (
-                                <span className="ml-1 text-amber-600">
-                                  ({r.settlementKind === "skonto" ? "Skonto" : "Teilzahlung"})
-                                </span>
-                              )}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => removeReceipt(l.id, r.id)}
-                              disabled={busyLineId === l.id}
-                              className="shrink-0 text-gray-400 hover:text-rose-600 disabled:opacity-40"
-                            >
-                              ✕
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-
-                    {searchOpenFor === l.id ? (
-                      <div className="mt-2 border-t border-gray-100 pt-2">
-                        {pickedReceipt ? (
-                          <div className="border border-blue-300 bg-blue-50 p-2">
-                            <p className="font-medium">
-                              {pickedReceipt.supplier ?? "—"}
-                              {pickedReceipt.invoiceNumber ? ` · ${pickedReceipt.invoiceNumber}` : ""}
-                            </p>
-                            <p className="text-gray-500">
-                              Offen: {fmtEur(pickedReceipt.amount)}
-                              {pickedReceipt.skontoPayAmount != null && ` · Skonto: ${fmtEur(pickedReceipt.skontoPayAmount)}`}
-                            </p>
-                            <div className="mt-1.5 flex items-center gap-2">
-                              <label className="flex items-center gap-1">
-                                Zugeordneter Betrag:
-                                <input
-                                  type="text"
-                                  inputMode="decimal"
-                                  autoFocus
-                                  value={confirmAmount}
-                                  onChange={(e) => setConfirmAmount(e.target.value)}
-                                  onKeyDown={(e) => e.key === "Enter" && void confirmAssign(l.id)}
-                                  className="w-24 border border-line px-2 py-1 text-xs outline-none focus:border-brand-red/60"
-                                />
-                              </label>
-                              <button
-                                type="button"
-                                onClick={() => confirmAssign(l.id)}
-                                disabled={assigning}
-                                className="rounded-md bg-brand-red px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
-                              >
-                                {assigning ? "…" : "Zuordnen"}
-                              </button>
-                              <button type="button" onClick={cancelPick} className="text-gray-500 hover:text-gray-800">
-                                Abbrechen
-                              </button>
-                            </div>
-                            <p className="mt-1 text-[11px] text-gray-400">
-                              Entspricht der Betrag genau dem offenen Betrag oder dem Skontobetrag, wird der Beleg
-                              automatisch als bezahlt abgehakt; ein kleinerer Betrag gilt als Teilzahlung.
-                            </p>
-                          </div>
-                        ) : (
-                          <>
-                            <div className="flex items-center gap-1">
-                              <input
-                                type="text"
-                                autoFocus
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                onKeyDown={(e) => e.key === "Enter" && void runSearch()}
-                                placeholder="Lieferant oder Belegnr. …"
-                                className="min-w-0 flex-1 border border-line px-2 py-1 text-xs outline-none focus:border-brand-red/60"
-                              />
-                              <button
-                                type="button"
-                                onClick={runSearch}
-                                disabled={searching}
-                                className="rounded border border-gray-300 px-2 py-1 text-xs hover:bg-gray-50 disabled:opacity-50"
-                              >
-                                {searching ? "…" : "Suchen"}
-                              </button>
-                              <button type="button" onClick={() => setSearchOpenFor(null)} className="text-gray-400 hover:text-gray-700">
-                                ✕
-                              </button>
-                            </div>
-                            {searchResults.length > 0 && (
-                              <ul className="mt-1.5 max-h-40 space-y-1 overflow-y-auto">
-                                {searchResults.map((r, i) => (
-                                  <li key={`${r.kind}-${r.ref}-${i}`}>
-                                    <button
-                                      type="button"
-                                      onClick={() => pickReceipt(r)}
-                                      className="block w-full border border-gray-200 px-2 py-1 text-left hover:border-brand-red/50 hover:bg-gray-50"
-                                    >
-                                      <span className="font-medium">{r.supplier ?? "—"}</span>{" "}
-                                      <span className="text-gray-400">
-                                        {r.invoiceNumber ? `· ${r.invoiceNumber} ` : ""}· {fmtEur(r.amount)}
-                                        {r.date ? ` · ${r.date.split("-").reverse().join(".")}` : ""}
-                                      </span>
-                                    </button>
-                                  </li>
-                                ))}
-                              </ul>
-                            )}
-                            {searchError && <p className="mt-1 text-rose-600">Fehler: {searchError}</p>}
-                            {!searching && !searchError && searchQuery.trim().length >= 2 && searchResults.length === 0 && (
-                              <p className="mt-1 text-gray-400">Keine Treffer.</p>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => openSearch(l.id)}
-                        className="mt-2 rounded border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:border-brand-red/50 hover:bg-gray-50"
-                      >
-                        + Beleg zuordnen
-                      </button>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
+            <LineAssignList lines={lines} onReload={handleLinesReload} />
           </div>
         </div>
 
