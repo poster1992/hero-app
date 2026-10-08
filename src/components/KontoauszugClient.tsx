@@ -66,6 +66,8 @@ export default function KontoauszugClient({
   const [autoDetectError, setAutoDetectError] = useState<string | null>(null);
   const [backfillBusy, setBackfillBusy] = useState(false);
   const [backfillMsg, setBackfillMsg] = useState<string | null>(null);
+  // Filter "Gehe zu Seite" auf geprüfte/ungeprüfte Seiten (Stempel = geprüft).
+  const [pageFilter, setPageFilter] = useState<"all" | "checked" | "unchecked">("all");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const isFirstReload = useRef(true);
@@ -93,6 +95,12 @@ export default function KontoauszugClient({
   const lastUpload = initialUploads[0] ?? null;
   const currentStamp = initialStamps.find((s) => s.page === activePage) ?? null;
 
+  // Seiten mit "GEPRÜFT"-Stempel (siehe "📋 Seite stempeln") – für den Geprüft/Ungeprüft-Filter.
+  const stampedPages = useMemo(() => new Set(initialStamps.map((s) => s.page)), [initialStamps]);
+  const matchesPageFilter = (p: number) =>
+    pageFilter === "all" ? true : pageFilter === "checked" ? stampedPages.has(p) : !stampedPages.has(p);
+  const checkedCount = stampedPages.size;
+
   const filteredMarkers = useMemo(() => {
     const q = search.trim().toLowerCase();
     return initialMarkers.filter(
@@ -119,6 +127,22 @@ export default function KontoauszugClient({
       setSelectedHighlightId(null);
     }
     setJumpToken((t) => t + 1);
+  };
+
+  // Springt von der aktuellen Seite aus zur nächsten/vorherigen Seite, die zum
+  // Geprüft/Ungeprüft-Filter passt (für "alle" einfach vor/zurück blättern).
+  const jumpToFilteredPage = (direction: 1 | -1) => {
+    for (let p = activePage + direction; p >= 1 && p <= initialPageCount; p += direction) {
+      if (matchesPageFilter(p)) {
+        goToPage(p);
+        return;
+      }
+    }
+    window.alert(
+      direction === 1
+        ? "Keine weitere passende Seite danach gefunden."
+        : "Keine passende Seite davor gefunden."
+    );
   };
 
   const handleUpload = () => {
@@ -306,6 +330,36 @@ export default function KontoauszugClient({
                 Los
               </button>
             </form>
+          )}
+          {hasFile && (
+            <div className="flex items-center gap-1">
+              <select
+                value={pageFilter}
+                onChange={(e) => setPageFilter(e.target.value as "all" | "checked" | "unchecked")}
+                title="Seiten nach Prüfstatus filtern (Stempel = geprüft)"
+                className="rounded border border-gray-300 px-1.5 py-0.5 text-xs text-gray-700 outline-none focus:border-brand-red/60"
+              >
+                <option value="all">Alle Seiten</option>
+                <option value="checked">✓ Geprüft ({checkedCount})</option>
+                <option value="unchecked">Ungeprüft ({initialPageCount - checkedCount})</option>
+              </select>
+              <button
+                type="button"
+                onClick={() => jumpToFilteredPage(-1)}
+                title="Vorherige passende Seite"
+                className="rounded border border-gray-300 px-1.5 py-0.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+              >
+                ◀
+              </button>
+              <button
+                type="button"
+                onClick={() => jumpToFilteredPage(1)}
+                title="Nächste passende Seite"
+                className="rounded border border-gray-300 px-1.5 py-0.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+              >
+                ▶
+              </button>
+            </div>
           )}
           {hasFile && (
             <button
