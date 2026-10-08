@@ -28,6 +28,10 @@ const AMOUNT_RE = /-?\d{1,3}(?:\.\d{3})*,\d{2}/g;
 // Zeilen, die nur aus Datum(en) bestehen, sind keine Beträge – grobe Heuristik reicht hier nicht,
 // die Betragssuche selbst filtert über das Dezimalkomma-Format ausreichend genau.
 
+// Eröffnungs-/Schluss-/Anfangs-/Endsaldo sind keine Buchungen (Eingänge/Abgänge), sondern
+// Kontostände – sollen nicht als Zeile erkannt werden.
+const EXCLUDE_RE = /saldo|kontostand/i;
+
 /** Gruppiert Textelemente einer Seite zu Zeilen (nach Y-Position) und erkennt je Zeile einen Betrag. */
 export function detectLinesOnPage(page: number, items: MinimalTextItem[]): DetectedLine[] {
   const withText = items.filter((it) => it.str.trim().length > 0);
@@ -50,6 +54,7 @@ export function detectLinesOnPage(page: number, items: MinimalTextItem[]): Detec
   for (const g of groups) {
     const ordered = [...g.items].sort((a, b) => a.transform[4] - b.transform[4]);
     const text = ordered.map((it) => it.str).join(" ");
+    if (EXCLUDE_RE.test(text)) continue; // Eröffnungs-/Schlusssaldo & Co. sind keine Ein-/Abgänge.
     const matches = text.match(AMOUNT_RE);
     if (!matches || matches.length === 0) continue;
     // Der Betrag steht in Kontoauszügen fast immer am Zeilenende.
