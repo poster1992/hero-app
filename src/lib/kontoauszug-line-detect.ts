@@ -49,6 +49,38 @@ const EXCLUDE_RE = /saldo|kontostand|summe|tagesabschluss/i;
 // (Wertstellung/Buchung) am Zeilenanfang, wir nehmen das erste.
 const DATE_RE = /(\d{2})[./](\d{2})[./](\d{2,4})/;
 
+/**
+ * Baut den durchsuchbaren Zeilentext aus den (nach X sortierten) Textelementen
+ * einer Zeile zusammen – mit einem auf dem Zwischenraum basierenden Trenner
+ * statt eines starren Leerzeichens. Ein schmaler Zwischenraum (knapp über der
+ * lokalen Zeichenbreite) gilt als Trennung INNERHALB eines Felds (z.B. eine von
+ * der Bank per Leerzeichen gruppierte Zahl wie "2 330,90") und bleibt ein
+ * normales Leerzeichen, über das `AMOUNT_RE`s Tausendertrenner greifen darf.
+ * Ein deutlich größerer Zwischenraum trennt dagegen unterschiedliche Spalten
+ * (z.B. Referenznummer/IBAN-Feld vs. Betragsspalte) und bekommt einen
+ * Trenner, den `AMOUNT_RE` NICHT als Tausendertrenner lesen kann – sonst
+ * verschmelzen fremde Zahlen (IBAN-Endziffern, Referenznummern) fälschlich
+ * mit dem danebenstehenden echten Betrag (zwei reproduzierte Bugs: eine IBAN
+ * endend auf "...0065 8328" + " 402,36" wurde zu "328.402,36", eine IBAN
+ * endend auf "...5192 54" + " 512,26" wurde zu "54.512,26" statt korrekt
+ * "402,36" bzw. "512,26").
+ */
+function buildLineText(ordered: MinimalTextItem[]): string {
+  let text = "";
+  for (let i = 0; i < ordered.length; i++) {
+    const it = ordered[i];
+    if (i > 0) {
+      const prev = ordered[i - 1];
+      const gap = it.transform[4] - (prev.transform[4] + prev.width);
+      const avgCharWidth =
+        (prev.width / Math.max(1, prev.str.length) + it.width / Math.max(1, it.str.length)) / 2;
+      text += gap > avgCharWidth * 2.5 + 1 ? "  |  " : " ";
+    }
+    text += it.str;
+  }
+  return text;
+}
+
 /** Wandelt das erste gefundene Datum einer Zeile in ISO (yyyy-mm-dd) um, oder null. */
 function parseLineDate(text: string): string | null {
   const m = text.match(DATE_RE);
@@ -82,7 +114,7 @@ export function detectLinesOnPage(page: number, items: MinimalTextItem[]): Detec
   const result: DetectedLine[] = [];
   for (const g of groups) {
     const ordered = [...g.items].sort((a, b) => a.transform[4] - b.transform[4]);
-    const text = ordered.map((it) => it.str).join(" ");
+    const text = buildLineText(ordered);
     if (EXCLUDE_RE.test(text)) continue; // Eröffnungs-/Schlusssaldo & Co. sind keine Ein-/Abgänge.
     const matches = text.match(AMOUNT_RE);
     if (!matches || matches.length === 0) continue;
