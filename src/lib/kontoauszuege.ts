@@ -8,7 +8,8 @@ import { sniffMime } from "./file-sniff";
 import { MARKER_COLORS, type MarkerColor, markerColorRgb01 } from "./kontoauszug-colors";
 import { getReceiptsInRange } from "./hero-api";
 import { getCustomerName } from "./invoices";
-import { listAllManualReceipts } from "./manual-receipts";
+import { listAllManualReceipts, searchManualOcrIds } from "./manual-receipts";
+import { searchOcrHeroIds } from "./receipt-ocr";
 
 /**
  * Kontoauszüge (privat, ein Bankkonto): PDF-Auszüge werden nicht mehr
@@ -977,18 +978,29 @@ export interface AssignableReceiptOption {
 }
 
 /**
- * Sucht Belege (manuell + HERO-Eingangsrechnungen der letzten 3 Jahre) nach
- * Lieferant oder Belegnummer, zum Zuordnen zu einer Kontoauszug-Zeile.
+ * Sucht Belege (manuell + HERO, beide Richtungen, letzte 3 Jahre) nach
+ * Lieferant/Kunde, Belegnummer ODER Volltext (derselbe OCR-Index wie die
+ * normale Belege-Suche unter /dashboard/belege) – zum Zuordnen zu einer
+ * Kontoauszug-Zeile. Direkter Feldabgleich allein reicht oft nicht (z. B.
+ * wenn der HERO-Kontaktname vom Namen auf der Rechnung abweicht), daher
+ * zusätzlich über den Volltext.
  */
-export async function searchAssignableReceipts(query: string): Promise<AssignableReceiptOption[]> {
+export async function searchAssignableReceipts(query: string): Promise<{ results: AssignableReceiptOption[]; error?: string }> {
   const q = query.trim().toLowerCase();
-  if (q.length < 2) return [];
+  if (q.length < 2) return { results: [] };
   const results: AssignableReceiptOption[] = [];
+  let manualOk = false;
+  let heroOk = false;
+  let manualError: string | undefined;
+  let heroError: string | undefined;
 
   try {
-    const manualReceipts = await listAllManualReceipts();
+    const [manualReceipts, manualOcrIds] = await Promise.all([listAllManualReceipts(), searchManualOcrIds(q)]);
     for (const r of manualReceipts) {
-      const hit = (r.supplier ?? "").toLowerCase().includes(q) || (r.invoiceNumber ?? "").toLowerCase().includes(q);
+      const hit =
+        (r.supplier ?? "").toLowerCase().includes(q) ||
+        (r.invoiceNumber ?? "").toLowerCase().includes(q) ||
+        manualOcrIds.has(r.id);
       if (!hit) continue;
       results.push({
         kind: "manual",
@@ -1000,8 +1012,9 @@ export async function searchAssignableReceipts(query: string): Promise<Assignabl
       });
       if (results.length >= 20) break;
     }
-  } catch {
-    // Manuelle Suche optional: bei Fehler einfach weiter mit HERO.
+    manualOk = true;
+  } catch (e) {
+    manualError = e instanceof Error ? e.message : "Manuelle Beleg-Suche fehlgeschlagen.";
   }
 
   try {
@@ -1009,13 +1022,17 @@ export async function searchAssignableReceipts(query: string): Promise<Assignabl
     const from = new Date();
     from.setFullYear(from.getFullYear() - 3);
     const fmt = (d: Date) => d.toISOString().slice(0, 10);
-    const heroReceipts = await getReceiptsInRange(`${fmt(from)}T00:00:00Z`, `${fmt(to)}T23:59:59Z`);
+    const [heroReceipts, heroOcrIds] = await Promise.all([
+      getReceiptsInRange(`${fmt(from)}T00:00:00Z`, `${fmt(to)}T23:59:59Z`),
+      searchOcrHeroIds(q),
+    ]);
     for (const r of heroReceipts) {
       // Beide Richtungen durchsuchen: "output" = Eingangsrechnungen (wir zahlen,
       // Abgänge vom Konto), "income" = Ausgangsrechnungen (Kunden zahlen uns,
       // Eingänge). Der Kontoauszug enthält beides.
       const supplierName = getCustomerName(r);
-      const hit = supplierName.toLowerCase().includes(q) || (r.number ?? "").toLowerCase().includes(q);
+      const hit =
+        supplierName.toLowerCase().includes(q) || (r.number ?? "").toLowerCase().includes(q) || heroOcrIds.has(r.id);
       if (!hit) continue;
       results.push({
         kind: "hero",
@@ -1027,9 +1044,17 @@ export async function searchAssignableReceipts(query: string): Promise<Assignabl
       });
       if (results.length >= 40) break;
     }
-  } catch {
-    // HERO-Suche optional: bei Fehler einfach nur manuelle Treffer zeigen.
+    heroOk = true;
+  } catch (e) {
+    heroError = e instanceof Error ? e.message : "HERO-Beleg-Suche fehlgeschlagen.";
   }
 
-  return results.sort((a, b) => (b.date ?? "").localeCompare(a.date ?? "")).slice(0, 30);
+  const sorted = results.sort((a, b) => (b.date ?? "").localeCompare(a.date ?? "")).slice(0, 30);
+  // Nur einen Fehler melden, wenn WIRKLICH beide Quellen scheiterten – sonst
+  // könnten (ggf. leere) Ergebnisse einer funktionierenden Quelle fälschlich
+  // nach "alles kaputt" aussehen.
+  if (!manualOk && !heroOk) {
+    return { results: sorted, error: manualError ?? heroError ?? "Suche fehlgeschlagen." };
+  }
+  return { results: sorted };
 }

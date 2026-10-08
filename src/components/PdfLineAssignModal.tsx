@@ -90,6 +90,7 @@ export default function PdfLineAssignModal({
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<AssignableReceiptOption[]>([]);
   const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const [busyLineId, setBusyLineId] = useState<number | null>(null);
 
   const renderAtScale = async (scale: number) => {
@@ -227,14 +228,17 @@ export default function PdfLineAssignModal({
     setSearchOpenFor(lineId);
     setSearchQuery("");
     setSearchResults([]);
+    setSearchError(null);
   };
 
   const runSearch = async () => {
     if (searchQuery.trim().length < 2) return;
     setSearching(true);
+    setSearchError(null);
     const res = await searchAssignableReceiptsAction(searchQuery);
     setSearching(false);
-    setSearchResults(res);
+    setSearchResults(res.results);
+    if (res.error) setSearchError(res.error);
   };
 
   const assignReceipt = async (lineId: number, receipt: AssignableReceiptOption) => {
@@ -473,7 +477,8 @@ export default function PdfLineAssignModal({
                             ))}
                           </ul>
                         )}
-                        {!searching && searchQuery.trim().length >= 2 && searchResults.length === 0 && (
+                        {searchError && <p className="mt-1 text-rose-600">Fehler bei der Suche: {searchError}</p>}
+                        {!searching && !searchError && searchQuery.trim().length >= 2 && searchResults.length === 0 && (
                           <p className="mt-1 text-gray-400">Keine Treffer.</p>
                         )}
                       </div>

@@ -185,8 +185,10 @@ export async function removeReceiptFromLineAction(linkId: number): Promise<Actio
   return { ok: true };
 }
 
-/** Sucht Belege (manuell + HERO) nach Lieferant/Belegnummer, zum Zuordnen zu einer Zeile. */
-export async function searchAssignableReceiptsAction(query: string): Promise<AssignableReceiptOption[]> {
+/** Sucht Belege (manuell + HERO) nach Lieferant/Belegnummer/Volltext, zum Zuordnen zu einer Zeile. */
+export async function searchAssignableReceiptsAction(
+  query: string
+): Promise<{ results: AssignableReceiptOption[]; error?: string }> {
   return searchAssignableReceipts(query);
 }
 
