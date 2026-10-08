@@ -283,13 +283,17 @@ export default function PdfLineAssignModal({
             {loading && !loadError && <p className="p-4 text-sm text-gray-500">Seite wird geladen …</p>}
             <div className="relative inline-block touch-none select-none">
               <canvas ref={canvasRef} className="block" />
-              {lines.map((l) => (
-                <div
-                  key={l.id}
-                  style={{ ...toCanvasRect(l), backgroundColor: l.matched ? "#22c55e" : "#ef4444" }}
-                  className="pointer-events-none absolute opacity-30"
-                />
-              ))}
+              {lines.map((l) => {
+                const sumMatched = Math.abs(l.amount - l.receipts.reduce((s, r) => s + r.amount, 0)) < 0.01;
+                const color = sumMatched ? "#22c55e" : l.confirmedWithoutReceipt ? "#f59e0b" : "#ef4444";
+                return (
+                  <div
+                    key={l.id}
+                    style={{ ...toCanvasRect(l), backgroundColor: color }}
+                    className="pointer-events-none absolute opacity-30"
+                  />
+                );
+              })}
               {pendingPdfRect && (
                 <div style={{ ...toCanvasRect(pendingPdfRect), backgroundColor: "#3b82f6" }} className="pointer-events-none absolute opacity-30" />
               )}

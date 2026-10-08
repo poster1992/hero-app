@@ -135,6 +135,7 @@ async function ensureTables(): Promise<void> {
   await ensureHighlightMarkerIdColumn();
   await ensureLineDateColumns();
   await ensureLineReceiptSettlementColumn();
+  await ensureLineConfirmedColumn();
   tableReady = true;
 }
 
@@ -155,6 +156,35 @@ async function ensureLineDateColumns(): Promise<void> {
     await pool.query("ALTER TABLE bank_statement_lines ADD COLUMN paid_applied TINYINT NOT NULL DEFAULT 0").catch(() => {});
   }
   lineDateColumnsReady = true;
+}
+
+/**
+ * Self-healing: Spalten für „manuell geprüft, ohne Beleg-Zuordnung" –
+ * für Zahlungseingänge (z. B. Kundenzahlungen), zu denen man keinen Beleg
+ * suchen/anlegen will, sondern die Zeile nur als geprüft abhaken möchte.
+ */
+let lineConfirmedColumnReady = false;
+async function ensureLineConfirmedColumn(): Promise<void> {
+  if (lineConfirmedColumnReady) return;
+  const pool = getPool();
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'bank_statement_lines'
+        AND COLUMN_NAME IN ('confirmed_without_receipt', 'confirmed_by', 'confirmed_at')`
+  );
+  const existing = new Set(rows.map((r) => String(r.COLUMN_NAME)));
+  if (!existing.has("confirmed_without_receipt")) {
+    await pool
+      .query("ALTER TABLE bank_statement_lines ADD COLUMN confirmed_without_receipt TINYINT NOT NULL DEFAULT 0")
+      .catch(() => {});
+  }
+  if (!existing.has("confirmed_by")) {
+    await pool.query("ALTER TABLE bank_statement_lines ADD COLUMN confirmed_by INT NULL").catch(() => {});
+  }
+  if (!existing.has("confirmed_at")) {
+    await pool.query("ALTER TABLE bank_statement_lines ADD COLUMN confirmed_at TIMESTAMP NULL").catch(() => {});
+  }
+  lineConfirmedColumnReady = true;
 }
 
 /** Self-healing: `settlement_kind`-Spalte auf bank_statement_line_receipts nachrüsten. */
@@ -351,9 +381,11 @@ async function rebuildDisplayFile(): Promise<void> {
   }
 
   // Zeilen-Zuordnungen: grün, wenn die Summe der zugeordneten Belege zum
-  // eingetragenen Betrag passt, sonst rot.
+  // eingetragenen Betrag passt; gelb/amber, wenn stattdessen manuell ohne
+  // Beleg als geprüft abgehakt wurde (z. B. Zahlungseingänge ohne
+  // Ausgangsrechnung in der Suche); sonst rot.
   const [lineRows] = await getPool().query<RowDataPacket[]>(
-    `SELECT id, page, x, y, width, height, amount FROM bank_statement_lines ORDER BY id ASC`
+    `SELECT id, page, x, y, width, height, amount, confirmed_without_receipt FROM bank_statement_lines ORDER BY id ASC`
   );
   if (lineRows.length > 0) {
     const lineIds = lineRows.map((r) => r.id);
@@ -365,6 +397,7 @@ async function rebuildDisplayFile(): Promise<void> {
     const sumByLine = new Map<number, number>();
     for (const r of sumRows) sumByLine.set(Number(r.line_id), Number(r.total));
     const GREEN = rgb(0.13, 0.7, 0.2);
+    const AMBER = rgb(0.96, 0.62, 0.04);
     const RED = rgb(0.85, 0.15, 0.15);
     for (const r of lineRows) {
       const index = Number(r.page) - 1;
@@ -372,12 +405,13 @@ async function rebuildDisplayFile(): Promise<void> {
       const pdfPage = pdf.getPage(index);
       const sum = sumByLine.get(Number(r.id)) ?? 0;
       const matched = Math.abs(sum - Number(r.amount)) < 0.01;
+      const confirmedWithoutReceipt = !matched && Number(r.confirmed_without_receipt) === 1;
       pdfPage.drawRectangle({
         x: Number(r.x),
         y: Number(r.y),
         width: Number(r.width),
         height: Number(r.height),
-        color: matched ? GREEN : RED,
+        color: matched ? GREEN : confirmedWithoutReceipt ? AMBER : RED,
         opacity: 0.3,
         borderWidth: 0,
       });
@@ -838,9 +872,14 @@ export interface StatementLine {
   /** Buchungsdatum (yyyy-mm-dd), falls erkannt/erfasst – wird als Bezahldatum verwendet. */
   date: string | null;
   receipts: LineReceipt[];
+  /** true, wenn die Summe der zugeordneten Belege passt ODER die Zeile manuell ohne Beleg bestätigt wurde. */
   matched: boolean;
   /** true, sobald beim Matchen der Zahlstatus der zugeordneten Belege gesetzt wurde (einmalig). */
   paidApplied: boolean;
+  /** true, wenn die Zeile manuell "geprüft" ohne Beleg-Zuordnung abgehakt wurde (z. B. Zahlungseingänge). */
+  confirmedWithoutReceipt: boolean;
+  confirmedByName: string | null;
+  confirmedAt: string | null;
   createdByName: string | null;
   createdAt: string | null;
 }
@@ -855,6 +894,9 @@ interface LineRow extends RowDataPacket {
   amount: number | string;
   date: string | null;
   paid_applied: number;
+  confirmed_without_receipt: number;
+  confirmed_at: string | null;
+  confirmed_by_name: string | null;
   created_at: string | null;
   created_by_name: string | null;
 }
@@ -874,10 +916,13 @@ interface LineReceiptRow extends RowDataPacket {
 export async function listStatementLines(page: number): Promise<StatementLine[]> {
   await ensureTables();
   const [lineRows] = await getPool().query<LineRow[]>(
-    `SELECT l.id, l.page, l.x, l.y, l.width, l.height, l.amount, l.date, l.paid_applied, l.created_at,
-            COALESCE(NULLIF(u.display_name, ''), u.username) AS created_by_name
+    `SELECT l.id, l.page, l.x, l.y, l.width, l.height, l.amount, l.date, l.paid_applied,
+            l.confirmed_without_receipt, l.confirmed_at, l.created_at,
+            COALESCE(NULLIF(u.display_name, ''), u.username) AS created_by_name,
+            COALESCE(NULLIF(cu.display_name, ''), cu.username) AS confirmed_by_name
      FROM bank_statement_lines l
      LEFT JOIN users u ON u.id = l.created_by
+     LEFT JOIN users cu ON cu.id = l.confirmed_by
      WHERE l.page = ?
      ORDER BY l.id ASC`,
     [page]
@@ -917,8 +962,11 @@ export async function listStatementLines(page: number): Promise<StatementLine[]>
       amount,
       date: r.date ? String(r.date).slice(0, 10) : null,
       receipts,
-      matched: Math.abs(sum - amount) < 0.01,
+      matched: Math.abs(sum - amount) < 0.01 || Number(r.confirmed_without_receipt) === 1,
       paidApplied: Number(r.paid_applied) === 1,
+      confirmedWithoutReceipt: Number(r.confirmed_without_receipt) === 1,
+      confirmedByName: r.confirmed_by_name,
+      confirmedAt: r.confirmed_at ? String(r.confirmed_at) : null,
       createdByName: r.created_by_name,
       createdAt: r.created_at ? String(r.created_at) : null,
     };
@@ -1180,6 +1228,29 @@ export async function removeReceiptFromLine(linkId: number, userId: number | nul
     await pool.query(`UPDATE bank_statement_lines SET paid_applied = 0 WHERE id = ?`, [row.line_id]);
   }
   await pool.query(`DELETE FROM bank_statement_line_receipts WHERE id = ?`, [linkId]);
+  await rebuildDisplayFile();
+}
+
+/**
+ * Markiert eine Zeile manuell als „geprüft" OHNE Beleg-Zuordnung – z. B. für
+ * Zahlungseingänge (Kundenzahlungen), zu denen man keine passende
+ * Ausgangsrechnung suchen/anlegen will, sondern nur bestätigen, dass der
+ * Eingang geprüft wurde. Erscheint dann blau statt rot im PDF (siehe
+ * `rebuildDisplayFile`), unabhängig von evtl. zugeordneten Belegen. Jederzeit
+ * wieder zurücknehmbar.
+ */
+export async function setLineConfirmedWithoutReceipt(
+  lineId: number,
+  confirmed: boolean,
+  userId: number | null
+): Promise<void> {
+  await ensureTables();
+  await getPool().query(
+    `UPDATE bank_statement_lines
+     SET confirmed_without_receipt = ?, confirmed_by = ?, confirmed_at = ${confirmed ? "NOW()" : "NULL"}
+     WHERE id = ?`,
+    [confirmed ? 1 : 0, confirmed ? userId : null, lineId]
+  );
   await rebuildDisplayFile();
 }
 

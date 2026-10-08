@@ -18,6 +18,7 @@ import {
   deleteStatementLine,
   addReceiptToLine,
   removeReceiptFromLine,
+  setLineConfirmedWithoutReceipt,
   searchAssignableReceipts,
   type HighlightRect,
   type StatementHighlight,
@@ -210,6 +211,17 @@ export async function addReceiptToLineAction(
 export async function removeReceiptFromLineAction(linkId: number): Promise<ActionResult> {
   const userId = await currentUserId();
   await removeReceiptFromLine(linkId, userId);
+  return { ok: true };
+}
+
+/**
+ * Markiert/entmarkiert eine Zeile als manuell „geprüft" ohne Beleg-Zuordnung
+ * (z. B. Zahlungseingänge, zu denen man keine Ausgangsrechnung suchen will).
+ */
+export async function setLineConfirmedAction(lineId: number, confirmed: boolean): Promise<ActionResult> {
+  const userId = await currentUserId();
+  if (userId == null) return { ok: false, error: "Nicht angemeldet." };
+  await setLineConfirmedWithoutReceipt(lineId, confirmed, userId);
   return { ok: true };
 }
 

@@ -5,6 +5,7 @@ import {
   deleteLineAction,
   addReceiptToLineAction,
   removeReceiptFromLineAction,
+  setLineConfirmedAction,
   searchAssignableReceiptsAction,
 } from "@/app/dashboard/belege/kontoauszug/actions";
 import type { StatementLine, AssignableReceiptOption } from "@/lib/kontoauszuege";
@@ -132,6 +133,13 @@ export default function LineAssignList({
     await onReload();
   };
 
+  const toggleConfirmed = async (lineId: number, confirmed: boolean) => {
+    setBusyLineId(lineId);
+    await setLineConfirmedAction(lineId, confirmed);
+    setBusyLineId(null);
+    await onReload();
+  };
+
   if (lines.length === 0) {
     return <p className="text-xs text-gray-500">Noch keine Zeile markiert.</p>;
   }
@@ -141,14 +149,13 @@ export default function LineAssignList({
       {lines.map((l) => {
         const sum = l.receipts.reduce((s, r) => s + r.amount, 0);
         const diff = l.amount - sum;
+        const sumMatched = Math.abs(diff) < 0.01;
+        const dotColor = sumMatched ? "#16a34a" : l.confirmedWithoutReceipt ? "#f59e0b" : "#dc2626";
         return (
           <li key={l.id} className="border border-line bg-white p-2.5 text-xs">
             <div className="flex items-center justify-between gap-2">
               <span className="flex items-center gap-1.5 font-semibold">
-                <span
-                  className="h-2.5 w-2.5 rounded-full"
-                  style={{ backgroundColor: l.matched ? "#16a34a" : "#dc2626" }}
-                />
+                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: dotColor }} />
                 Soll {fmtEur(l.amount)}
                 {l.date && <span className="font-normal text-gray-400">· {l.date.split("-").reverse().join(".")}</span>}
               </span>
@@ -162,10 +169,31 @@ export default function LineAssignList({
                 ✕
               </button>
             </div>
-            <div className={`mt-0.5 ${l.matched ? "text-emerald-600" : "text-rose-600"}`}>
-              {l.matched ? "✓ Summe passt" : `Fehlt ${fmtEur(diff)}`}
-              {l.matched && l.paidApplied && " · Zahlstatus der Belege aktualisiert"}
+            <div
+              className={`mt-0.5 ${sumMatched ? "text-emerald-600" : l.confirmedWithoutReceipt ? "text-amber-600" : "text-rose-600"}`}
+            >
+              {sumMatched
+                ? "✓ Summe passt"
+                : l.confirmedWithoutReceipt
+                  ? "✓ Manuell geprüft (ohne Beleg)"
+                  : `Fehlt ${fmtEur(diff)}`}
+              {sumMatched && l.paidApplied && " · Zahlstatus der Belege aktualisiert"}
             </div>
+            {!sumMatched && (
+              <button
+                type="button"
+                onClick={() => toggleConfirmed(l.id, !l.confirmedWithoutReceipt)}
+                disabled={busyLineId === l.id}
+                className={`mt-1 rounded border px-2 py-0.5 text-[11px] font-medium disabled:opacity-40 ${
+                  l.confirmedWithoutReceipt
+                    ? "border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                    : "border-gray-300 text-gray-600 hover:border-amber-400 hover:bg-amber-50"
+                }`}
+                title="Für Zahlungseingänge ohne passende Ausgangsrechnung: Zeile ohne Beleg-Zuordnung als geprüft markieren."
+              >
+                {l.confirmedWithoutReceipt ? "↺ Prüfung zurücknehmen" : "✓ Zahlungseingang geprüft (ohne Beleg)"}
+              </button>
+            )}
 
             {l.receipts.length > 0 && (
               <ul className="mt-1.5 space-y-1">
