@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   uploadStatementAction,
@@ -68,6 +68,27 @@ export default function KontoauszugClient({
   const [autoDetectProgress, setAutoDetectProgress] = useState("");
   const [autoDetectError, setAutoDetectError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const isFirstReload = useRef(true);
+
+  // Bei reiner Datenänderung im Hintergrund (z. B. Beleg zugeordnet, Stempel
+  // gesetzt) NICHT die ganze iframe-Quelle wechseln (das lässt den nativen
+  // PDF-Viewer den vom Nutzer eingestellten Zoom auf 100 % zurücksetzen,
+  // weil er dann wie eine komplett neue Datei wirkt). Stattdessen dieselbe
+  // bereits angezeigte Datei an Ort und Stelle neu laden – Seite/Zoom bleiben
+  // dabei zuverlässiger erhalten als bei einem kompletten iframe-Neuaufbau.
+  useEffect(() => {
+    if (isFirstReload.current) {
+      isFirstReload.current = false;
+      return;
+    }
+    try {
+      iframeRef.current?.contentWindow?.location.reload();
+    } catch {
+      // Falls der Browser den Zugriff verweigert, bleibt die Ansicht bis zur
+      // nächsten gezielten Navigation (Seite/Marker) auf dem alten Stand.
+    }
+  }, [reloadToken]);
 
   const hasFile = initialPageCount > 0;
   const lastUpload = initialUploads[0] ?? null;
@@ -318,9 +339,10 @@ export default function KontoauszugClient({
         <div className="min-h-0 flex-1 border border-line bg-gray-100">
           {hasFile ? (
             <iframe
-              key={`${initialPageCount}-${reloadToken}-${jumpToken}`}
-              src={`/api/kontoauszug-datei?v=${initialPageCount}-${reloadToken}${
-                selectedHighlightId != null ? `&highlight=${selectedHighlightId}` : ""
+              ref={iframeRef}
+              key={`${initialPageCount}-${jumpToken}`}
+              src={`/api/kontoauszug-datei${
+                selectedHighlightId != null ? `?highlight=${selectedHighlightId}` : ""
               }#${viewFragment}`}
               title="Kontoauszüge"
               className="h-full min-h-[70vh] w-full md:min-h-0"
