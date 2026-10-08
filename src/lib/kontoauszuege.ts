@@ -6,6 +6,9 @@ import type { RowDataPacket } from "mysql2";
 import { getPool } from "./db";
 import { sniffMime } from "./file-sniff";
 import { MARKER_COLORS, type MarkerColor, markerColorRgb01 } from "./kontoauszug-colors";
+import { getReceiptsInRange } from "./hero-api";
+import { getCustomerName } from "./invoices";
+import { listAllManualReceipts } from "./manual-receipts";
 
 /**
  * Kontoauszüge (privat, ein Bankkonto): PDF-Auszüge werden nicht mehr
@@ -82,6 +85,37 @@ async function ensureTables(): Promise<void> {
          created_by INT NULL,
          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
          INDEX idx_bss_page (page)
+       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+    )
+    .catch(() => {});
+  await pool
+    .query(
+      `CREATE TABLE IF NOT EXISTS bank_statement_lines (
+         id INT AUTO_INCREMENT PRIMARY KEY,
+         page INT NOT NULL,
+         x DOUBLE NOT NULL,
+         y DOUBLE NOT NULL,
+         width DOUBLE NOT NULL,
+         height DOUBLE NOT NULL,
+         amount DECIMAL(12,2) NOT NULL,
+         created_by INT NULL,
+         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+         INDEX idx_bsl_page (page)
+       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+    )
+    .catch(() => {});
+  await pool
+    .query(
+      `CREATE TABLE IF NOT EXISTS bank_statement_line_receipts (
+         id INT AUTO_INCREMENT PRIMARY KEY,
+         line_id INT NOT NULL,
+         receipt_kind VARCHAR(10) NOT NULL,
+         receipt_ref VARCHAR(64) NOT NULL,
+         amount DECIMAL(12,2) NOT NULL,
+         supplier VARCHAR(255) NULL,
+         invoice_number VARCHAR(100) NULL,
+         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+         INDEX idx_bslr_line (line_id)
        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
     )
     .catch(() => {});
@@ -264,6 +298,40 @@ async function rebuildDisplayFile(): Promise<void> {
       const index = Number(r.page) - 1;
       if (index < 0 || index >= pageCount) continue;
       drawStampOnPage(pdf.getPage(index), font);
+    }
+  }
+
+  // Zeilen-Zuordnungen: grün, wenn die Summe der zugeordneten Belege zum
+  // eingetragenen Betrag passt, sonst rot.
+  const [lineRows] = await getPool().query<RowDataPacket[]>(
+    `SELECT id, page, x, y, width, height, amount FROM bank_statement_lines ORDER BY id ASC`
+  );
+  if (lineRows.length > 0) {
+    const lineIds = lineRows.map((r) => r.id);
+    const [sumRows] = await getPool().query<RowDataPacket[]>(
+      `SELECT line_id, SUM(amount) AS total FROM bank_statement_line_receipts
+       WHERE line_id IN (${lineIds.map(() => "?").join(",")}) GROUP BY line_id`,
+      lineIds
+    );
+    const sumByLine = new Map<number, number>();
+    for (const r of sumRows) sumByLine.set(Number(r.line_id), Number(r.total));
+    const GREEN = rgb(0.13, 0.7, 0.2);
+    const RED = rgb(0.85, 0.15, 0.15);
+    for (const r of lineRows) {
+      const index = Number(r.page) - 1;
+      if (index < 0 || index >= pageCount) continue;
+      const pdfPage = pdf.getPage(index);
+      const sum = sumByLine.get(Number(r.id)) ?? 0;
+      const matched = Math.abs(sum - Number(r.amount)) < 0.01;
+      pdfPage.drawRectangle({
+        x: Number(r.x),
+        y: Number(r.y),
+        width: Number(r.width),
+        height: Number(r.height),
+        color: matched ? GREEN : RED,
+        opacity: 0.3,
+        borderWidth: 0,
+      });
     }
   }
 
@@ -680,4 +748,225 @@ export async function deleteStatementStamp(id: number): Promise<void> {
   await ensureTables();
   await getPool().query(`DELETE FROM bank_statement_stamps WHERE id = ?`, [id]);
   await rebuildDisplayFile();
+}
+
+/**
+ * Zeilen-Zuordnung: eine markierte Zeile im Kontoauszug mit einem Soll-Betrag,
+ * dem ein oder mehrere Belege zugeordnet werden können. Stimmt die Summe der
+ * zugeordneten Belege mit dem Betrag überein, erscheint die Zeile im PDF grün,
+ * sonst rot (siehe `rebuildDisplayFile`).
+ */
+export interface LineReceipt {
+  id: number;
+  kind: "manual" | "hero";
+  ref: string;
+  amount: number;
+  supplier: string | null;
+  invoiceNumber: string | null;
+}
+
+export interface StatementLine {
+  id: number;
+  page: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  amount: number;
+  receipts: LineReceipt[];
+  matched: boolean;
+  createdByName: string | null;
+  createdAt: string | null;
+}
+
+interface LineRow extends RowDataPacket {
+  id: number;
+  page: number;
+  x: number | string;
+  y: number | string;
+  width: number | string;
+  height: number | string;
+  amount: number | string;
+  created_at: string | null;
+  created_by_name: string | null;
+}
+
+interface LineReceiptRow extends RowDataPacket {
+  id: number;
+  line_id: number;
+  receipt_kind: string;
+  receipt_ref: string;
+  amount: number | string;
+  supplier: string | null;
+  invoice_number: string | null;
+}
+
+/** Alle Zeilen-Zuordnungen einer Seite inkl. zugeordneter Belege und Abgleich-Status. */
+export async function listStatementLines(page: number): Promise<StatementLine[]> {
+  await ensureTables();
+  const [lineRows] = await getPool().query<LineRow[]>(
+    `SELECT l.id, l.page, l.x, l.y, l.width, l.height, l.amount, l.created_at,
+            COALESCE(NULLIF(u.display_name, ''), u.username) AS created_by_name
+     FROM bank_statement_lines l
+     LEFT JOIN users u ON u.id = l.created_by
+     WHERE l.page = ?
+     ORDER BY l.id ASC`,
+    [page]
+  );
+  if (lineRows.length === 0) return [];
+  const ids = lineRows.map((r) => r.id);
+  const [receiptRows] = await getPool().query<LineReceiptRow[]>(
+    `SELECT id, line_id, receipt_kind, receipt_ref, amount, supplier, invoice_number
+     FROM bank_statement_line_receipts WHERE line_id IN (${ids.map(() => "?").join(",")}) ORDER BY id ASC`,
+    ids
+  );
+  const byLine = new Map<number, LineReceipt[]>();
+  for (const r of receiptRows) {
+    const list = byLine.get(r.line_id) ?? [];
+    list.push({
+      id: r.id,
+      kind: r.receipt_kind === "hero" ? "hero" : "manual",
+      ref: r.receipt_ref,
+      amount: Number(r.amount),
+      supplier: r.supplier,
+      invoiceNumber: r.invoice_number,
+    });
+    byLine.set(r.line_id, list);
+  }
+  return lineRows.map((r) => {
+    const receipts = byLine.get(r.id) ?? [];
+    const sum = receipts.reduce((s, x) => s + x.amount, 0);
+    const amount = Number(r.amount);
+    return {
+      id: r.id,
+      page: r.page,
+      x: Number(r.x),
+      y: Number(r.y),
+      width: Number(r.width),
+      height: Number(r.height),
+      amount,
+      receipts,
+      matched: Math.abs(sum - amount) < 0.01,
+      createdByName: r.created_by_name,
+      createdAt: r.created_at ? String(r.created_at) : null,
+    };
+  });
+}
+
+/** Legt eine neue Zeilen-Zuordnung an (Rechteck + Soll-Betrag). Gibt die neue ID zurück. */
+export async function addStatementLine(input: {
+  page: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  amount: number;
+  userId: number | null;
+}): Promise<number> {
+  await ensureTables();
+  const base = await getBaseFile();
+  if (!base) throw new Error("Noch keine Kontoauszüge hochgeladen.");
+  const pdf = await PDFDocument.load(base, { ignoreEncryption: true });
+  const index = input.page - 1;
+  if (index < 0 || index >= pdf.getPageCount()) throw new Error("Ungültige Seite.");
+  const [result] = await getPool().query(
+    `INSERT INTO bank_statement_lines (page, x, y, width, height, amount, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [input.page, input.x, input.y, input.width, input.height, input.amount, input.userId]
+  );
+  await rebuildDisplayFile();
+  return (result as { insertId?: number }).insertId ?? 0;
+}
+
+/** Löscht eine Zeilen-Zuordnung samt zugeordneter Belege und baut die angezeigte Datei neu auf. */
+export async function deleteStatementLine(id: number): Promise<void> {
+  await ensureTables();
+  const pool = getPool();
+  await pool.query(`DELETE FROM bank_statement_line_receipts WHERE line_id = ?`, [id]);
+  await pool.query(`DELETE FROM bank_statement_lines WHERE id = ?`, [id]);
+  await rebuildDisplayFile();
+}
+
+/** Ordnet einer Zeile einen weiteren Beleg zu (mehrere Belege je Zeile möglich). */
+export async function addReceiptToLine(
+  lineId: number,
+  receipt: { kind: "manual" | "hero"; ref: string; amount: number; supplier: string | null; invoiceNumber: string | null }
+): Promise<void> {
+  await ensureTables();
+  await getPool().query(
+    `INSERT INTO bank_statement_line_receipts (line_id, receipt_kind, receipt_ref, amount, supplier, invoice_number) VALUES (?, ?, ?, ?, ?, ?)`,
+    [lineId, receipt.kind, receipt.ref, receipt.amount, receipt.supplier, receipt.invoiceNumber]
+  );
+  await rebuildDisplayFile();
+}
+
+/** Entfernt einen zugeordneten Beleg von einer Zeile und baut die angezeigte Datei neu auf. */
+export async function removeReceiptFromLine(linkId: number): Promise<void> {
+  await ensureTables();
+  await getPool().query(`DELETE FROM bank_statement_line_receipts WHERE id = ?`, [linkId]);
+  await rebuildDisplayFile();
+}
+
+export interface AssignableReceiptOption {
+  kind: "manual" | "hero";
+  ref: string;
+  amount: number;
+  supplier: string | null;
+  invoiceNumber: string | null;
+  date: string | null;
+}
+
+/**
+ * Sucht Belege (manuell + HERO-Eingangsrechnungen der letzten 3 Jahre) nach
+ * Lieferant oder Belegnummer, zum Zuordnen zu einer Kontoauszug-Zeile.
+ */
+export async function searchAssignableReceipts(query: string): Promise<AssignableReceiptOption[]> {
+  const q = query.trim().toLowerCase();
+  if (q.length < 2) return [];
+  const results: AssignableReceiptOption[] = [];
+
+  try {
+    const manualReceipts = await listAllManualReceipts();
+    for (const r of manualReceipts) {
+      const hit = (r.supplier ?? "").toLowerCase().includes(q) || (r.invoiceNumber ?? "").toLowerCase().includes(q);
+      if (!hit) continue;
+      results.push({
+        kind: "manual",
+        ref: String(r.id),
+        amount: r.gross,
+        supplier: r.supplier,
+        invoiceNumber: r.invoiceNumber,
+        date: r.date,
+      });
+      if (results.length >= 20) break;
+    }
+  } catch {
+    // Manuelle Suche optional: bei Fehler einfach weiter mit HERO.
+  }
+
+  try {
+    const to = new Date();
+    const from = new Date();
+    from.setFullYear(from.getFullYear() - 3);
+    const fmt = (d: Date) => d.toISOString().slice(0, 10);
+    const heroReceipts = await getReceiptsInRange(`${fmt(from)}T00:00:00Z`, `${fmt(to)}T23:59:59Z`);
+    for (const r of heroReceipts) {
+      if (r.type !== "output") continue; // nur Eingangsrechnungen
+      const supplierName = getCustomerName(r);
+      const hit = supplierName.toLowerCase().includes(q) || (r.number ?? "").toLowerCase().includes(q);
+      if (!hit) continue;
+      results.push({
+        kind: "hero",
+        ref: r.id,
+        amount: r.value,
+        supplier: supplierName,
+        invoiceNumber: r.number,
+        date: r.receiptDate ? r.receiptDate.slice(0, 10) : null,
+      });
+      if (results.length >= 40) break;
+    }
+  } catch {
+    // HERO-Suche optional: bei Fehler einfach nur manuelle Treffer zeigen.
+  }
+
+  return results.sort((a, b) => (b.date ?? "").localeCompare(a.date ?? "")).slice(0, 30);
 }

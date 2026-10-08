@@ -12,8 +12,16 @@ import {
   deleteStatementHighlight,
   addStatementStamp,
   deleteStatementStamp,
+  listStatementLines,
+  addStatementLine,
+  deleteStatementLine,
+  addReceiptToLine,
+  removeReceiptFromLine,
+  searchAssignableReceipts,
   type HighlightRect,
   type StatementHighlight,
+  type StatementLine,
+  type AssignableReceiptOption,
 } from "@/lib/kontoauszuege";
 
 const MAX_SIZE = 25 * 1024 * 1024;
@@ -120,4 +128,62 @@ export async function addStampAction(page: number): Promise<ActionResult> {
 export async function deleteStampAction(id: number): Promise<ActionResult> {
   await deleteStatementStamp(id);
   return { ok: true };
+}
+
+/** Zeilen-Zuordnungen einer Seite (Rechteck + Soll-Betrag + zugeordnete Belege). */
+export async function listPageLinesAction(page: number): Promise<StatementLine[]> {
+  if (!Number.isFinite(page) || page < 1) return [];
+  return listStatementLines(page);
+}
+
+/** Legt eine neue Zeilen-Zuordnung an (Rechteck um eine Kontoauszug-Zeile + Soll-Betrag). */
+export async function addLineAction(
+  page: number,
+  rect: { x: number; y: number; width: number; height: number },
+  amount: number
+): Promise<ActionResult & { id?: number }> {
+  const userId = await currentUserId();
+  if (userId == null) return { ok: false, error: "Nicht angemeldet." };
+  if (!Number.isFinite(page) || page < 1) return { ok: false, error: "Ungültige Seite." };
+  if (!Number.isFinite(amount) || amount <= 0) return { ok: false, error: "Ungültiger Betrag." };
+  try {
+    const id = await addStatementLine({ page, x: rect.x, y: rect.y, width: rect.width, height: rect.height, amount, userId });
+    return { ok: true, id };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Anlegen fehlgeschlagen." };
+  }
+}
+
+/** Löscht eine Zeilen-Zuordnung samt zugeordneter Belege. */
+export async function deleteLineAction(id: number): Promise<ActionResult> {
+  await deleteStatementLine(id);
+  return { ok: true };
+}
+
+/** Ordnet einer Zeile einen weiteren Beleg zu. */
+export async function addReceiptToLineAction(
+  lineId: number,
+  receipt: AssignableReceiptOption
+): Promise<ActionResult> {
+  const userId = await currentUserId();
+  if (userId == null) return { ok: false, error: "Nicht angemeldet." };
+  await addReceiptToLine(lineId, {
+    kind: receipt.kind,
+    ref: receipt.ref,
+    amount: receipt.amount,
+    supplier: receipt.supplier,
+    invoiceNumber: receipt.invoiceNumber,
+  });
+  return { ok: true };
+}
+
+/** Entfernt einen zugeordneten Beleg von einer Zeile. */
+export async function removeReceiptFromLineAction(linkId: number): Promise<ActionResult> {
+  await removeReceiptFromLine(linkId);
+  return { ok: true };
+}
+
+/** Sucht Belege (manuell + HERO) nach Lieferant/Belegnummer, zum Zuordnen zu einer Zeile. */
+export async function searchAssignableReceiptsAction(query: string): Promise<AssignableReceiptOption[]> {
+  return searchAssignableReceipts(query);
 }
