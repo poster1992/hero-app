@@ -6,6 +6,7 @@ import {
   addReceiptToLineAction,
   removeReceiptFromLineAction,
   setLineConfirmedAction,
+  setLineNoteAction,
   searchAssignableReceiptsAction,
 } from "@/app/dashboard/belege/kontoauszug/actions";
 import type { StatementLine, AssignableReceiptOption } from "@/lib/kontoauszuege";
@@ -48,6 +49,9 @@ export default function LineAssignList({
   const [pickedReceipt, setPickedReceipt] = useState<AssignableReceiptOption | null>(null);
   const [confirmAmount, setConfirmAmount] = useState("");
   const [assigning, setAssigning] = useState(false);
+  const [editingNoteFor, setEditingNoteFor] = useState<number | null>(null);
+  const [noteDraft, setNoteDraft] = useState("");
+  const [savingNote, setSavingNote] = useState(false);
 
   const handleDeleteLine = async (id: number) => {
     if (!window.confirm("Diese Zeilen-Zuordnung samt zugeordneter Belege löschen?")) return;
@@ -140,6 +144,24 @@ export default function LineAssignList({
     await onReload();
   };
 
+  const openNoteEdit = (l: StatementLine) => {
+    setEditingNoteFor(l.id);
+    setNoteDraft(l.note ?? "");
+  };
+
+  const cancelNoteEdit = () => {
+    setEditingNoteFor(null);
+    setNoteDraft("");
+  };
+
+  const saveNote = async (lineId: number) => {
+    setSavingNote(true);
+    await setLineNoteAction(lineId, noteDraft);
+    setSavingNote(false);
+    setEditingNoteFor(null);
+    await onReload();
+  };
+
   if (lines.length === 0) {
     return <p className="text-xs text-gray-500">Noch keine Zeile markiert.</p>;
   }
@@ -192,6 +214,49 @@ export default function LineAssignList({
                 title="Für Zahlungseingänge ohne passende Ausgangsrechnung: Zeile ohne Beleg-Zuordnung als geprüft markieren."
               >
                 {l.confirmedWithoutReceipt ? "↺ Prüfung zurücknehmen" : "✓ Zahlungseingang geprüft (ohne Beleg)"}
+              </button>
+            )}
+
+            {editingNoteFor === l.id ? (
+              <div className="mt-1.5 border-t border-gray-100 pt-1.5">
+                <textarea
+                  autoFocus
+                  value={noteDraft}
+                  onChange={(e) => setNoteDraft(e.target.value)}
+                  placeholder="Notiz zur Buchung …"
+                  rows={2}
+                  className="w-full resize-none border border-line px-2 py-1 text-xs outline-none focus:border-brand-red/60"
+                />
+                <div className="mt-1 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => saveNote(l.id)}
+                    disabled={savingNote}
+                    className="rounded-md bg-brand-red px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
+                  >
+                    {savingNote ? "…" : "Speichern"}
+                  </button>
+                  <button type="button" onClick={cancelNoteEdit} className="text-gray-500 hover:text-gray-800">
+                    Abbrechen
+                  </button>
+                </div>
+              </div>
+            ) : l.note ? (
+              <button
+                type="button"
+                onClick={() => openNoteEdit(l)}
+                className="mt-1.5 block w-full border-t border-gray-100 pt-1.5 text-left text-gray-600 hover:text-gray-900"
+                title="Notiz bearbeiten"
+              >
+                📝 <span className="whitespace-pre-line">{l.note}</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => openNoteEdit(l)}
+                className="mt-1.5 text-gray-400 hover:text-gray-700"
+              >
+                + Notiz
               </button>
             )}
 

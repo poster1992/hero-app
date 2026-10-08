@@ -19,6 +19,7 @@ import {
   addReceiptToLine,
   removeReceiptFromLine,
   setLineConfirmedWithoutReceipt,
+  setLineNote,
   searchAssignableReceipts,
   type HighlightRect,
   type StatementHighlight,
@@ -222,6 +223,14 @@ export async function setLineConfirmedAction(lineId: number, confirmed: boolean)
   const userId = await currentUserId();
   if (userId == null) return { ok: false, error: "Nicht angemeldet." };
   await setLineConfirmedWithoutReceipt(lineId, confirmed, userId);
+  return { ok: true };
+}
+
+/** Setzt/löscht die freie Notiz zu einer Zeile (Kontext/Erklärung zur Buchung). */
+export async function setLineNoteAction(lineId: number, note: string): Promise<ActionResult> {
+  const userId = await currentUserId();
+  if (userId == null) return { ok: false, error: "Nicht angemeldet." };
+  await setLineNote(lineId, note);
   return { ok: true };
 }
 

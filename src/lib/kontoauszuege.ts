@@ -136,6 +136,7 @@ async function ensureTables(): Promise<void> {
   await ensureLineDateColumns();
   await ensureLineReceiptSettlementColumn();
   await ensureLineConfirmedColumn();
+  await ensureLineNoteColumn();
   tableReady = true;
 }
 
@@ -185,6 +186,21 @@ async function ensureLineConfirmedColumn(): Promise<void> {
     await pool.query("ALTER TABLE bank_statement_lines ADD COLUMN confirmed_at TIMESTAMP NULL").catch(() => {});
   }
   lineConfirmedColumnReady = true;
+}
+
+/** Self-healing: `note`-Spalte (freie Notiz zur Buchung) auf bank_statement_lines nachrüsten. */
+let lineNoteColumnReady = false;
+async function ensureLineNoteColumn(): Promise<void> {
+  if (lineNoteColumnReady) return;
+  const pool = getPool();
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'bank_statement_lines' AND COLUMN_NAME = 'note'`
+  );
+  if (rows.length === 0) {
+    await pool.query("ALTER TABLE bank_statement_lines ADD COLUMN note TEXT NULL").catch(() => {});
+  }
+  lineNoteColumnReady = true;
 }
 
 /** Self-healing: `settlement_kind`-Spalte auf bank_statement_line_receipts nachrüsten. */
@@ -871,6 +887,8 @@ export interface StatementLine {
   amount: number;
   /** Buchungsdatum (yyyy-mm-dd), falls erkannt/erfasst – wird als Bezahldatum verwendet. */
   date: string | null;
+  /** Freie Notiz zur Buchung (z. B. Kontext/Erklärung), unabhängig von Beleg-Zuordnung/Prüfstatus. */
+  note: string | null;
   receipts: LineReceipt[];
   /** true, wenn die Summe der zugeordneten Belege passt ODER die Zeile manuell ohne Beleg bestätigt wurde. */
   matched: boolean;
@@ -893,6 +911,7 @@ interface LineRow extends RowDataPacket {
   height: number | string;
   amount: number | string;
   date: string | null;
+  note: string | null;
   paid_applied: number;
   confirmed_without_receipt: number;
   confirmed_at: string | null;
@@ -916,7 +935,7 @@ interface LineReceiptRow extends RowDataPacket {
 export async function listStatementLines(page: number): Promise<StatementLine[]> {
   await ensureTables();
   const [lineRows] = await getPool().query<LineRow[]>(
-    `SELECT l.id, l.page, l.x, l.y, l.width, l.height, l.amount, l.date, l.paid_applied,
+    `SELECT l.id, l.page, l.x, l.y, l.width, l.height, l.amount, l.date, l.note, l.paid_applied,
             l.confirmed_without_receipt, l.confirmed_at, l.created_at,
             COALESCE(NULLIF(u.display_name, ''), u.username) AS created_by_name,
             COALESCE(NULLIF(cu.display_name, ''), cu.username) AS confirmed_by_name
@@ -961,6 +980,7 @@ export async function listStatementLines(page: number): Promise<StatementLine[]>
       height: Number(r.height),
       amount,
       date: r.date ? String(r.date).slice(0, 10) : null,
+      note: r.note,
       receipts,
       matched: Math.abs(sum - amount) < 0.01 || Number(r.confirmed_without_receipt) === 1,
       paidApplied: Number(r.paid_applied) === 1,
@@ -1252,6 +1272,17 @@ export async function setLineConfirmedWithoutReceipt(
     [confirmed ? 1 : 0, confirmed ? userId : null, lineId]
   );
   await rebuildDisplayFile();
+}
+
+/**
+ * Setzt/löscht die freie Notiz zu einer Zeile (z. B. Kontext/Erklärung zur
+ * Buchung) – unabhängig von Beleg-Zuordnung oder Prüfstatus, wirkt sich nicht
+ * auf die angezeigte Farbe im PDF aus, daher kein `rebuildDisplayFile`.
+ */
+export async function setLineNote(lineId: number, note: string | null): Promise<void> {
+  await ensureTables();
+  const trimmed = note?.trim() || null;
+  await getPool().query(`UPDATE bank_statement_lines SET note = ? WHERE id = ?`, [trimmed, lineId]);
 }
 
 export interface AssignableReceiptOption {
