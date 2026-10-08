@@ -1,7 +1,7 @@
 import "server-only";
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { PDFDocument, rgb } from "pdf-lib";
+import { PDFDocument, rgb, degrees, StandardFonts, type PDFFont, type PDFPage } from "pdf-lib";
 import type { RowDataPacket } from "mysql2";
 import { getPool } from "./db";
 import { sniffMime } from "./file-sniff";
@@ -71,6 +71,17 @@ async function ensureTables(): Promise<void> {
          created_by INT NULL,
          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
          INDEX idx_bsh_page (page)
+       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+    )
+    .catch(() => {});
+  await pool
+    .query(
+      `CREATE TABLE IF NOT EXISTS bank_statement_stamps (
+         id INT AUTO_INCREMENT PRIMARY KEY,
+         page INT NOT NULL,
+         created_by INT NULL,
+         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+         INDEX idx_bss_page (page)
        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
     )
     .catch(() => {});
@@ -188,7 +199,36 @@ async function getBaseFile(): Promise<Buffer | null> {
   }
 }
 
-/** Baut die angezeigte Datei (Basis + alle aktiven Textmarker) aus der Basis neu auf. */
+const STAMP_TEXT = "GEPRÜFT";
+
+/** Zeichnet den großen, halbtransparenten "GEPRÜFT"-Stempel diagonal über die Seitenmitte. */
+function drawStampOnPage(pdfPage: PDFPage, font: PDFFont): void {
+  const pageWidth = pdfPage.getWidth();
+  const pageHeight = pdfPage.getHeight();
+  const angleDeg = 25;
+  const angleRad = (angleDeg * Math.PI) / 180;
+  // Zielbreite: etwas größer als die kleinere Seitenkante, wirkt wie ein großer Papierstempel.
+  const targetWidth = Math.min(pageWidth, pageHeight) * 1.15;
+  const widthAtSize1 = font.widthOfTextAtSize(STAMP_TEXT, 1) || 1;
+  const size = targetWidth / widthAtSize1;
+  const textWidth = font.widthOfTextAtSize(STAMP_TEXT, size);
+  const cx = pageWidth / 2;
+  const cy = pageHeight / 2;
+  // Start der Grundlinie so wählen, dass ihre Mitte auf die Seitenmitte fällt.
+  const x0 = cx - (textWidth / 2) * Math.cos(angleRad);
+  const y0 = cy - (textWidth / 2) * Math.sin(angleRad);
+  pdfPage.drawText(STAMP_TEXT, {
+    x: x0,
+    y: y0,
+    size,
+    font,
+    color: rgb(0.1, 0.5, 0.15),
+    opacity: 0.3,
+    rotate: degrees(angleDeg),
+  });
+}
+
+/** Baut die angezeigte Datei (Basis + alle aktiven Textmarker + Stempel) aus der Basis neu auf. */
 async function rebuildDisplayFile(): Promise<void> {
   const base = await getBaseFile();
   if (!base) {
@@ -216,6 +256,17 @@ async function rebuildDisplayFile(): Promise<void> {
       borderWidth: 0,
     });
   }
+
+  const [stampRows] = await getPool().query<RowDataPacket[]>(`SELECT page FROM bank_statement_stamps ORDER BY id ASC`);
+  if (stampRows.length > 0) {
+    const font = await pdf.embedFont(StandardFonts.HelveticaBold);
+    for (const r of stampRows) {
+      const index = Number(r.page) - 1;
+      if (index < 0 || index >= pageCount) continue;
+      drawStampOnPage(pdf.getPage(index), font);
+    }
+  }
+
   await mkdir(KONTOAUSZUEGE_DIR, { recursive: true });
   await writeFile(DISPLAY_PATH, await pdf.save());
 }
@@ -577,5 +628,56 @@ export async function deleteStatementHighlight(id: number): Promise<void> {
   if (markerId) {
     await pool.query(`DELETE FROM bank_statement_markers WHERE id = ?`, [markerId]);
   }
+  await rebuildDisplayFile();
+}
+
+export interface StatementStamp {
+  id: number;
+  page: number;
+  createdByName: string | null;
+  createdAt: string | null;
+}
+
+interface StampRow extends RowDataPacket {
+  id: number;
+  page: number;
+  created_at: string | null;
+  created_by_name: string | null;
+}
+
+/** Alle gesetzten "Geprüft"-Stempel (für die Anzeige, welche Seiten schon gestempelt sind). */
+export async function listStatementStamps(): Promise<StatementStamp[]> {
+  await ensureTables();
+  const [rows] = await getPool().query<StampRow[]>(
+    `SELECT s.id, s.page, s.created_at,
+            COALESCE(NULLIF(u.display_name, ''), u.username) AS created_by_name
+     FROM bank_statement_stamps s
+     LEFT JOIN users u ON u.id = s.created_by
+     ORDER BY s.page ASC, s.id ASC`
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    page: r.page,
+    createdByName: r.created_by_name,
+    createdAt: r.created_at ? String(r.created_at) : null,
+  }));
+}
+
+/** Setzt den "Geprüft"-Stempel groß diagonal auf eine Seite (löschbar wie die Markierungen). */
+export async function addStatementStamp(page: number, userId: number | null): Promise<void> {
+  await ensureTables();
+  const base = await getBaseFile();
+  if (!base) throw new Error("Noch keine Kontoauszüge hochgeladen.");
+  const pdf = await PDFDocument.load(base, { ignoreEncryption: true });
+  const p = Math.max(1, Math.trunc(page));
+  if (p - 1 < 0 || p - 1 >= pdf.getPageCount()) throw new Error("Ungültige Seite.");
+  await getPool().query(`INSERT INTO bank_statement_stamps (page, created_by) VALUES (?, ?)`, [p, userId]);
+  await rebuildDisplayFile();
+}
+
+/** Entfernt einen Stempel und baut die angezeigte Datei neu auf. */
+export async function deleteStatementStamp(id: number): Promise<void> {
+  await ensureTables();
+  await getPool().query(`DELETE FROM bank_statement_stamps WHERE id = ?`, [id]);
   await rebuildDisplayFile();
 }

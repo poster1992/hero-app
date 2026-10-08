@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
-import { listStatementUploads, listStatementMarkers, getStatementPageCount } from "@/lib/kontoauszuege";
+import { listStatementUploads, listStatementMarkers, listStatementStamps, getStatementPageCount } from "@/lib/kontoauszuege";
 import KontoauszugClient from "@/components/KontoauszugClient";
 
 /**
@@ -12,9 +12,10 @@ import KontoauszugClient from "@/components/KontoauszugClient";
 export default async function KontoauszuegeStandalonePage() {
   if (!(await getSession())) redirect("/login");
 
-  const [uploads, markers, pageCount] = await Promise.all([
+  const [uploads, markers, stamps, pageCount] = await Promise.all([
     listStatementUploads(),
     listStatementMarkers(),
+    listStatementStamps(),
     getStatementPageCount(),
   ]);
 
@@ -28,7 +29,12 @@ export default async function KontoauszuegeStandalonePage() {
         </p>
       </header>
 
-      <KontoauszugClient initialUploads={uploads} initialMarkers={markers} initialPageCount={pageCount} />
+      <KontoauszugClient
+        initialUploads={uploads}
+        initialMarkers={markers}
+        initialStamps={stamps}
+        initialPageCount={pageCount}
+      />
     </div>
   );
 }

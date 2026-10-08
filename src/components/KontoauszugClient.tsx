@@ -7,8 +7,10 @@ import {
   undoLastStatementUploadAction,
   addStatementMarkerAction,
   deleteStatementMarkerAction,
+  addStampAction,
+  deleteStampAction,
 } from "@/app/dashboard/belege/kontoauszug/actions";
-import type { StatementUpload, StatementMarker } from "@/lib/kontoauszuege";
+import type { StatementUpload, StatementMarker, StatementStamp } from "@/lib/kontoauszuege";
 import { MARKER_COLORS, markerColorHex, type MarkerColor } from "@/lib/kontoauszug-colors";
 import PdfHighlightModal from "@/components/PdfHighlightModal";
 
@@ -22,13 +24,16 @@ function fmtDateTime(iso: string | null): string {
 export default function KontoauszugClient({
   initialUploads,
   initialMarkers,
+  initialStamps,
   initialPageCount,
 }: {
   initialUploads: StatementUpload[];
   initialMarkers: StatementMarker[];
+  initialStamps: StatementStamp[];
   initialPageCount: number;
 }) {
   const router = useRouter();
+  const [stampBusy, startStamp] = useTransition();
   const [activePage, setActivePage] = useState(1);
   const [pageInput, setPageInput] = useState("1");
   const [uploadBusy, startUpload] = useTransition();
@@ -58,6 +63,7 @@ export default function KontoauszugClient({
 
   const hasFile = initialPageCount > 0;
   const lastUpload = initialUploads[0] ?? null;
+  const currentStamp = initialStamps.find((s) => s.page === activePage) ?? null;
 
   const filteredMarkers = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -118,6 +124,18 @@ export default function KontoauszugClient({
       return;
     startUndo(async () => {
       await undoLastStatementUploadAction();
+      setReloadToken((t) => t + 1);
+      router.refresh();
+    });
+  };
+
+  const handleToggleStamp = () => {
+    startStamp(async () => {
+      if (currentStamp) {
+        await deleteStampAction(currentStamp.id);
+      } else {
+        await addStampAction(activePage);
+      }
       setReloadToken((t) => t + 1);
       router.refresh();
     });
@@ -201,6 +219,25 @@ export default function KontoauszugClient({
               className="rounded border border-gray-300 px-2 py-0.5 text-xs font-medium text-gray-700 hover:border-brand-red/50 hover:bg-gray-50"
             >
               🖍 Seite {activePage} markieren
+            </button>
+          )}
+          {hasFile && (
+            <button
+              type="button"
+              onClick={handleToggleStamp}
+              disabled={stampBusy}
+              title={
+                currentStamp
+                  ? "Stempel auf dieser Seite entfernen"
+                  : "Großen Geprüft-Stempel auf diese Seite setzen"
+              }
+              className={`rounded border px-2 py-0.5 text-xs font-medium disabled:opacity-50 ${
+                currentStamp
+                  ? "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                  : "border-gray-300 text-gray-700 hover:border-brand-red/50 hover:bg-gray-50"
+              }`}
+            >
+              {stampBusy ? "…" : currentStamp ? "✓ Geprüft · entfernen" : "📋 Seite stempeln"}
             </button>
           )}
         </div>

@@ -10,6 +10,8 @@ import {
   drawStatementHighlights,
   listStatementHighlights,
   deleteStatementHighlight,
+  addStatementStamp,
+  deleteStatementStamp,
   type HighlightRect,
   type StatementHighlight,
 } from "@/lib/kontoauszuege";
@@ -98,5 +100,24 @@ export async function listPageHighlightsAction(page: number): Promise<StatementH
 /** Löscht ein Textmarker-Rechteck (baut die angezeigte Datei ohne diese Markierung neu auf). */
 export async function deletePdfHighlightAction(id: number): Promise<ActionResult> {
   await deleteStatementHighlight(id);
+  return { ok: true };
+}
+
+/** Setzt den großen "Geprüft"-Stempel auf eine Seite. */
+export async function addStampAction(page: number): Promise<ActionResult> {
+  const userId = await currentUserId();
+  if (userId == null) return { ok: false, error: "Nicht angemeldet." };
+  if (!Number.isFinite(page) || page < 1) return { ok: false, error: "Ungültige Seite." };
+  try {
+    await addStatementStamp(page, userId);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Stempeln fehlgeschlagen." };
+  }
+}
+
+/** Entfernt einen Stempel. */
+export async function deleteStampAction(id: number): Promise<ActionResult> {
+  await deleteStatementStamp(id);
   return { ok: true };
 }
