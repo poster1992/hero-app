@@ -7,13 +7,14 @@ import { getPool } from "./db";
 import { sniffMime } from "./file-sniff";
 import { MARKER_COLORS, type MarkerColor, markerColorRgb01 } from "./kontoauszug-colors";
 import { getReceiptsInRange } from "./hero-api";
-import { getCustomerName, effectiveReceiptStatus } from "./invoices";
+import { getCustomerName, effectiveReceiptStatus, getDocumentUrl } from "./invoices";
 import {
   listAllManualReceipts,
   searchManualOcrIds,
   setManualReceiptPaid,
   addManualReceiptPartialPayment,
   reduceManualReceiptPartialPayment,
+  getManualReceipt,
 } from "./manual-receipts";
 import { searchOcrHeroIds } from "./receipt-ocr";
 import { getPaymentOverrideMap, setPaymentOverride, clearPaymentOverride } from "./receipt-payment-status";
@@ -1445,4 +1446,35 @@ export async function searchAssignableReceipts(query: string): Promise<{ results
     return { results: sorted, error: manualError ?? heroError ?? "Suche fehlgeschlagen." };
   }
   return { results: sorted };
+}
+
+/**
+ * Löst die Dokument-URL eines einer Zeile zugeordneten Belegs auf (manuell
+ * oder HERO), damit er sich per Klick in einem neuen Tab als PDF/Bild öffnen
+ * lässt. Wird bewusst erst bei Bedarf (Klick) aufgelöst statt bei jedem
+ * Laden der Zeilenliste – bei HERO-Belegen sonst teuer (3-Jahres-Abfrage).
+ */
+export async function getLineReceiptFileUrl(
+  kind: "manual" | "hero",
+  ref: string
+): Promise<{ url: string | null; error?: string }> {
+  if (kind === "manual") {
+    const r = await getManualReceipt(Number(ref));
+    if (!r) return { url: null, error: "Beleg nicht gefunden." };
+    if (!r.hasFile) return { url: null, error: "Kein Dokument zu diesem Beleg hinterlegt." };
+    return { url: `/api/beleg?id=${r.id}` };
+  }
+  try {
+    const to = new Date();
+    const from = new Date();
+    from.setFullYear(from.getFullYear() - 3);
+    const fmt = (d: Date) => d.toISOString().slice(0, 10);
+    const receipts = await getReceiptsInRange(`${fmt(from)}T00:00:00Z`, `${fmt(to)}T23:59:59Z`);
+    const r = receipts.find((x) => x.id === ref);
+    if (!r) return { url: null, error: "Beleg nicht gefunden (evtl. älter als 3 Jahre)." };
+    if (!r.fileUpload?.src) return { url: null, error: "Kein Dokument zu diesem Beleg hinterlegt." };
+    return { url: getDocumentUrl(r.fileUpload.src) };
+  } catch (e) {
+    return { url: null, error: e instanceof Error ? e.message : "Fehler beim Laden." };
+  }
 }

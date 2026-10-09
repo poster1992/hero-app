@@ -8,6 +8,7 @@ import {
   setLineConfirmedAction,
   setLineNoteAction,
   searchAssignableReceiptsAction,
+  getLineReceiptFileUrlAction,
 } from "@/app/dashboard/belege/kontoauszug/actions";
 import type { StatementLine, AssignableReceiptOption } from "@/lib/kontoauszuege";
 import CreateReceiptInline from "@/components/CreateReceiptInline";
@@ -138,6 +139,22 @@ export default function LineAssignList({
     await onReload();
   };
 
+  // Öffnet das Dokument eines zugeordneten Belegs in einem neuen Tab. Der Tab
+  // wird SYNCHRON im Klick-Handler geöffnet (leer), die URL erst danach async
+  // aufgelöst und nachgetragen – sonst blockieren Browser das Popup, weil es
+  // nicht mehr direkt im Klick-Ereignis passiert.
+  const openReceiptFile = async (kind: "manual" | "hero", ref: string) => {
+    const win = window.open("", "_blank");
+    const res = await getLineReceiptFileUrlAction(kind, ref);
+    if (res.url) {
+      if (win) win.location.href = res.url;
+      else window.open(res.url, "_blank");
+    } else {
+      win?.close();
+      window.alert(res.error ?? "Kein Dokument hinterlegt.");
+    }
+  };
+
   const toggleConfirmed = async (lineId: number, confirmed: boolean) => {
     setBusyLineId(lineId);
     await setLineConfirmedAction(lineId, confirmed);
@@ -265,7 +282,12 @@ export default function LineAssignList({
               <ul className="mt-1.5 space-y-1">
                 {l.receipts.map((r) => (
                   <li key={r.id} className="flex items-center justify-between gap-1 border-t border-gray-100 pt-1">
-                    <span className="min-w-0 flex-1 truncate text-gray-600" title={`${r.supplier ?? ""} ${r.invoiceNumber ?? ""}`}>
+                    <button
+                      type="button"
+                      onClick={() => openReceiptFile(r.kind, r.ref)}
+                      className="min-w-0 flex-1 truncate text-left text-gray-600 hover:text-brand-red hover:underline"
+                      title={`${r.supplier ?? ""} ${r.invoiceNumber ?? ""} – klicken zum Öffnen`}
+                    >
                       {r.kind === "hero" ? "HERO" : "Manuell"} · {r.supplier ?? "—"} · {fmtEur(r.amount)}
                       {r.amount < 0 && <span className="ml-1 text-sky-600">(Gutschrift)</span>}
                       {r.settlementKind !== "full" && (
@@ -278,7 +300,7 @@ export default function LineAssignList({
                           ✓
                         </span>
                       )}
-                    </span>
+                    </button>
                     <button
                       type="button"
                       onClick={() => removeReceipt(l.id, r.id)}

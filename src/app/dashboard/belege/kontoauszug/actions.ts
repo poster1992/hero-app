@@ -22,6 +22,7 @@ import {
   setLineNote,
   backfillReceiptPaymentEffects,
   searchAssignableReceipts,
+  getLineReceiptFileUrl,
   type HighlightRect,
   type StatementHighlight,
   type StatementLine,
@@ -259,6 +260,16 @@ export async function searchAssignableReceiptsAction(
   query: string
 ): Promise<{ results: AssignableReceiptOption[]; error?: string }> {
   return searchAssignableReceipts(query);
+}
+
+/** Löst die Dokument-URL eines zugeordneten Belegs auf, zum Öffnen per Klick. */
+export async function getLineReceiptFileUrlAction(
+  kind: "manual" | "hero",
+  ref: string
+): Promise<{ url: string | null; error?: string }> {
+  const userId = await currentUserId();
+  if (userId == null) return { url: null, error: "Nicht angemeldet." };
+  return getLineReceiptFileUrl(kind, ref);
 }
 
 /** Liest Betrag + ggf. Datum aus dem gezogenen Rechteck per KI aus (zum Vorausfüllen, bleibt korrigierbar). */
