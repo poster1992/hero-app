@@ -165,7 +165,7 @@ function TaskCard({
   const effectiveStatus: TaskStatus = localStatus ?? task.status;
 
   // Führt die eigentliche Status-Änderung aus (optional mit Notiz). Gibt true zurück,
-  // wenn erfolgreich. Beim Abschließen ist serverseitig eine Notiz Pflicht.
+  // wenn erfolgreich.
   const doSetStatus = async (status: TaskStatus, note?: string): Promise<boolean> => {
     if (changing) return false;
     setChanging(true);
@@ -193,7 +193,7 @@ function TaskCard({
 
   const changeStatus = async (status: TaskStatus) => {
     if (status === effectiveStatus || changing) return;
-    // „Erledigt" nur mit Pflicht-Notiz → erst das Notizfeld öffnen.
+    // „Erledigt" → erst das (optionale) Notizfeld öffnen.
     if (status === "erledigt") {
       setCompleteError(null);
       setCompleteOpen(true);
@@ -205,10 +205,6 @@ function TaskCard({
   const submitComplete = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const note = String(new FormData(e.currentTarget).get("note") ?? "").trim();
-    if (!note) {
-      setCompleteError("Bitte eine Notiz eingeben.");
-      return;
-    }
     const ok = await doSetStatus("erledigt", note);
     if (ok) {
       setCompleteOpen(false);
@@ -251,7 +247,7 @@ function TaskCard({
     }
   };
 
-  // Antwort-Button: erst Label merken → Pflicht-Notiz abfragen, dann absenden.
+  // Antwort-Button: erst Label merken → (optionale) Notiz abfragen, dann absenden.
   const clickActionButton = (label: string) => {
     setAnswerError(null);
     setPendingAnswer(label);
@@ -261,10 +257,6 @@ function TaskCard({
     e.preventDefault();
     if (!pendingAnswer) return;
     const note = String(new FormData(e.currentTarget).get("note") ?? "").trim();
-    if (!note) {
-      setAnswerError("Bitte eine Notiz eingeben.");
-      return;
-    }
     setBusy(true);
     try {
       const fd = new FormData();
@@ -472,14 +464,13 @@ function TaskCard({
           {pendingAnswer && (
             <form onSubmit={submitAnswer} className="mt-2">
               <p className="mb-1 text-xs font-medium text-gray-600">
-                Notiz zur Antwort „{pendingAnswer}" (Pflicht):
+                Notiz zur Antwort „{pendingAnswer}&quot; (optional):
               </p>
               <textarea
                 name="note"
                 rows={2}
-                required
                 autoFocus
-                placeholder="Notiz … (Pflicht)"
+                placeholder="Notiz … (optional)"
                 className="min-h-[2.5rem] w-full resize-y rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-brand-red/60"
               />
               {answerError && <p className="mt-1 text-xs text-brand-red">{answerError}</p>}
@@ -691,7 +682,7 @@ function TaskCard({
                   type="button"
                   disabled={changing}
                   onClick={() => {
-                    // Erst Beleg schließen, dann Pflicht-Notiz zum Abschluss abfragen.
+                    // Erst Beleg schließen, dann (optionale) Notiz zum Abschluss abfragen.
                     closeBeleg();
                     setCompleteError(null);
                     setCompleteOpen(true);
@@ -771,14 +762,13 @@ function TaskCard({
       {completeOpen && (
         <form onSubmit={submitComplete} className="mt-2 rounded-md border border-emerald-300 bg-emerald-50/60 p-2">
           <p className="mb-1 text-xs font-medium text-emerald-800">
-            Notiz zum Abschließen (Pflicht):
+            Notiz zum Abschließen (optional):
           </p>
           <textarea
             name="note"
             rows={2}
-            required
             autoFocus
-            placeholder="Was wurde erledigt? … (Pflicht)"
+            placeholder="Was wurde erledigt? … (optional)"
             className="min-h-[2.5rem] w-full resize-y rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-emerald-500"
           />
           {completeError && <p className="mt-1 text-xs text-brand-red">{completeError}</p>}
@@ -1252,7 +1242,7 @@ export default function TaskManager({
             onChange={toggleHideSent}
             className="accent-brand-red"
           />
-          „Von mir gesendete" ausblenden
+          „Von mir gesendete&quot; ausblenden
         </label>
         <input
           type="text"
