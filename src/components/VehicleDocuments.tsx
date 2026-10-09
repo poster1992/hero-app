@@ -158,6 +158,20 @@ function VehicleList({
           <input name="plate" placeholder="Kennzeichen (optional)" className={inputClass} />
           <input name="driver" placeholder="Fahrer / Mitarbeiter (optional)" className={inputClass} />
           <input name="note" placeholder="Notiz (optional)" className={inputClass} />
+          <div className="flex gap-2">
+            <input
+              name="leasingRate"
+              inputMode="decimal"
+              placeholder="Monatliche Leasingrate € (optional)"
+              className={inputClass}
+            />
+            <input
+              name="leasingFinalRate"
+              inputMode="decimal"
+              placeholder="Restrate € (optional)"
+              className={inputClass}
+            />
+          </div>
           <div className="flex items-center gap-2">
             <button
               type="submit"
@@ -189,7 +203,7 @@ function VehicleList({
         {vehicles.length === 0 ? (
           <p className="px-4 py-6 text-center text-sm text-gray-500">Noch keine Fahrzeuge.</p>
         ) : filtered.length === 0 ? (
-          <p className="px-4 py-6 text-center text-sm text-gray-500">Keine Treffer für „{query}".</p>
+          <p className="px-4 py-6 text-center text-sm text-gray-500">Keine Treffer für „{query}&quot;.</p>
         ) : (
           <ul className="max-h-[60vh] divide-y divide-gray-100 overflow-y-auto">
             {filtered.map((v) => {
@@ -407,6 +421,20 @@ function VehiclePanel({
             defaultValue={vehicle.driver ?? ""}
             placeholder="Fahrer / Mitarbeiter"
             className={`${inputClass} sm:col-span-2`}
+          />
+          <input
+            name="leasingRate"
+            inputMode="decimal"
+            defaultValue={vehicle.leasingRate != null ? String(vehicle.leasingRate).replace(".", ",") : ""}
+            placeholder="Monatliche Leasingrate €"
+            className={inputClass}
+          />
+          <input
+            name="leasingFinalRate"
+            inputMode="decimal"
+            defaultValue={vehicle.leasingFinalRate != null ? String(vehicle.leasingFinalRate).replace(".", ",") : ""}
+            placeholder="Restrate €"
+            className={inputClass}
           />
           <div className="sm:col-span-2 flex items-center gap-2">
             <button type="submit" className="rounded-md bg-brand-red px-3 py-2 text-sm font-semibold text-white hover:opacity-90">

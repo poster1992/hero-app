@@ -20,6 +20,14 @@ const PATH = "/dashboard/fahrzeuge";
 const MODULE = "cockpit_fahrzeuge";
 const MAX_SIZE = 25 * 1024 * 1024; // 25 MB
 
+/** Parst ein Betragsfeld (deutsches Format, z. B. "450,00") – leer/ungültig → null. */
+function parseAmount(raw: FormDataEntryValue | null): number | null {
+  const s = String(raw ?? "").trim();
+  if (!s) return null;
+  const n = Number(s.replace(/\./g, "").replace(",", "."));
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
 async function requireAccess() {
   const session = await getSession();
   if (!session) return null;
@@ -45,8 +53,10 @@ export async function createVehicleAction(
   const plate = String(formData.get("plate") ?? "").trim() || null;
   const driver = String(formData.get("driver") ?? "").trim() || null;
   const note = String(formData.get("note") ?? "").trim() || null;
+  const leasingRate = parseAmount(formData.get("leasingRate"));
+  const leasingFinalRate = parseAmount(formData.get("leasingFinalRate"));
   try {
-    await createVehicle({ name, plate, driver, note });
+    await createVehicle({ name, plate, driver, note, leasingRate, leasingFinalRate });
   } catch {
     return { error: "Fahrzeug konnte nicht angelegt werden." };
   }
@@ -66,8 +76,10 @@ export async function updateVehicleAction(
   const plate = String(formData.get("plate") ?? "").trim() || null;
   const driver = String(formData.get("driver") ?? "").trim() || null;
   const note = String(formData.get("note") ?? "").trim() || null;
+  const leasingRate = parseAmount(formData.get("leasingRate"));
+  const leasingFinalRate = parseAmount(formData.get("leasingFinalRate"));
   try {
-    await updateVehicle({ id, name, plate, driver, note });
+    await updateVehicle({ id, name, plate, driver, note, leasingRate, leasingFinalRate });
   } catch {
     return { error: "Fahrzeug konnte nicht gespeichert werden." };
   }

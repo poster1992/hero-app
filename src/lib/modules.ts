@@ -49,6 +49,7 @@ export const MODULES: AppModule[] = [
   { key: "cockpit_mitarbeiterbewertung", label: "Mitarbeiterbewertung", group: "Cockpit" },
   { key: "cockpit_bewertungen", label: "Kundenbewertungen (Google-Anfragen senden)", group: "Cockpit" },
   { key: "cockpit_fahrzeuge", label: "Fahrzeuge (Unterlagen verwalten)", group: "Cockpit" },
+  { key: "cockpit_fahrzeug_leasing", label: "Fahrzeug Leasing", group: "Cockpit" },
   { key: "cockpit_versicherungen", label: "Versicherungen (Verträge & Policen verwalten)", group: "Cockpit" },
   { key: "cockpit_arbeitsvertrag", label: "Arbeitsvertrag erstellen", group: "Cockpit" },
   { key: "cockpit_aufmass", label: "Aufmaß (handschriftliches Aufmaß → Word)", group: "Cockpit", note: "Foto/PDF hineinziehen – die KI erzeugt daraus ein bearbeitbares Word-Dokument." },
