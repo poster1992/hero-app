@@ -1,5 +1,6 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
+import { PDFDocument } from "pdf-lib";
 import { findContactNameBySearch } from "./hero-api";
 import { aiErrorMessage } from "./ai-error";
 
@@ -47,6 +48,13 @@ export interface BelegSumResult {
   count?: number;
   /** Einzelwerte (für die Kontrolle). */
   values?: number[];
+  /**
+   * Nur bei Seite-für-Seite-Auswertung (Lohn/BGL): JEDE Seite mit Betrag
+   * (oder `null`, falls auf dieser Seite nichts erkannt wurde) – zur
+   * Kontrolle gegen das Original, da `values`/`count` nicht erkannte
+   * (null-)Seiten stillschweigend herausfiltern.
+   */
+  pageBreakdown?: { page: number; amount: number | null }[];
   /** Erkannter MwSt-/TVA-Satz in %, oder undefined. */
   vatRate?: number;
   /** Belegdatum (yyyy-mm-dd), aus dem Beleg gelesen. */
@@ -77,6 +85,12 @@ export interface BelegSumResult {
   fullText?: string;
   /** Nötige Drehung im Uhrzeigersinn (0/90/180/270), um einen falsch gescannten Beleg aufzurichten. */
   rotation?: 0 | 90 | 180 | 270;
+  /**
+   * Nicht-blockierender Hinweis trotz `ok: true` – z. B. wenn bei einer
+   * Seite-für-Seite-Auswertung (Lohn/BGL) die Anzahl erkannter Seiten nicht
+   * zur tatsächlichen PDF-Seitenzahl passt (eine Seite wurde evtl. übersprungen).
+   */
+  warning?: string;
   error?: string;
 }
 
@@ -246,10 +260,18 @@ const SUM_CONFIG: Record<
     account?: { number: string; name: string };
     /** Konto nur setzen, wenn ein Fahrzeug erkannt wurde (Matricule). */
     accountNeedsVehicle?: boolean;
+    /**
+     * true = der Prompt verlangt "SEITE FÜR SEITE" genau ein Objekt je Seite
+     * (lohn/bgl) – dann lässt sich die Anzahl erkannter Seiten gegen die
+     * tatsächliche PDF-Seitenzahl prüfen, um stillschweigend übersprungene
+     * Seiten (z. B. ein nicht erkannter Mitarbeiter) sichtbar zu machen.
+     */
+    perPage?: boolean;
   }
 > = {
   lohn: {
     label: "Total Brutto",
+    perPage: true,
     prompt:
       "Dies ist ein mehrseitiges Lohnjournal (in der Regel eine Seite je Mitarbeiter). Gehe das " +
       "Dokument SEITE FÜR SEITE durch. Gib für JEDE Seite genau ein Objekt zurück: " +
@@ -529,6 +551,7 @@ const SUM_CONFIG: Record<
     account: { number: "4595", name: "Leasing/Mietwagen" },
     accountNeedsVehicle: true,
     label: "Total TTC à payer",
+    perPage: true,
     prompt:
       "Dies ist eine (evtl. mehrseitige) BNP Paribas Lease / BGL-Leasingrechnung. Gehe das Dokument " +
       "SEITE FÜR SEITE durch. Gib für JEDE Seite genau ein Objekt zurück: " +
@@ -672,7 +695,7 @@ export async function extractBeleg(input: {
     }
 
     interface ParsedBeleg {
-      seiten?: { betrag?: unknown; steuersatz?: unknown; matricule?: unknown; typ?: unknown }[];
+      seiten?: { seite?: unknown; betrag?: unknown; steuersatz?: unknown; matricule?: unknown; typ?: unknown }[];
       belegdatum?: unknown;
       lieferant?: unknown;
       beschreibung?: unknown;
@@ -826,11 +849,41 @@ export async function extractBeleg(input: {
       accountName = cfg.account.name;
     }
 
+    // Seite-für-Seite-Auswertung (Lohn/BGL): erkannte Seitenzahl gegen die
+    // tatsächliche PDF-Seitenzahl prüfen – weicht sie ab, wurde vermutlich
+    // eine Seite stillschweigend übersprungen (z. B. ein Mitarbeiter fehlt
+    // dann in der Summe, ohne dass das sonst auffallen würde).
+    let warning: string | undefined;
+    let pageBreakdown: { page: number; amount: number | null }[] | undefined;
+    if (cfg.perPage) {
+      pageBreakdown = seiten.map((s, i) => {
+        const amt = s?.betrag == null ? null : toNum(s.betrag);
+        const pageNum = Number(s?.seite);
+        return {
+          page: Number.isFinite(pageNum) && pageNum > 0 ? pageNum : i + 1,
+          amount: amt == null || amt === 0 ? null : round2(amt),
+        };
+      });
+      if (!isImage) {
+        try {
+          const pdfDoc = await PDFDocument.load(input.buffer, { ignoreEncryption: true });
+          const actualPages = pdfDoc.getPageCount();
+          if (seiten.length !== actualPages) {
+            warning = `Achtung: Die KI hat ${seiten.length} von ${actualPages} Seiten ausgewertet – bitte die Summe gegen das Original prüfen, evtl. wurde eine Seite übersprungen.`;
+          }
+        } catch {
+          /* Seitenzahl-Prüfung optional – schlägt sie fehl, bleibt einfach kein Warnhinweis. */
+        }
+      }
+    }
+
     return {
       ok: true,
       total,
       count: values.length,
       values: values.map(round2),
+      pageBreakdown,
+      warning,
       vatRate,
       date,
       supplier,

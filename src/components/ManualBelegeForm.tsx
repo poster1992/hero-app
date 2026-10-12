@@ -196,7 +196,12 @@ export function ManualBelegeFormFields({
   // Vorzeichen setzt die Server-Action. Beim Bearbeiten aus dem Vorzeichen ableiten.
   const [isCredit, setIsCredit] = useState<boolean>(receipt ? receipt.gross < 0 : false);
   const [sumBusy, startSum] = useTransition();
-  const [sumMsg, setSumMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [sumMsg, setSumMsg] = useState<{
+    ok: boolean;
+    text: string;
+    warning?: string;
+    pageBreakdown?: { page: number; amount: number | null }[];
+  } | null>(null);
   const isSumType = belegTyp !== "";
 
   // Konto vorauswählen (echtes HERO-Konto anhand Nummer, sonst Fallbackname).
@@ -281,6 +286,9 @@ export function ManualBelegeFormFields({
             (res.accountNumber
               ? ` · Konto ${res.accountNumber}${res.isVehicle ? " (Fahrzeug)" : ""}`
               : ""),
+          warning: res.warning,
+          // Einzelwerte je Seite zur Kontrolle gegen das Original (nur bei Lohn/BGL befüllt).
+          pageBreakdown: res.pageBreakdown,
         });
       } else {
         setSumMsg({ ok: false, text: res.error ?? "OCR fehlgeschlagen." });
@@ -439,6 +447,26 @@ export function ManualBelegeFormFields({
                     </span>
                   )}
                 </div>
+                {sumMsg?.warning && (
+                  <p className="mt-1 text-xs text-amber-700">⚠️ {sumMsg.warning}</p>
+                )}
+                {sumMsg?.pageBreakdown && sumMsg.pageBreakdown.length > 1 && (
+                  <details className="mt-1 text-xs text-gray-500">
+                    <summary className="cursor-pointer hover:text-gray-800">
+                      Einzelwerte je Seite anzeigen (zur Kontrolle gegen das Original)
+                    </summary>
+                    <ol className="mt-1 list-inside list-decimal space-y-0.5">
+                      {sumMsg.pageBreakdown.map((p) => (
+                        <li key={p.page} className={p.amount == null ? "text-rose-600" : undefined}>
+                          Seite {p.page}:{" "}
+                          {p.amount == null
+                            ? "nicht erkannt"
+                            : `${p.amount.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`}
+                        </li>
+                      ))}
+                    </ol>
+                  </details>
+                )}
               </div>
               <div>
                 <label className="mb-1 block text-sm text-gray-600">Belegdatum</label>
