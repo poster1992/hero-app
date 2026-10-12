@@ -336,7 +336,10 @@ export async function computeBelegSumAction(formData: FormData): Promise<BelegSu
   if (f.size > 25 * 1024 * 1024) return { ok: false, error: "Datei zu groß (max. 25 MB)." };
 
   const buffer = Buffer.from(await f.arrayBuffer());
-  return extractBeleg({ buffer, mime: f.type || "application/pdf", kind });
+  // Die manuelle Erfassung übernimmt nur Summe/Felder, speichert keinen
+  // ocrText – Volltext hier also nicht mit anfordern (spart Tokens, senkt
+  // bei umfangreichen Dokumenten das Risiko einer abgeschnittenen Antwort).
+  return extractBeleg({ buffer, mime: f.type || "application/pdf", kind, skipVolltext: true });
 }
 
 export interface BelegEditData {

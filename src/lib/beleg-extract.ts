@@ -588,6 +588,15 @@ export async function extractBeleg(input: {
   buffer: Buffer;
   mime: string;
   kind: BelegSumKind | "auto";
+  /**
+   * true = den Volltext NICHT mit anfordern (siehe `VOLLTEXT_SUFFIX`). Nutzt
+   * der Aufrufer `fullText` ohnehin nicht (z. B. die manuelle Belegerfassung –
+   * dort wird nur die Summe/Felder übernommen, kein `ocrText` gespeichert),
+   * spart das unnötige Tokens und senkt bei umfangreichen Mehrseiten-
+   * Dokumenten (z. B. Lohnjournal mit vielen Mitarbeitern) das Risiko, dass
+   * die Antwort mitten im JSON abgeschnitten wird.
+   */
+  skipVolltext?: boolean;
 }): Promise<BelegSumResult> {
   if (!process.env.ANTHROPIC_API_KEY) {
     return { ok: false, error: "OCR ist nicht konfiguriert (ANTHROPIC_API_KEY fehlt)." };
@@ -676,13 +685,26 @@ export async function extractBeleg(input: {
       drehung?: unknown;
     }
 
-    // Ein Extraktionslauf mit gegebenem Prompt (inkl. Volltext + Drehung).
+    // Ein Extraktionslauf mit gegebenem Prompt (inkl. Volltext + Drehung). Bei
+    // mehrseitigen Dokumenten (z. B. Lohnjournal mit vielen Mitarbeitern) kann
+    // die Antwort (ein Objekt je Seite PLUS der komplette Volltext des ganzen
+    // Dokuments in demselben JSON) sehr groß werden – 32000 Tokens statt
+    // vorher 16000, damit das nicht mitten im JSON abreißt. Bricht die Antwort
+    // trotzdem wegen max_tokens ab, wird das explizit erkannt (statt an einem
+    // kryptischen JSON.parse-Fehler zu scheitern) und klar gemeldet.
     const runExtraction = async (prompt: string): Promise<ParsedBeleg> => {
       const res = await client.messages.create({
         model: "claude-haiku-4-5",
-        max_tokens: 16000,
-        messages: [{ role: "user", content: [block, { type: "text", text: prompt + VOLLTEXT_SUFFIX }] }],
+        max_tokens: 32000,
+        messages: [
+          { role: "user", content: [block, { type: "text", text: prompt + (input.skipVolltext ? "" : VOLLTEXT_SUFFIX) }] },
+        ],
       });
+      if (res.stop_reason === "max_tokens") {
+        throw new Error(
+          "Die Auswertung wurde mitten in der Antwort abgebrochen (Dokument vermutlich zu umfangreich, z. B. zu viele Seiten/Mitarbeiter für einen Lauf). Bitte das Dokument in kleineren Teilen hochladen oder die Werte manuell eintragen."
+        );
+      }
       const tb = res.content.find((b) => b.type === "text");
       const raw =
         tb && tb.type === "text"
