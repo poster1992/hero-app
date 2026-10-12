@@ -19,6 +19,7 @@ import {
   addReceiptToLine,
   removeReceiptFromLine,
   setLineConfirmedWithoutReceipt,
+  setLineMarkedAsLohn,
   setLineNote,
   backfillReceiptPaymentEffects,
   searchAssignableReceipts,
@@ -231,6 +232,14 @@ export async function setLineConfirmedAction(lineId: number, confirmed: boolean)
   const userId = await currentUserId();
   if (userId == null) return { ok: false, error: "Nicht angemeldet." };
   await setLineConfirmedWithoutReceipt(lineId, confirmed, userId);
+  return { ok: true };
+}
+
+/** Markiert/entmarkiert eine Zeile als Lohn-Buchung (kein Beleg nötig, erscheint grau statt rot). */
+export async function setLineMarkedAsLohnAction(lineId: number, marked: boolean): Promise<ActionResult> {
+  const userId = await currentUserId();
+  if (userId == null) return { ok: false, error: "Nicht angemeldet." };
+  await setLineMarkedAsLohn(lineId, marked, userId);
   return { ok: true };
 }
 

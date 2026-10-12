@@ -6,6 +6,7 @@ import {
   addReceiptToLineAction,
   removeReceiptFromLineAction,
   setLineConfirmedAction,
+  setLineMarkedAsLohnAction,
   setLineNoteAction,
   searchAssignableReceiptsAction,
   getLineReceiptFileUrlAction,
@@ -162,6 +163,13 @@ export default function LineAssignList({
     await onReload();
   };
 
+  const toggleLohn = async (lineId: number, marked: boolean) => {
+    setBusyLineId(lineId);
+    await setLineMarkedAsLohnAction(lineId, marked);
+    setBusyLineId(null);
+    await onReload();
+  };
+
   const openNoteEdit = (l: StatementLine) => {
     setEditingNoteFor(l.id);
     setNoteDraft(l.note ?? "");
@@ -190,7 +198,13 @@ export default function LineAssignList({
         const sum = l.receipts.reduce((s, r) => s + r.amount, 0);
         const diff = l.amount - sum;
         const sumMatched = Math.abs(diff) < 0.01;
-        const dotColor = sumMatched ? "#16a34a" : l.confirmedWithoutReceipt ? "#f59e0b" : "#dc2626";
+        const dotColor = sumMatched
+          ? "#16a34a"
+          : l.markedAsLohn
+            ? "#6b7280"
+            : l.confirmedWithoutReceipt
+              ? "#f59e0b"
+              : "#dc2626";
         return (
           <li key={l.id} className="border border-line bg-white p-2.5 text-xs">
             <div className="flex items-center justify-between gap-2">
@@ -210,29 +224,54 @@ export default function LineAssignList({
               </button>
             </div>
             <div
-              className={`mt-0.5 ${sumMatched ? "text-emerald-600" : l.confirmedWithoutReceipt ? "text-amber-600" : "text-rose-600"}`}
+              className={`mt-0.5 ${
+                sumMatched
+                  ? "text-emerald-600"
+                  : l.markedAsLohn
+                    ? "text-gray-600"
+                    : l.confirmedWithoutReceipt
+                      ? "text-amber-600"
+                      : "text-rose-600"
+              }`}
             >
               {sumMatched
                 ? "✓ Summe passt"
-                : l.confirmedWithoutReceipt
-                  ? "✓ Manuell geprüft (ohne Beleg)"
-                  : `Fehlt ${fmtEur(diff)}`}
+                : l.markedAsLohn
+                  ? "✓ Lohn (kein Beleg nötig)"
+                  : l.confirmedWithoutReceipt
+                    ? "✓ Manuell geprüft (ohne Beleg)"
+                    : `Fehlt ${fmtEur(diff)}`}
               {l.paidApplied && " · Zahlstatus der Belege aktualisiert"}
             </div>
             {!sumMatched && (
-              <button
-                type="button"
-                onClick={() => toggleConfirmed(l.id, !l.confirmedWithoutReceipt)}
-                disabled={busyLineId === l.id}
-                className={`mt-1 rounded border px-2 py-0.5 text-[11px] font-medium disabled:opacity-40 ${
-                  l.confirmedWithoutReceipt
-                    ? "border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100"
-                    : "border-gray-300 text-gray-600 hover:border-amber-400 hover:bg-amber-50"
-                }`}
-                title="Für Zahlungseingänge ohne passende Ausgangsrechnung: Zeile ohne Beleg-Zuordnung als geprüft markieren."
-              >
-                {l.confirmedWithoutReceipt ? "↺ Prüfung zurücknehmen" : "✓ Zahlungseingang geprüft (ohne Beleg)"}
-              </button>
+              <div className="mt-1 flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => toggleLohn(l.id, !l.markedAsLohn)}
+                  disabled={busyLineId === l.id}
+                  className={`rounded border px-2 py-0.5 text-[11px] font-medium disabled:opacity-40 ${
+                    l.markedAsLohn
+                      ? "border-gray-400 bg-gray-100 text-gray-700 hover:bg-gray-200"
+                      : "border-gray-300 text-gray-600 hover:border-gray-400 hover:bg-gray-50"
+                  }`}
+                  title="Für Lohn-Buchungszeilen: Zeile ohne Beleg-Zuordnung als Lohn markieren (grau im PDF)."
+                >
+                  {l.markedAsLohn ? "↺ Markierung zurücknehmen" : "💶 Lohn"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleConfirmed(l.id, !l.confirmedWithoutReceipt)}
+                  disabled={busyLineId === l.id}
+                  className={`rounded border px-2 py-0.5 text-[11px] font-medium disabled:opacity-40 ${
+                    l.confirmedWithoutReceipt
+                      ? "border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                      : "border-gray-300 text-gray-600 hover:border-amber-400 hover:bg-amber-50"
+                  }`}
+                  title="Für Zahlungseingänge ohne passende Ausgangsrechnung: Zeile ohne Beleg-Zuordnung als geprüft markieren."
+                >
+                  {l.confirmedWithoutReceipt ? "↺ Prüfung zurücknehmen" : "✓ Zahlungseingang geprüft (ohne Beleg)"}
+                </button>
+              </div>
             )}
 
             {editingNoteFor === l.id ? (

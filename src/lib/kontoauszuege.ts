@@ -138,6 +138,7 @@ async function ensureTables(): Promise<void> {
   await ensureLineReceiptSettlementColumn();
   await ensureLineReceiptPaidAppliedColumn();
   await ensureLineConfirmedColumn();
+  await ensureLineLohnColumn();
   await ensureLineNoteColumn();
   tableReady = true;
 }
@@ -188,6 +189,33 @@ async function ensureLineConfirmedColumn(): Promise<void> {
     await pool.query("ALTER TABLE bank_statement_lines ADD COLUMN confirmed_at TIMESTAMP NULL").catch(() => {});
   }
   lineConfirmedColumnReady = true;
+}
+
+/**
+ * Self-healing: Spalten für „als Lohn markiert" – für Lohn-Buchungszeilen,
+ * zu denen man keinen Beleg zuordnen, sondern die Zeile nur schnell als Lohn
+ * kennzeichnen möchte (erscheint grau statt rot/amber im PDF).
+ */
+let lineLohnColumnReady = false;
+async function ensureLineLohnColumn(): Promise<void> {
+  if (lineLohnColumnReady) return;
+  const pool = getPool();
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'bank_statement_lines'
+        AND COLUMN_NAME IN ('marked_as_lohn', 'marked_as_lohn_by', 'marked_as_lohn_at')`
+  );
+  const existing = new Set(rows.map((r) => String(r.COLUMN_NAME)));
+  if (!existing.has("marked_as_lohn")) {
+    await pool.query("ALTER TABLE bank_statement_lines ADD COLUMN marked_as_lohn TINYINT NOT NULL DEFAULT 0").catch(() => {});
+  }
+  if (!existing.has("marked_as_lohn_by")) {
+    await pool.query("ALTER TABLE bank_statement_lines ADD COLUMN marked_as_lohn_by INT NULL").catch(() => {});
+  }
+  if (!existing.has("marked_as_lohn_at")) {
+    await pool.query("ALTER TABLE bank_statement_lines ADD COLUMN marked_as_lohn_at TIMESTAMP NULL").catch(() => {});
+  }
+  lineLohnColumnReady = true;
 }
 
 /** Self-healing: `note`-Spalte (freie Notiz zur Buchung) auf bank_statement_lines nachrüsten. */
@@ -425,9 +453,9 @@ async function rebuildDisplayFile(): Promise<void> {
   // Zeilen-Zuordnungen: grün, wenn die Summe der zugeordneten Belege zum
   // eingetragenen Betrag passt; gelb/amber, wenn stattdessen manuell ohne
   // Beleg als geprüft abgehakt wurde (z. B. Zahlungseingänge ohne
-  // Ausgangsrechnung in der Suche); sonst rot.
+  // Ausgangsrechnung in der Suche); grau, wenn als Lohn markiert; sonst rot.
   const [lineRows] = await getPool().query<RowDataPacket[]>(
-    `SELECT id, page, x, y, width, height, amount, confirmed_without_receipt FROM bank_statement_lines ORDER BY id ASC`
+    `SELECT id, page, x, y, width, height, amount, confirmed_without_receipt, marked_as_lohn FROM bank_statement_lines ORDER BY id ASC`
   );
   if (lineRows.length > 0) {
     const lineIds = lineRows.map((r) => r.id);
@@ -440,6 +468,7 @@ async function rebuildDisplayFile(): Promise<void> {
     for (const r of sumRows) sumByLine.set(Number(r.line_id), Number(r.total));
     const GREEN = rgb(0.13, 0.7, 0.2);
     const AMBER = rgb(0.96, 0.62, 0.04);
+    const GREY = rgb(0.55, 0.55, 0.57);
     const RED = rgb(0.85, 0.15, 0.15);
     for (const r of lineRows) {
       const index = Number(r.page) - 1;
@@ -447,13 +476,14 @@ async function rebuildDisplayFile(): Promise<void> {
       const pdfPage = pdf.getPage(index);
       const sum = sumByLine.get(Number(r.id)) ?? 0;
       const matched = Math.abs(sum - Number(r.amount)) < 0.01;
-      const confirmedWithoutReceipt = !matched && Number(r.confirmed_without_receipt) === 1;
+      const markedAsLohn = !matched && Number(r.marked_as_lohn) === 1;
+      const confirmedWithoutReceipt = !matched && !markedAsLohn && Number(r.confirmed_without_receipt) === 1;
       pdfPage.drawRectangle({
         x: Number(r.x),
         y: Number(r.y),
         width: Number(r.width),
         height: Number(r.height),
-        color: matched ? GREEN : confirmedWithoutReceipt ? AMBER : RED,
+        color: matched ? GREEN : markedAsLohn ? GREY : confirmedWithoutReceipt ? AMBER : RED,
         opacity: 0.3,
         borderWidth: 0,
       });
@@ -926,6 +956,10 @@ export interface StatementLine {
   confirmedWithoutReceipt: boolean;
   confirmedByName: string | null;
   confirmedAt: string | null;
+  /** true, wenn die Zeile als Lohn-Buchung markiert wurde (erscheint grau im PDF, kein Beleg nötig). */
+  markedAsLohn: boolean;
+  markedAsLohnByName: string | null;
+  markedAsLohnAt: string | null;
   createdByName: string | null;
   createdAt: string | null;
 }
@@ -943,6 +977,9 @@ interface LineRow extends RowDataPacket {
   confirmed_without_receipt: number;
   confirmed_at: string | null;
   confirmed_by_name: string | null;
+  marked_as_lohn: number;
+  marked_as_lohn_at: string | null;
+  marked_as_lohn_by_name: string | null;
   created_at: string | null;
   created_by_name: string | null;
 }
@@ -964,12 +1001,14 @@ export async function listStatementLines(page: number): Promise<StatementLine[]>
   await ensureTables();
   const [lineRows] = await getPool().query<LineRow[]>(
     `SELECT l.id, l.page, l.x, l.y, l.width, l.height, l.amount, l.date, l.note,
-            l.confirmed_without_receipt, l.confirmed_at, l.created_at,
+            l.confirmed_without_receipt, l.confirmed_at, l.marked_as_lohn, l.marked_as_lohn_at, l.created_at,
             COALESCE(NULLIF(u.display_name, ''), u.username) AS created_by_name,
-            COALESCE(NULLIF(cu.display_name, ''), cu.username) AS confirmed_by_name
+            COALESCE(NULLIF(cu.display_name, ''), cu.username) AS confirmed_by_name,
+            COALESCE(NULLIF(lu.display_name, ''), lu.username) AS marked_as_lohn_by_name
      FROM bank_statement_lines l
      LEFT JOIN users u ON u.id = l.created_by
      LEFT JOIN users cu ON cu.id = l.confirmed_by
+     LEFT JOIN users lu ON lu.id = l.marked_as_lohn_by
      WHERE l.page = ?
      ORDER BY l.id ASC`,
     [page]
@@ -1011,11 +1050,17 @@ export async function listStatementLines(page: number): Promise<StatementLine[]>
       date: r.date ? String(r.date).slice(0, 10) : null,
       note: r.note,
       receipts,
-      matched: Math.abs(sum - amount) < 0.01 || Number(r.confirmed_without_receipt) === 1,
+      matched:
+        Math.abs(sum - amount) < 0.01 ||
+        Number(r.confirmed_without_receipt) === 1 ||
+        Number(r.marked_as_lohn) === 1,
       paidApplied: receipts.length > 0 && receipts.every((x) => x.paidApplied),
       confirmedWithoutReceipt: Number(r.confirmed_without_receipt) === 1,
       confirmedByName: r.confirmed_by_name,
       confirmedAt: r.confirmed_at ? String(r.confirmed_at) : null,
+      markedAsLohn: Number(r.marked_as_lohn) === 1,
+      markedAsLohnByName: r.marked_as_lohn_by_name,
+      markedAsLohnAt: r.marked_as_lohn_at ? String(r.marked_as_lohn_at) : null,
       createdByName: r.created_by_name,
       createdAt: r.created_at ? String(r.created_at) : null,
     };
@@ -1324,6 +1369,18 @@ export async function setLineConfirmedWithoutReceipt(
      SET confirmed_without_receipt = ?, confirmed_by = ?, confirmed_at = ${confirmed ? "NOW()" : "NULL"}
      WHERE id = ?`,
     [confirmed ? 1 : 0, confirmed ? userId : null, lineId]
+  );
+  await rebuildDisplayFile();
+}
+
+/** Markiert/entmarkiert eine Zeile als Lohn-Buchung (erscheint dann grau statt rot im PDF, kein Beleg nötig). */
+export async function setLineMarkedAsLohn(lineId: number, marked: boolean, userId: number | null): Promise<void> {
+  await ensureTables();
+  await getPool().query(
+    `UPDATE bank_statement_lines
+     SET marked_as_lohn = ?, marked_as_lohn_by = ?, marked_as_lohn_at = ${marked ? "NOW()" : "NULL"}
+     WHERE id = ?`,
+    [marked ? 1 : 0, marked ? userId : null, lineId]
   );
   await rebuildDisplayFile();
 }
