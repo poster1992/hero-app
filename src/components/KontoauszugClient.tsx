@@ -145,6 +145,23 @@ export default function KontoauszugClient({
     );
   };
 
+  // Beim Umschalten des Filters selbst (nicht nur über ◀/▶) direkt zur ersten
+  // passenden Seite springen, falls die aktuell angezeigte Seite nicht mehr
+  // passt – sonst bleibt scheinbar "nichts passiert", obwohl der Filter aktiv ist.
+  const changePageFilter = (filter: "all" | "checked" | "unchecked") => {
+    setPageFilter(filter);
+    if (filter === "all") return;
+    const matches = (p: number) => (filter === "checked" ? stampedPages.has(p) : !stampedPages.has(p));
+    if (matches(activePage)) return;
+    for (let p = 1; p <= initialPageCount; p++) {
+      if (matches(p)) {
+        goToPage(p);
+        return;
+      }
+    }
+    window.alert(filter === "checked" ? "Noch keine Seite geprüft." : "Alle Seiten sind bereits geprüft.");
+  };
+
   const handleUpload = () => {
     const file = fileInputRef.current?.files?.[0];
     if (!file) {
@@ -335,7 +352,7 @@ export default function KontoauszugClient({
             <div className="flex items-center gap-1">
               <select
                 value={pageFilter}
-                onChange={(e) => setPageFilter(e.target.value as "all" | "checked" | "unchecked")}
+                onChange={(e) => changePageFilter(e.target.value as "all" | "checked" | "unchecked")}
                 title="Seiten nach Prüfstatus filtern (Stempel = geprüft)"
                 className="rounded border border-gray-300 px-1.5 py-0.5 text-xs text-gray-700 outline-none focus:border-brand-red/60"
               >
