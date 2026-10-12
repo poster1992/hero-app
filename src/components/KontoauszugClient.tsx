@@ -11,6 +11,7 @@ import {
   deleteStampAction,
   autoDetectLinesAction,
   backfillReceiptPaymentEffectsAction,
+  listStatementStampsAction,
 } from "@/app/dashboard/belege/kontoauszug/actions";
 import type { StatementUpload, StatementMarker, StatementStamp } from "@/lib/kontoauszuege";
 import { MARKER_COLORS, markerColorHex, type MarkerColor } from "@/lib/kontoauszug-colors";
@@ -95,10 +96,11 @@ export default function KontoauszugClient({
   const lastUpload = initialUploads[0] ?? null;
   const currentStamp = initialStamps.find((s) => s.page === activePage) ?? null;
 
-  // Seiten mit "GEPRÜFT"-Stempel (siehe "📋 Seite stempeln") – für den Geprüft/Ungeprüft-Filter.
+  // Seiten mit "GEPRÜFT"-Stempel (siehe "📋 Seite stempeln") – für die Anzeige
+  // (Zähler/Badges im Filter-Dropdown). Für den eigentlichen Sprung (◀/▶,
+  // Filter umschalten) wird die Liste frisch vom Server geholt (siehe
+  // `freshStampedPages`), da diese Prop zwischenzeitlich veraltet sein kann.
   const stampedPages = useMemo(() => new Set(initialStamps.map((s) => s.page)), [initialStamps]);
-  const matchesPageFilter = (p: number) =>
-    pageFilter === "all" ? true : pageFilter === "checked" ? stampedPages.has(p) : !stampedPages.has(p);
   const checkedCount = stampedPages.size;
 
   const filteredMarkers = useMemo(() => {
@@ -129,11 +131,28 @@ export default function KontoauszugClient({
     setJumpToken((t) => t + 1);
   };
 
+  // Holt die Stempel-Liste direkt vom Server statt sich auf `initialStamps`
+  // zu verlassen – die Prop wird nur bei router.refresh() neu geladen und kann
+  // zum Zeitpunkt eines Sprungs veraltet sein (z. B. kurz nachdem anderswo
+  // eine Seite gestempelt wurde), was sonst zu einem Sprung auf eine bereits
+  // geprüfte Seite führen kann, obwohl sie als "ungeprüft" gilt.
+  const freshStampedPages = async (): Promise<Set<number>> => {
+    try {
+      const stamps = await listStatementStampsAction();
+      return new Set(stamps.map((s) => s.page));
+    } catch {
+      return stampedPages; // Fallback auf die (ggf. veraltete) Prop, falls der Abruf fehlschlägt.
+    }
+  };
+
   // Springt von der aktuellen Seite aus zur nächsten/vorherigen Seite, die zum
   // Geprüft/Ungeprüft-Filter passt (für "alle" einfach vor/zurück blättern).
-  const jumpToFilteredPage = (direction: 1 | -1) => {
+  const jumpToFilteredPage = async (direction: 1 | -1) => {
+    const fresh = pageFilter === "all" ? null : await freshStampedPages();
+    const matches = (p: number) =>
+      pageFilter === "all" ? true : pageFilter === "checked" ? fresh!.has(p) : !fresh!.has(p);
     for (let p = activePage + direction; p >= 1 && p <= initialPageCount; p += direction) {
-      if (matchesPageFilter(p)) {
+      if (matches(p)) {
         goToPage(p);
         return;
       }
@@ -148,10 +167,11 @@ export default function KontoauszugClient({
   // Beim Umschalten des Filters selbst (nicht nur über ◀/▶) direkt zur ersten
   // passenden Seite springen, falls die aktuell angezeigte Seite nicht mehr
   // passt – sonst bleibt scheinbar "nichts passiert", obwohl der Filter aktiv ist.
-  const changePageFilter = (filter: "all" | "checked" | "unchecked") => {
+  const changePageFilter = async (filter: "all" | "checked" | "unchecked") => {
     setPageFilter(filter);
     if (filter === "all") return;
-    const matches = (p: number) => (filter === "checked" ? stampedPages.has(p) : !stampedPages.has(p));
+    const fresh = await freshStampedPages();
+    const matches = (p: number) => (filter === "checked" ? fresh.has(p) : !fresh.has(p));
     if (matches(activePage)) return;
     for (let p = 1; p <= initialPageCount; p++) {
       if (matches(p)) {

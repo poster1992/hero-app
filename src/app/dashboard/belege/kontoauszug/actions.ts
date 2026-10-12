@@ -12,6 +12,7 @@ import {
   deleteStatementHighlight,
   addStatementStamp,
   deleteStatementStamp,
+  listStatementStamps,
   listStatementLines,
   addStatementLine,
   addStatementLinesBatch,
@@ -27,6 +28,7 @@ import {
   type HighlightRect,
   type StatementHighlight,
   type StatementLine,
+  type StatementStamp,
   type AssignableReceiptOption,
 } from "@/lib/kontoauszuege";
 import { extractLineAmount } from "@/lib/kontoauszug-line-ocr";
@@ -143,6 +145,16 @@ export async function deleteStampAction(id: number): Promise<ActionResult> {
 export async function listPageLinesAction(page: number): Promise<StatementLine[]> {
   if (!Number.isFinite(page) || page < 1) return [];
   return listStatementLines(page);
+}
+
+/**
+ * Lädt die Stempel-Liste frisch vom Server – genutzt für den Geprüft/
+ * Ungeprüft-Sprung, damit dieser nicht auf der ggf. veralteten, beim
+ * Seitenaufruf geladenen `initialStamps`-Prop basiert (sonst kann der Sprung
+ * eine Seite als "ungeprüft" behandeln, die zwischenzeitlich gestempelt wurde).
+ */
+export async function listStatementStampsAction(): Promise<StatementStamp[]> {
+  return listStatementStamps();
 }
 
 /** Legt eine neue Zeilen-Zuordnung an (Rechteck um eine Kontoauszug-Zeile + Soll-Betrag + Buchungsdatum). */
