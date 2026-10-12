@@ -107,6 +107,16 @@ const VOLLTEXT_SUFFIX =
   "verdreht eingescannten – Beleg aufrecht und normal lesbar zu machen: 0 (bereits korrekt), 90, " +
   "180 (steht auf dem Kopf) oder 270. Alle oben geforderten Felder unverändert beibehalten.";
 
+/**
+ * Ab wie vielen Seiten eine Seite-für-Seite-Auswertung (Lohn/BGL, `perPage`)
+ * in Blöcke aufgeteilt wird: je mehr Seiten die KI in einem einzigen Lauf
+ * verarbeiten soll, desto unzuverlässiger werden die letzten Seiten (gemeldet:
+ * bei einem 17-seitigen Lohnjournal fehlte durchgängig eine Seite). Kleinere
+ * Blöcke (je `PERPAGE_BATCH_SIZE` Seiten, einzeln ausgewertet und am Ende
+ * zusammengeführt) senken dieses Risiko pro Lauf deutlich.
+ */
+const PERPAGE_BATCH_SIZE = 8;
+
 /** Anzeigename je Belegtyp. */
 export const KIND_LABEL: Record<BelegSumKind, string> = {
   lohn: "Lohn",
@@ -736,8 +746,128 @@ export async function extractBeleg(input: {
       return JSON.parse(raw) as ParsedBeleg;
     };
 
+    type SeitenItem = NonNullable<ParsedBeleg["seiten"]>[number];
+
     let cfg = SUM_CONFIG[kind];
-    let parsed = await runExtraction(cfg.prompt);
+
+    // Seite-für-Seite-Auswertung (Lohn/BGL) bei langen Dokumenten in Blöcken
+    // von je `PERPAGE_BATCH_SIZE` Seiten einzeln auswerten und zusammenführen
+    // (statt alle Seiten in einem Lauf) – senkt das Risiko, dass die KI bei
+    // vielen Seiten einzelne davon auslässt (gemeldeter Fall: 17-seitiges
+    // Lohnjournal, durchgängig eine Seite fehlte). Kurze Dokumente sowie
+    // Bilder (immer nur 1 Seite) laufen unverändert in einem einzigen Aufruf.
+    const runPerPageExtraction = async (prompt: string): Promise<ParsedBeleg> => {
+      if (isImage || !cfg.perPage) return runExtraction(prompt);
+
+      let srcDoc;
+      let totalPages: number;
+      try {
+        srcDoc = await PDFDocument.load(input.buffer, { ignoreEncryption: true });
+        totalPages = srcDoc.getPageCount();
+      } catch {
+        return runExtraction(prompt); // Seitenzahl nicht ermittelbar – normal (ein Lauf) versuchen.
+      }
+      if (totalPages <= PERPAGE_BATCH_SIZE) return runExtraction(prompt);
+
+      const chunkCount = Math.ceil(totalPages / PERPAGE_BATCH_SIZE);
+      const chunkResults = await Promise.all(
+        Array.from({ length: chunkCount }, (_, ci) => ci).map(async (ci) => {
+          const start = ci * PERPAGE_BATCH_SIZE;
+          const end = Math.min(start + PERPAGE_BATCH_SIZE, totalPages);
+          const chunkSize = end - start;
+
+          const chunkDoc = await PDFDocument.create();
+          const copied = await chunkDoc.copyPages(
+            srcDoc,
+            Array.from({ length: chunkSize }, (_, i) => start + i)
+          );
+          for (const p of copied) chunkDoc.addPage(p);
+          const chunkB64 = Buffer.from(await chunkDoc.save()).toString("base64");
+          const chunkBlock = {
+            type: "document" as const,
+            source: { type: "base64" as const, media_type: "application/pdf" as const, data: chunkB64 },
+          };
+
+          const res = await client.messages.create({
+            model: "claude-haiku-4-5",
+            max_tokens: 32000,
+            messages: [
+              {
+                role: "user",
+                content: [chunkBlock, { type: "text", text: prompt + (input.skipVolltext ? "" : VOLLTEXT_SUFFIX) }],
+              },
+            ],
+          });
+          if (res.stop_reason === "max_tokens") {
+            throw new Error(
+              `Die Auswertung von Seite ${start + 1}–${end} wurde mitten in der Antwort abgebrochen. Bitte das Dokument in kleineren Teilen hochladen oder die Werte manuell eintragen.`
+            );
+          }
+          const tb = res.content.find((b) => b.type === "text");
+          const raw =
+            tb && tb.type === "text"
+              ? tb.text.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim()
+              : "{}";
+          const chunkParsed = JSON.parse(raw) as ParsedBeleg;
+
+          // Lokale Seitenzahlen (relativ zum Block) auf die Position im
+          // Gesamtdokument ummünzen. Immer GENAU `chunkSize` Einträge, auch
+          // wenn die KI innerhalb des Blocks selbst schon eine Seite ausließ
+          // (sonst würde sich beim Zusammenführen alles danach verschieben).
+          const bySlot: (SeitenItem | undefined)[] = new Array(chunkSize).fill(undefined);
+          const leftovers: SeitenItem[] = [];
+          for (const s of chunkParsed.seiten ?? []) {
+            const localSeite = Number(s?.seite);
+            if (Number.isFinite(localSeite) && localSeite >= 1 && localSeite <= chunkSize && !bySlot[localSeite - 1]) {
+              bySlot[localSeite - 1] = s;
+            } else {
+              leftovers.push(s);
+            }
+          }
+          let li = 0;
+          for (let i = 0; i < bySlot.length && li < leftovers.length; i++) {
+            if (!bySlot[i]) bySlot[i] = leftovers[li++];
+          }
+          const seiten: SeitenItem[] = bySlot.map((s, i) => ({ ...(s ?? {}), seite: start + i + 1 }));
+          return { ...chunkParsed, seiten };
+        })
+      );
+
+      // Blöcke zusammenführen: Seiten aneinanderhängen; bei den "einmaligen"
+      // Feldern (Datum, Lieferant, …) den ersten nicht-leeren Wert nehmen;
+      // Volltext (falls angefordert) aneinanderhängen.
+      const merged: ParsedBeleg = { seiten: chunkResults.flatMap((r) => r.seiten ?? []) };
+      (
+        [
+          "belegdatum",
+          "lieferant",
+          "beschreibung",
+          "belegnummer",
+          "skonto_eur",
+          "skonto_zahlbetrag",
+          "skonto_zahlungsziel",
+          "kategorie",
+          "drehung",
+        ] as const
+      ).forEach((key) => {
+        for (const r of chunkResults) {
+          const v = r[key];
+          if (v != null && String(v).trim() && String(v).toLowerCase() !== "null") {
+            merged[key] = v;
+            break;
+          }
+        }
+      });
+      if (!input.skipVolltext) {
+        const texts = chunkResults
+          .map((r) => String(r.volltext ?? "").trim())
+          .filter((t) => t && t.toLowerCase() !== "null");
+        if (texts.length > 0) merged.volltext = texts.join("\n\n");
+      }
+      return merged;
+    };
+
+    let parsed = await runPerPageExtraction(cfg.prompt);
     const nonZero = (p: ParsedBeleg) =>
       (p.seiten ?? []).map((s) => toNum(s?.betrag)).filter((n) => n !== 0);
     let values = nonZero(parsed);
