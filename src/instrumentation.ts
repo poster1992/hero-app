@@ -142,4 +142,23 @@ export async function register(): Promise<void> {
     setInterval(tickOcr, TEN_MINUTES);
     console.log("[manual-ocr] aktiv – Volltext-Backfill alle 10 Minuten.");
   }
+
+  // Fixkosten-Verlauf: sichert automatisch einmal im Monat einen "Stand" (falls
+  // noch keiner für den aktuellen Monat existiert), damit der Verlauf auch ohne
+  // manuelles "Stand sichern" lückenlos bleibt.
+  const g5 = globalThis as unknown as { __fixkostenSnapshotStarted?: boolean };
+  if (!g5.__fixkostenSnapshotStarted) {
+    g5.__fixkostenSnapshotStarted = true;
+    const tickFixkostenSnapshot = async () => {
+      try {
+        const { maybeRunFixkostenSnapshot } = await import("./lib/fixkosten");
+        await maybeRunFixkostenSnapshot();
+      } catch (e) {
+        console.warn("[fixkosten-snapshot] Fehler:", e instanceof Error ? e.message : e);
+      }
+    };
+    setTimeout(tickFixkostenSnapshot, 50_000);
+    setInterval(tickFixkostenSnapshot, TEN_MINUTES);
+    console.log("[fixkosten-snapshot] aktiv – prüft alle 10 Minuten, ob der Monatsstand schon gesichert ist.");
+  }
 }

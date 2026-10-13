@@ -14,6 +14,7 @@ import {
   searchReceiptsForFixkosten,
   addReceiptToFixkosten,
   removeFixkostenReceiptLink,
+  saveFixkostenSnapshot,
   type FixkostenReceiptOption,
 } from "@/lib/fixkosten";
 import { getLineReceiptFileUrl } from "@/lib/kontoauszuege";
@@ -148,6 +149,20 @@ export async function getFixkostenReceiptFileUrlAction(
 ): Promise<{ url: string | null; error?: string }> {
   if (!(await requireAccess())) return { url: null, error: "Kein Zugriff." };
   return getLineReceiptFileUrl(kind, ref);
+}
+
+/** Sichert den aktuellen Stand aller Fixkosten-Positionen für den laufenden Monat (überschreibt einen evtl. bereits vorhandenen). */
+export async function saveFixkostenSnapshotAction(): Promise<ActionResult> {
+  const user = await requireAccess();
+  if (!user) return { ok: false, error: "Kein Zugriff." };
+  const now = new Date();
+  try {
+    await saveFixkostenSnapshot(now.getFullYear(), now.getMonth() + 1, user.id, false);
+  } catch {
+    return { ok: false, error: "Stand konnte nicht gesichert werden." };
+  }
+  revalidatePath(PATH);
+  return { ok: true };
 }
 
 export async function deleteFixkostenAction(id: number): Promise<ActionResult> {
