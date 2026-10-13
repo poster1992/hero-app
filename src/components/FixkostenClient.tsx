@@ -163,7 +163,7 @@ function ReceiptsPanel({ item }: { item: FixkostenItem }) {
                     className="text-left text-brand-red hover:underline"
                   >
                     {l.supplier ?? "Unbekannt"}
-                    {l.invoiceNumber ? ` · ${l.invoiceNumber}` : ""} · {fmtEur(l.amount)}
+                    {l.invoiceNumber ? ` · ${l.invoiceNumber}` : ""} · {fmtEur(l.amount)} netto
                   </button>
                   <button
                     type="button"
@@ -214,7 +214,7 @@ function ReceiptsPanel({ item }: { item: FixkostenItem }) {
                     <span>
                       {r.supplier ?? "Unbekannt"}
                       {r.invoiceNumber ? ` · ${r.invoiceNumber}` : ""}
-                      {r.date ? ` · ${r.date.split("-").reverse().join(".")}` : ""} · {fmtEur(r.amount)}
+                      {r.date ? ` · ${r.date.split("-").reverse().join(".")}` : ""} · {fmtEur(r.amount)} netto
                     </span>
                     <button
                       type="button"

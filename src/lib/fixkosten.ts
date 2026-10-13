@@ -56,6 +56,7 @@ export interface FixkostenReceiptLink {
   id: number;
   kind: "manual" | "hero";
   ref: string;
+  /** Netto-Betrag (ohne MwSt.), wie beim Verknüpfen übernommen. */
   amount: number;
   supplier: string | null;
   invoiceNumber: string | null;
@@ -290,6 +291,7 @@ export async function deleteFixkosten(id: number): Promise<void> {
 export interface FixkostenReceiptOption {
   kind: "manual" | "hero";
   ref: string;
+  /** Netto-Betrag (ohne MwSt.), nicht der Brutto-Rechnungsbetrag. */
   amount: number;
   supplier: string | null;
   invoiceNumber: string | null;
@@ -300,7 +302,8 @@ export interface FixkostenReceiptOption {
  * Durchsucht Belege (manuell + HERO, letzte 3 Jahre) zum Verknüpfen mit einer
  * Fixkosten-Position. Anders als beim Kontoauszug-Abgleich zählen hier auch
  * bereits bezahlte Belege (die meisten verknüpften Rechnungen sind längst
- * bezahlt) und der volle Rechnungsbetrag statt des offenen Restbetrags.
+ * bezahlt) und der Netto- statt des Brutto-/offenen Restbetrags (Fixkosten
+ * sind Betriebsausgaben und werden wie in der GuV netto betrachtet).
  */
 export async function searchReceiptsForFixkosten(
   query: string
@@ -324,7 +327,8 @@ export async function searchReceiptsForFixkosten(
       results.push({
         kind: "manual",
         ref: String(r.id),
-        amount: r.gross,
+        // Netto, nicht Brutto (wie bei Betriebsausgaben in der GuV üblich).
+        amount: r.net,
         supplier: r.supplier,
         invoiceNumber: r.invoiceNumber,
         date: r.date,
@@ -353,7 +357,8 @@ export async function searchReceiptsForFixkosten(
       results.push({
         kind: "hero",
         ref: r.id,
-        amount: r.value,
+        // Netto (netValue), nicht Brutto (value) – wie bei Betriebsausgaben in der GuV üblich.
+        amount: r.netValue,
         supplier: supplierName,
         invoiceNumber: r.number,
         date: r.receiptDate ? r.receiptDate.slice(0, 10) : null,
