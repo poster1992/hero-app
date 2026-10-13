@@ -143,6 +143,11 @@ export default function FixkostenHistoryTable({ history, year }: { history: Fixk
 
   const now = new Date();
   const currentMonthIdx = now.getUTCFullYear() === year ? now.getUTCMonth() : -1;
+  // Nur Monate mit echtem Stand oder Zukunftsprognose anzeigen – leere Lücken
+  // (z. B. Monate vor Nutzung der App) blenden wir aus statt leerer Spalten.
+  const visibleMonths = history.months
+    .map((m, i) => ({ ...m, idx: i }))
+    .filter((m) => m.hasSnapshot || m.isProjected);
 
   const save = () => {
     setError(null);
@@ -194,14 +199,14 @@ export default function FixkostenHistoryTable({ history, year }: { history: Fixk
               <tr className="border-b border-gray-300 text-xs uppercase tracking-wide text-gray-500">
                 <th className="px-2 py-2 text-left font-medium">Konto</th>
                 <th className="px-2 py-2 text-left font-medium">Position</th>
-                {MONTH_LABELS.map((m, i) => (
+                {visibleMonths.map((m) => (
                   <th
-                    key={m}
-                    className={`px-2 py-2 font-medium ${i === currentMonthIdx ? "text-gray-900" : ""} ${
-                      history.months[i]?.isProjected ? "italic text-sky-600" : history.months[i]?.hasSnapshot ? "" : "text-gray-300"
+                    key={m.idx}
+                    className={`px-2 py-2 font-medium ${m.idx === currentMonthIdx ? "text-gray-900" : ""} ${
+                      m.isProjected ? "italic text-sky-600" : ""
                     }`}
                   >
-                    {m}
+                    {MONTH_LABELS[m.idx]}
                   </th>
                 ))}
               </tr>
@@ -211,20 +216,20 @@ export default function FixkostenHistoryTable({ history, year }: { history: Fixk
                 <tr key={row.name} className="border-b border-gray-100">
                   <td className="whitespace-nowrap px-2 py-2 text-left text-gray-500">{row.accountNumber ?? "—"}</td>
                   <td className="whitespace-nowrap px-2 py-2 text-left font-medium text-gray-900">{row.name}</td>
-                  {row.monthly.map((v, i) =>
-                    history.months[i]?.isProjected ? (
+                  {visibleMonths.map((m) =>
+                    m.isProjected ? (
                       <ProjectedCell
-                        key={i}
+                        key={m.idx}
                         name={row.name}
                         year={year}
-                        month={i + 1}
-                        value={v}
-                        isOverride={row.overrideFlags[i]}
-                        note={row.notes[i]}
+                        month={m.idx + 1}
+                        value={row.monthly[m.idx]}
+                        isOverride={row.overrideFlags[m.idx]}
+                        note={row.notes[m.idx]}
                       />
                     ) : (
-                      <td key={i} className="whitespace-nowrap px-2 py-2 text-gray-700">
-                        {v == null ? "–" : fmtEur(v)}
+                      <td key={m.idx} className="whitespace-nowrap px-2 py-2 text-gray-700">
+                        {row.monthly[m.idx] == null ? "–" : fmtEur(row.monthly[m.idx]!)}
                       </td>
                     )
                   )}
@@ -236,12 +241,9 @@ export default function FixkostenHistoryTable({ history, year }: { history: Fixk
                 <td colSpan={2} className="whitespace-nowrap px-2 py-2 text-left">
                   Gesamt Fixkosten
                 </td>
-                {history.totalMonthly.map((v, i) => (
-                  <td
-                    key={i}
-                    className={`whitespace-nowrap px-2 py-2 ${history.months[i]?.isProjected ? "italic text-sky-700" : ""}`}
-                  >
-                    {history.months[i]?.hasSnapshot || history.months[i]?.isProjected ? fmtEur(v) : "–"}
+                {visibleMonths.map((m) => (
+                  <td key={m.idx} className={`whitespace-nowrap px-2 py-2 ${m.isProjected ? "italic text-sky-700" : ""}`}>
+                    {fmtEur(history.totalMonthly[m.idx])}
                   </td>
                 ))}
               </tr>
