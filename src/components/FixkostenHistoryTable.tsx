@@ -11,30 +11,37 @@ function fmtEur(n: number): string {
   return n.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €";
 }
 
-/** Zelle für einen projizierten Zukunftsmonat: Klick öffnet ein Eingabefeld für eine manuelle Übersteuerung. */
+/**
+ * Zelle für einen projizierten Zukunftsmonat: Klick öffnet Eingabefelder für
+ * eine manuelle Übersteuerung des Betrags UND/ODER eine Notiz (z. B. eine
+ * Begründung), unabhängig voneinander setzbar.
+ */
 function ProjectedCell({
   name,
   year,
   month,
   value,
   isOverride,
+  note,
 }: {
   name: string;
   year: number;
   month: number;
   value: number | null;
   isOverride: boolean;
+  note: string | null;
 }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value != null ? String(value).replace(".", ",") : "");
+  const [draftAmount, setDraftAmount] = useState(value != null ? String(value).replace(".", ",") : "");
+  const [draftNote, setDraftNote] = useState(note ?? "");
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
   const save = () => {
     setError(null);
     startTransition(async () => {
-      const res = await setFixkostenOverrideAction(name, year, month, draft);
+      const res = await setFixkostenOverrideAction(name, year, month, draftAmount, draftNote);
       if (!res.ok) {
         setError(res.error ?? "Fehler");
         return;
@@ -47,7 +54,7 @@ function ProjectedCell({
   const clear = () => {
     setError(null);
     startTransition(async () => {
-      const res = await setFixkostenOverrideAction(name, year, month, "");
+      const res = await setFixkostenOverrideAction(name, year, month, "", "");
       if (!res.ok) {
         setError(res.error ?? "Fehler");
         return;
@@ -59,29 +66,52 @@ function ProjectedCell({
 
   if (editing) {
     return (
-      <td className="whitespace-nowrap bg-sky-50 px-1 py-1">
-        <div className="flex items-center justify-end gap-1">
+      <td className="bg-sky-50 px-2 py-2">
+        <div className="flex w-44 flex-col items-end gap-1">
           <input
             autoFocus
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
+            value={draftAmount}
+            onChange={(e) => setDraftAmount(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setEditing(false);
+            }}
+            inputMode="decimal"
+            placeholder="Betrag (Prognose, falls leer)"
+            className="w-full rounded border border-gray-300 px-1.5 py-1 text-right text-xs outline-none focus:border-brand-red/60"
+          />
+          <input
+            value={draftNote}
+            onChange={(e) => setDraftNote(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") save();
               if (e.key === "Escape") setEditing(false);
             }}
-            inputMode="decimal"
-            className="w-20 rounded border border-gray-300 px-1 py-1 text-right text-xs outline-none focus:border-brand-red/60"
+            placeholder="Notiz (z. B. Kündigung MA XY)"
+            className="w-full rounded border border-gray-300 px-1.5 py-1 text-left text-xs outline-none focus:border-brand-red/60"
           />
-          <button type="button" onClick={save} disabled={pending} title="Speichern" className="text-emerald-600 hover:text-emerald-800">
-            ✓
-          </button>
-          {isOverride && (
-            <button type="button" onClick={clear} disabled={pending} title="Zurück zur Prognose" className="text-gray-400 hover:text-rose-600">
-              ↺
+          <div className="flex items-center gap-1.5">
+            {(isOverride || note) && (
+              <button
+                type="button"
+                onClick={clear}
+                disabled={pending}
+                title="Übersteuerung + Notiz entfernen"
+                className="text-xs text-gray-400 hover:text-rose-600"
+              >
+                ↺ zurücksetzen
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={save}
+              disabled={pending}
+              className="ml-auto rounded bg-brand-red px-2 py-0.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
+            >
+              Speichern
             </button>
-          )}
+          </div>
         </div>
-        {error && <div className="text-left text-rose-600">{error}</div>}
+        {error && <div className="text-left text-xs text-rose-600">{error}</div>}
       </td>
     );
   }
@@ -89,12 +119,24 @@ function ProjectedCell({
   return (
     <td
       onClick={() => setEditing(true)}
-      title={isOverride ? "Manuell eingetragen – klicken zum Ändern" : "Prognose – klicken, um manuell einzutragen"}
-      className={`whitespace-nowrap px-2 py-2 italic cursor-pointer hover:bg-sky-50 ${
-        isOverride ? "font-semibold not-italic text-sky-700" : "text-gray-400"
+      title={
+        [
+          isOverride ? "Manuell eingetragen" : "Prognose",
+          note ? `Notiz: ${note}` : null,
+          "– klicken zum Bearbeiten",
+        ]
+          .filter(Boolean)
+          .join(" · ")
+      }
+      className={`cursor-pointer px-2 py-2 hover:bg-sky-50 ${
+        isOverride ? "font-semibold not-italic text-sky-700" : "italic text-gray-400"
       }`}
     >
-      {value == null ? "–" : fmtEur(value)}
+      <div className="flex items-center justify-end gap-1 whitespace-nowrap">
+        {note && <span className="text-sky-500">📝</span>}
+        <span>{value == null ? "–" : fmtEur(value)}</span>
+      </div>
+      {note && <div className="mt-0.5 max-w-[10rem] truncate text-left text-[11px] font-normal not-italic text-gray-400">{note}</div>}
     </td>
   );
 }
@@ -129,8 +171,8 @@ export default function FixkostenHistoryTable({ history, year }: { history: Fixk
           Zeigt, wie sich die monatlichen Fixkosten je Position über das Jahr {year} entwickelt haben – je Monat der
           zuletzt gesicherte Stand (wird automatisch einmal im Monat gesichert, kann aber jederzeit manuell
           aktualisiert werden). <span className="italic text-gray-400">Kursive</span> Zukunftsmonate sind eine
-          Prognose auf Basis des aktuellen Stands – anklicken, um dort einen eigenen Wert einzutragen (z. B. wenn ein
-          Mitarbeiter gekündigt hat).
+          Prognose auf Basis des aktuellen Stands – anklicken, um dort einen eigenen Wert und/oder eine Notiz
+          einzutragen (z. B. wenn ein Mitarbeiter gekündigt hat).
         </p>
         <div className="flex items-center gap-2">
           <button
@@ -184,6 +226,7 @@ export default function FixkostenHistoryTable({ history, year }: { history: Fixk
                         month={i + 1}
                         value={v}
                         isOverride={row.overrideFlags[i]}
+                        note={row.notes[i]}
                       />
                     ) : (
                       <td key={i} className="whitespace-nowrap px-2 py-2 text-gray-700">

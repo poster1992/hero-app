@@ -167,15 +167,18 @@ export async function saveFixkostenSnapshotAction(): Promise<ActionResult> {
 }
 
 /**
- * Setzt/entfernt einen manuellen Wert für eine Position in einem Zukunftsmonat
- * (z. B. Lohnkosten reduzieren, weil ein Mitarbeiter gekündigt hat).
- * `amountRaw` leer = Übersteuerung wieder entfernen (zurück zur Projektion).
+ * Setzt/entfernt einen manuellen Wert und/oder eine Notiz für eine Position in
+ * einem Zukunftsmonat (z. B. Lohnkosten reduzieren + begründen, weil ein
+ * Mitarbeiter gekündigt hat). Leerer Betrag = keine Übersteuerung (Betrag bleibt
+ * die automatische Prognose), leere Notiz = keine Notiz. Sind beide leer, wird
+ * ein evtl. vorhandener Eintrag wieder entfernt.
  */
 export async function setFixkostenOverrideAction(
   name: string,
   year: number,
   month: number,
-  amountRaw: string
+  amountRaw: string,
+  noteRaw: string
 ): Promise<ActionResult> {
   if (!(await requireAccess())) return { ok: false, error: "Kein Zugriff." };
   if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
@@ -185,7 +188,7 @@ export async function setFixkostenOverrideAction(
   const amount = trimmed ? parseAmount(trimmed) : null;
   if (trimmed && amount == null) return { ok: false, error: "Bitte einen gültigen Betrag angeben." };
   try {
-    await setFixkostenOverride(name, year, month, amount);
+    await setFixkostenOverride(name, year, month, amount, noteRaw);
   } catch {
     return { ok: false, error: "Konnte nicht gespeichert werden." };
   }

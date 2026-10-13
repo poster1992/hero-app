@@ -524,6 +524,8 @@ export interface FixkostenHistoryRow {
   monthly: (number | null)[];
   /** true je Monat, in dem der Wert manuell übersteuert wurde (statt automatisch projiziert). */
   overrideFlags: boolean[];
+  /** Notiz je Monat (z. B. Begründung einer Prognose-Abweichung), unabhängig davon, ob der Betrag übersteuert ist. */
+  notes: (string | null)[];
 }
 
 export interface FixkostenHistoryMonth {
@@ -544,37 +546,56 @@ export interface FixkostenHistory {
 let overridesTableReady = false;
 async function ensureOverridesTable(): Promise<void> {
   if (overridesTableReady) return;
-  await getPool()
+  const pool = getPool();
+  await pool
     .query(
       `CREATE TABLE IF NOT EXISTS fixkosten_overrides (
          id INT AUTO_INCREMENT PRIMARY KEY,
          name VARCHAR(191) NOT NULL,
          year INT NOT NULL,
          month INT NOT NULL,
-         monthly_amount DECIMAL(10,2) NOT NULL,
+         monthly_amount DECIMAL(10,2) NULL,
+         note VARCHAR(500) NULL,
          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
          UNIQUE KEY uq_fixkosten_override (name, year, month)
        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
     )
     .catch(() => {});
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT COLUMN_NAME, IS_NULLABLE FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'fixkosten_overrides'
+        AND COLUMN_NAME IN ('note', 'monthly_amount')`
+  );
+  const noteExists = rows.some((r) => r.COLUMN_NAME === "note");
+  const amountNullable = rows.some((r) => r.COLUMN_NAME === "monthly_amount" && r.IS_NULLABLE === "YES");
+  if (!noteExists) {
+    await pool.query("ALTER TABLE fixkosten_overrides ADD COLUMN note VARCHAR(500) NULL").catch(() => {});
+  }
+  if (!amountNullable) {
+    await pool.query("ALTER TABLE fixkosten_overrides MODIFY COLUMN monthly_amount DECIMAL(10,2) NULL").catch(() => {});
+  }
   overridesTableReady = true;
 }
 
 /**
- * Setzt/entfernt einen manuellen Wert für eine Position in einem Zukunftsmonat
- * (z. B. Lohnkosten reduzieren, weil ein Mitarbeiter gekündigt hat) – überschreibt
- * dort die automatische Projektion. `amount = null` entfernt die Übersteuerung
- * wieder (zurück zur automatischen Projektion).
+ * Setzt/entfernt einen manuellen Wert und/oder eine Notiz für eine Position in
+ * einem Zukunftsmonat (z. B. Lohnkosten reduzieren + begründen, weil ein
+ * Mitarbeiter gekündigt hat) – ein gesetzter Betrag überschreibt dort die
+ * automatische Projektion, eine Notiz kann auch unabhängig davon stehen (z. B.
+ * nur eine Begründung ohne den prognostizierten Betrag zu ändern). Sind beide
+ * leer, wird der Eintrag wieder entfernt (zurück zur reinen Projektion).
  */
 export async function setFixkostenOverride(
   name: string,
   year: number,
   month: number,
-  amount: number | null
+  amount: number | null,
+  note: string | null
 ): Promise<void> {
   await ensureOverridesTable();
   const pool = getPool();
-  if (amount == null) {
+  const cleanNote = note?.trim() || null;
+  if (amount == null && !cleanNote) {
     await pool.query("DELETE FROM fixkosten_overrides WHERE name = ? AND year = ? AND month = ?", [
       name,
       year,
@@ -583,27 +604,38 @@ export async function setFixkostenOverride(
     return;
   }
   await pool.query(
-    `INSERT INTO fixkosten_overrides (name, year, month, monthly_amount) VALUES (?, ?, ?, ?)
-     ON DUPLICATE KEY UPDATE monthly_amount = VALUES(monthly_amount)`,
-    [name, year, month, amount]
+    `INSERT INTO fixkosten_overrides (name, year, month, monthly_amount, note) VALUES (?, ?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE monthly_amount = VALUES(monthly_amount), note = VALUES(note)`,
+    [name, year, month, amount, cleanNote]
   );
 }
 
 interface OverrideRow extends RowDataPacket {
   name: string;
   month: number;
-  monthly_amount: string | number;
+  monthly_amount: string | number | null;
+  note: string | null;
 }
 
-/** Alle manuellen Übersteuerungen eines Jahres, Schlüssel `name␟monat` (1–12). */
-async function getFixkostenOverridesMap(year: number): Promise<Map<string, number>> {
+export interface FixkostenOverride {
+  amount: number | null;
+  note: string | null;
+}
+
+/** Alle manuellen Übersteuerungen/Notizen eines Jahres, Schlüssel `name␟monat` (1–12). */
+async function getFixkostenOverridesMap(year: number): Promise<Map<string, FixkostenOverride>> {
   await ensureOverridesTable();
   const [rows] = await getPool().query<OverrideRow[]>(
-    "SELECT name, month, monthly_amount FROM fixkosten_overrides WHERE year = ?",
+    "SELECT name, month, monthly_amount, note FROM fixkosten_overrides WHERE year = ?",
     [year]
   );
-  const map = new Map<string, number>();
-  for (const r of rows) map.set(`${r.name}␟${r.month}`, Number(r.monthly_amount));
+  const map = new Map<string, FixkostenOverride>();
+  for (const r of rows) {
+    map.set(`${r.name}␟${r.month}`, {
+      amount: r.monthly_amount != null ? Number(r.monthly_amount) : null,
+      note: r.note,
+    });
+  }
   return map;
 }
 
@@ -673,6 +705,7 @@ export async function getFixkostenHistory(year: number): Promise<FixkostenHistor
           accountName: it.account_name,
           monthly: new Array(12).fill(null),
           overrideFlags: new Array(12).fill(false),
+          notes: new Array(12).fill(null),
         } as FixkostenHistoryRow);
       row.monthly[monthIdx] = amount;
       // Neueste bekannte Konto-Zuordnung gewinnt (falls sich das Konto über die Zeit geändert hat).
@@ -708,8 +741,9 @@ export async function getFixkostenHistory(year: number): Promise<FixkostenHistor
           amount = (await MODULE_LINK_SOURCES.fahrzeug_leasing.resolve(endOfMonth)).amount;
         }
         const overrideKey = `${item.name}␟${m}`;
-        const isOverride = overrides.has(overrideKey);
-        if (isOverride) amount = overrides.get(overrideKey)!;
+        const override = overrides.get(overrideKey);
+        const isOverride = override?.amount != null;
+        if (isOverride) amount = override!.amount!;
 
         const row =
           rowsByName.get(item.name) ??
@@ -719,9 +753,11 @@ export async function getFixkostenHistory(year: number): Promise<FixkostenHistor
             accountName: item.accountName,
             monthly: new Array(12).fill(null),
             overrideFlags: new Array(12).fill(false),
+            notes: new Array(12).fill(null),
           } as FixkostenHistoryRow);
         row.monthly[idx] = amount;
         row.overrideFlags[idx] = isOverride;
+        row.notes[idx] = override?.note ?? null;
         rowsByName.set(item.name, row);
         monthTotal = round2(monthTotal + amount);
       }
