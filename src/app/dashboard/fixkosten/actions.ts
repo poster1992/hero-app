@@ -10,7 +10,13 @@ import {
   deleteFixkosten,
   createLinkedFixkosten,
   isFixkostenLinkSource,
+  isModuleLinkSource,
+  searchReceiptsForFixkosten,
+  addReceiptToFixkosten,
+  removeFixkostenReceiptLink,
+  type FixkostenReceiptOption,
 } from "@/lib/fixkosten";
+import { getLineReceiptFileUrl } from "@/lib/kontoauszuege";
 
 const PATH = "/dashboard/fixkosten";
 const MODULE = "cockpit_fixkosten";
@@ -86,7 +92,9 @@ export async function updateFixkostenAction(
 
 export async function createLinkedFixkostenAction(source: string): Promise<ActionResult> {
   if (!(await requireAccess())) return { ok: false, error: "Kein Zugriff." };
-  if (!isFixkostenLinkSource(source)) return { ok: false, error: "Unbekannte Verknüpfung." };
+  if (!isFixkostenLinkSource(source) || !isModuleLinkSource(source)) {
+    return { ok: false, error: "Unbekannte Verknüpfung." };
+  }
   try {
     await createLinkedFixkosten(source);
   } catch {
@@ -94,6 +102,52 @@ export async function createLinkedFixkostenAction(source: string): Promise<Actio
   }
   revalidatePath(PATH);
   return { ok: true };
+}
+
+/** Sucht Belege zum Verknüpfen mit einer Fixkosten-Position. */
+export async function searchFixkostenReceiptsAction(
+  query: string
+): Promise<{ results: FixkostenReceiptOption[]; error?: string }> {
+  if (!(await requireAccess())) return { results: [], error: "Kein Zugriff." };
+  return searchReceiptsForFixkosten(query);
+}
+
+/** Hängt einen gefundenen Beleg an eine Fixkosten-Position. */
+export async function addFixkostenReceiptAction(
+  fixkostenId: number,
+  option: FixkostenReceiptOption
+): Promise<ActionResult> {
+  if (!(await requireAccess())) return { ok: false, error: "Kein Zugriff." };
+  if (!Number.isFinite(fixkostenId) || fixkostenId <= 0) return { ok: false, error: "Ungültige Position." };
+  try {
+    await addReceiptToFixkosten(fixkostenId, option);
+  } catch {
+    return { ok: false, error: "Beleg konnte nicht verknüpft werden." };
+  }
+  revalidatePath(PATH);
+  return { ok: true };
+}
+
+/** Entfernt eine Beleg-Verknüpfung. */
+export async function removeFixkostenReceiptLinkAction(linkId: number): Promise<ActionResult> {
+  if (!(await requireAccess())) return { ok: false, error: "Kein Zugriff." };
+  if (!Number.isFinite(linkId) || linkId <= 0) return { ok: false, error: "Ungültige Verknüpfung." };
+  try {
+    await removeFixkostenReceiptLink(linkId);
+  } catch {
+    return { ok: false, error: "Konnte nicht entfernt werden." };
+  }
+  revalidatePath(PATH);
+  return { ok: true };
+}
+
+/** Löst die Dokument-URL eines verknüpften Belegs auf (manuell oder HERO), für den Klick-zum-Öffnen. */
+export async function getFixkostenReceiptFileUrlAction(
+  kind: "manual" | "hero",
+  ref: string
+): Promise<{ url: string | null; error?: string }> {
+  if (!(await requireAccess())) return { url: null, error: "Kein Zugriff." };
+  return getLineReceiptFileUrl(kind, ref);
 }
 
 export async function deleteFixkostenAction(id: number): Promise<ActionResult> {
