@@ -1054,3 +1054,38 @@ export async function getManualReceiptFile(
     return null;
   }
 }
+
+export interface LatestLohnReceipt {
+  id: number;
+  date: string | null;
+  gross: number;
+}
+
+interface LatestLohnRow extends RowDataPacket {
+  id: number;
+  beleg_date: string | null;
+  gross: string | number;
+  created: string | null;
+}
+
+/**
+ * Jüngste erfasste Lohnkostenabrechnung (erkannt am Konto-Namen, z. B. „Löhne und
+ * Gehälter") – für die Fixkosten-Verknüpfung „Lohnkosten". Sortiert nach Belegdatum,
+ * ersatzweise nach Erfassungsdatum, falls kein Belegdatum erkannt wurde.
+ */
+export async function getLatestLohnReceipt(): Promise<LatestLohnReceipt | null> {
+  const [rows] = await getPool().query<LatestLohnRow[]>(
+    `SELECT id, beleg_date, gross, created FROM manual_receipts
+      WHERE account_name LIKE '%lohn%' OR account_name LIKE '%gehalt%' OR account_name LIKE '%gehälter%'
+         OR account_name LIKE '%personalkosten%'
+      ORDER BY COALESCE(beleg_date, created) DESC, id DESC
+      LIMIT 1`
+  );
+  const r = rows[0];
+  if (!r) return null;
+  return {
+    id: r.id,
+    date: r.beleg_date ? String(r.beleg_date).slice(0, 10) : null,
+    gross: Number(r.gross),
+  };
+}

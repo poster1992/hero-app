@@ -3,6 +3,7 @@ import { getSession } from "@/lib/session";
 import { getUserByUsername } from "@/lib/users";
 import { getAllowedModules } from "@/lib/role-store";
 import { listFixkosten, type FixkostenItem } from "@/lib/fixkosten";
+import { getBookAccounts, type BookAccount } from "@/lib/hero-api";
 import FixkostenClient from "@/components/FixkostenClient";
 
 export default async function FixkostenPage() {
@@ -21,6 +22,10 @@ export default async function FixkostenPage() {
     error = e instanceof Error ? e.message : "Daten konnten nicht geladen werden.";
   }
 
+  // Für die Konto-Zuordnung (GuV-Konten) – bei HERO-Fehlern einfach leere Liste,
+  // blockiert nicht die restliche Fixkosten-Seite.
+  const accounts: BookAccount[] = await getBookAccounts().catch(() => []);
+
   return (
     <div className="mx-auto flex w-full max-w-[900px] flex-1 flex-col gap-6 px-4 py-8">
       <header className="border-b-2 border-brand-red pb-2.5">
@@ -34,7 +39,7 @@ export default async function FixkostenPage() {
       {error ? (
         <div className="rounded-md border border-brand-red/30 bg-brand-red/10 p-4 text-sm text-red-700">{error}</div>
       ) : (
-        <FixkostenClient items={items} />
+        <FixkostenClient items={items} accounts={accounts} />
       )}
     </div>
   );

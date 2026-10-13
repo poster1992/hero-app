@@ -1,14 +1,36 @@
 import type { RowDataPacket } from "mysql2";
 import { getPool } from "./db";
 import { getRunningLeasingMonthlySum } from "./vehicles";
+import { getLatestLohnReceipt } from "./manual-receipts";
+
+const dateFmt = new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
+function fmtDate(iso: string | null): string {
+  if (!iso) return "unbekanntes Datum";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "unbekanntes Datum" : dateFmt.format(d);
+}
+
+interface LinkResolveResult {
+  amount: number;
+  /** Zusatzinfo, welche konkrete Buchung/welcher Beleg hinter dem Betrag steckt. */
+  detail: string | null;
+}
 
 /** Verknüpfungen: Positionen, deren Betrag live aus einem anderen Modul berechnet wird. */
-export type FixkostenLinkSource = "fahrzeug_leasing";
+export type FixkostenLinkSource = "fahrzeug_leasing" | "lohnkosten";
 
-const LINK_SOURCES: Record<FixkostenLinkSource, { label: string; resolve: () => Promise<number> }> = {
+const LINK_SOURCES: Record<FixkostenLinkSource, { label: string; resolve: () => Promise<LinkResolveResult> }> = {
   fahrzeug_leasing: {
     label: "Fahrzeug Leasing (monatliche Rate, laufende Fahrzeuge)",
-    resolve: getRunningLeasingMonthlySum,
+    resolve: async () => ({ amount: await getRunningLeasingMonthlySum(), detail: null }),
+  },
+  lohnkosten: {
+    label: "Lohnkosten (letzte Lohnkostenabrechnung)",
+    resolve: async () => {
+      const latest = await getLatestLohnReceipt();
+      if (!latest) return { amount: 0, detail: "Noch keine Lohnkostenabrechnung erfasst" };
+      return { amount: latest.gross, detail: `Lohnkostenabrechnung vom ${fmtDate(latest.date)}` };
+    },
   },
 };
 
@@ -24,14 +46,20 @@ export interface FixkostenItem {
   id: number;
   name: string;
   monthlyAmount: number;
+  accountNumber: string | null;
+  accountName: string | null;
   /** Gesetzt, wenn der Betrag live aus einem anderen Modul berechnet wird (nicht manuell editierbar). */
   linkedSource: FixkostenLinkSource | null;
+  /** Bei verknüpften Positionen: welcher konkrete Beleg/Zeitraum hinter dem Betrag steckt. */
+  linkedDetail: string | null;
 }
 
 interface FixkostenRow extends RowDataPacket {
   id: number;
   name: string;
   monthly_amount: string | number;
+  account_number: string | null;
+  account_name: string | null;
   linked_source: string | null;
 }
 
@@ -51,10 +79,18 @@ async function ensureTable(): Promise<void> {
     .catch(() => {});
   const [rows] = await pool.query<RowDataPacket[]>(
     `SELECT COLUMN_NAME FROM information_schema.COLUMNS
-      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'fixkosten' AND COLUMN_NAME = 'linked_source'`
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'fixkosten'
+        AND COLUMN_NAME IN ('linked_source', 'account_number', 'account_name')`
   );
-  if (rows.length === 0) {
+  const existing = new Set(rows.map((r) => String(r.COLUMN_NAME)));
+  if (!existing.has("linked_source")) {
     await pool.query("ALTER TABLE fixkosten ADD COLUMN linked_source VARCHAR(32) NULL").catch(() => {});
+  }
+  if (!existing.has("account_number")) {
+    await pool.query("ALTER TABLE fixkosten ADD COLUMN account_number VARCHAR(32) NULL").catch(() => {});
+  }
+  if (!existing.has("account_name")) {
+    await pool.query("ALTER TABLE fixkosten ADD COLUMN account_name VARCHAR(191) NULL").catch(() => {});
   }
   tableReady = true;
 }
@@ -63,36 +99,48 @@ async function ensureTable(): Promise<void> {
 export async function listFixkosten(): Promise<FixkostenItem[]> {
   await ensureTable();
   const [rows] = await getPool().query<FixkostenRow[]>(
-    "SELECT id, name, monthly_amount, linked_source FROM fixkosten ORDER BY name"
+    "SELECT id, name, monthly_amount, account_number, account_name, linked_source FROM fixkosten ORDER BY name"
   );
 
   const items: FixkostenItem[] = rows.map((r) => ({
     id: r.id,
     name: r.name,
     monthlyAmount: Number(r.monthly_amount),
+    accountNumber: r.account_number,
+    accountName: r.account_name,
     linkedSource: r.linked_source && isFixkostenLinkSource(r.linked_source) ? r.linked_source : null,
+    linkedDetail: null,
   }));
 
   const neededSources = new Set(items.map((i) => i.linkedSource).filter((s): s is FixkostenLinkSource => s != null));
-  const resolved = new Map<FixkostenLinkSource, number>();
+  const resolved = new Map<FixkostenLinkSource, LinkResolveResult>();
   for (const source of neededSources) {
     resolved.set(source, await LINK_SOURCES[source].resolve());
   }
   for (const item of items) {
-    if (item.linkedSource) item.monthlyAmount = resolved.get(item.linkedSource) ?? 0;
+    if (item.linkedSource) {
+      const r = resolved.get(item.linkedSource);
+      item.monthlyAmount = r?.amount ?? 0;
+      item.linkedDetail = r?.detail ?? null;
+    }
   }
 
   return items;
 }
 
-export async function createFixkosten(name: string, monthlyAmount: number): Promise<number | null> {
+export async function createFixkosten(
+  name: string,
+  monthlyAmount: number,
+  accountNumber: string | null,
+  accountName: string | null
+): Promise<number | null> {
   await ensureTable();
   const clean = name.trim();
   if (!clean) return null;
-  const [res] = await getPool().query("INSERT INTO fixkosten (name, monthly_amount) VALUES (?, ?)", [
-    clean.slice(0, 191),
-    monthlyAmount,
-  ]);
+  const [res] = await getPool().query(
+    "INSERT INTO fixkosten (name, monthly_amount, account_number, account_name) VALUES (?, ?, ?, ?)",
+    [clean.slice(0, 191), monthlyAmount, accountNumber, accountName]
+  );
   return (res as { insertId: number }).insertId;
 }
 
@@ -107,15 +155,38 @@ export async function createLinkedFixkosten(source: FixkostenLinkSource): Promis
   return (res as { insertId: number }).insertId;
 }
 
-export async function updateFixkosten(id: number, name: string, monthlyAmount: number): Promise<void> {
+/**
+ * Speichert eine Position. Bei verknüpften Positionen (eigener Betrag kommt
+ * immer live) bleibt `monthly_amount` unverändert, nur Bezeichnung + Konto
+ * werden übernommen.
+ */
+export async function updateFixkosten(
+  id: number,
+  name: string,
+  monthlyAmount: number,
+  accountNumber: string | null,
+  accountName: string | null
+): Promise<void> {
   await ensureTable();
   const clean = name.trim();
   if (!clean) return;
-  await getPool().query("UPDATE fixkosten SET name = ?, monthly_amount = ? WHERE id = ?", [
-    clean.slice(0, 191),
-    monthlyAmount,
+  const [rows] = await getPool().query<RowDataPacket[]>("SELECT linked_source FROM fixkosten WHERE id = ? LIMIT 1", [
     id,
   ]);
+  const isLinked = !!rows[0]?.linked_source;
+  if (isLinked) {
+    await getPool().query("UPDATE fixkosten SET name = ?, account_number = ?, account_name = ? WHERE id = ?", [
+      clean.slice(0, 191),
+      accountNumber,
+      accountName,
+      id,
+    ]);
+  } else {
+    await getPool().query(
+      "UPDATE fixkosten SET name = ?, monthly_amount = ?, account_number = ?, account_name = ? WHERE id = ?",
+      [clean.slice(0, 191), monthlyAmount, accountNumber, accountName, id]
+    );
+  }
 }
 
 export async function deleteFixkosten(id: number): Promise<void> {

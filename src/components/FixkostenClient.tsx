@@ -8,7 +8,8 @@ import {
   deleteFixkostenAction,
   createLinkedFixkostenAction,
 } from "@/app/dashboard/fixkosten/actions";
-import type { FixkostenItem } from "@/lib/fixkosten";
+import type { FixkostenItem, FixkostenLinkSource } from "@/lib/fixkosten";
+import type { BookAccount } from "@/lib/hero-api";
 
 const inputClass =
   "w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-brand-red/60";
@@ -17,18 +18,103 @@ function fmtEur(n: number): string {
   return n.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €";
 }
 
-function Row({ item }: { item: FixkostenItem }) {
+/** Konto-Such-/Auswahlfeld (gleiches Muster wie im Beleg-Formular), trägt die Auswahl in ein Hidden-Input ein. */
+function AccountPicker({
+  accounts,
+  value,
+  onChange,
+}: {
+  accounts: BookAccount[];
+  value: { number: string; name: string } | null;
+  onChange: (v: { number: string; name: string } | null) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const matches =
+    words.length === 0 || value
+      ? []
+      : accounts
+          .filter((a) => {
+            const hay = `${a.number} ${a.name}`.toLowerCase();
+            return words.every((w) => hay.includes(w));
+          })
+          .slice(0, 12);
+
+  return (
+    <div>
+      <input type="hidden" name="account" value={value ? `${value.number}|${value.name}` : ""} />
+      {value ? (
+        <div className="flex items-center justify-between rounded-md border border-gray-300 px-3 py-2 text-sm">
+          <span className="text-gray-900">
+            {value.number} – {value.name}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              onChange(null);
+              setQuery("");
+            }}
+            className="text-xs text-gray-400 hover:text-gray-700"
+          >
+            ✕ ändern
+          </button>
+        </div>
+      ) : (
+        <div className="relative">
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="GuV-Konto suchen (Nr. oder Schlagwort) …"
+            className={inputClass}
+          />
+          {matches.length > 0 && (
+            <ul className="absolute z-20 mt-1 max-h-60 w-full overflow-y-auto rounded-md border border-gray-200 bg-white shadow-lg">
+              {matches.map((a) => (
+                <li key={a.number}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onChange(a);
+                      setQuery("");
+                    }}
+                    className="block w-full px-3 py-2 text-left text-sm hover:bg-gray-100"
+                  >
+                    <span className="text-gray-500">{a.number}</span> {a.name}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Row({ item, accounts }: { item: FixkostenItem; accounts: BookAccount[] }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(item.name);
   const [amount, setAmount] = useState(String(item.monthlyAmount).replace(".", ","));
+  const [account, setAccount] = useState<{ number: string; name: string } | null>(
+    item.accountNumber ? { number: item.accountNumber, name: item.accountName ?? "" } : null
+  );
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+
+  const resetFields = () => {
+    setName(item.name);
+    setAmount(String(item.monthlyAmount).replace(".", ","));
+    setAccount(item.accountNumber ? { number: item.accountNumber, name: item.accountName ?? "" } : null);
+    setError(null);
+  };
 
   const save = () => {
     setError(null);
     startTransition(async () => {
-      const res = await updateFixkostenAction(item.id, name, amount);
+      const accountRaw = account ? `${account.number}|${account.name}` : "";
+      const res = await updateFixkostenAction(item.id, name, amount, accountRaw);
       if (!res.ok) {
         setError(res.error ?? "Fehler beim Speichern");
         return;
@@ -53,12 +139,19 @@ function Row({ item }: { item: FixkostenItem }) {
           <input value={name} onChange={(e) => setName(e.target.value)} className={inputClass} />
         </td>
         <td className="px-4 py-2">
-          <input
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            inputMode="decimal"
-            className={`${inputClass} text-right`}
-          />
+          {item.linkedSource ? (
+            <span className="text-right text-gray-500">{fmtEur(item.monthlyAmount)} (automatisch)</span>
+          ) : (
+            <input
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              inputMode="decimal"
+              className={`${inputClass} text-right`}
+            />
+          )}
+        </td>
+        <td className="px-4 py-2">
+          <AccountPicker accounts={accounts} value={account} onChange={setAccount} />
         </td>
         <td className="px-4 py-2 text-right">
           <div className="flex items-center justify-end gap-2">
@@ -75,9 +168,7 @@ function Row({ item }: { item: FixkostenItem }) {
               type="button"
               onClick={() => {
                 setEditing(false);
-                setName(item.name);
-                setAmount(String(item.monthlyAmount).replace(".", ","));
-                setError(null);
+                resetFields();
               }}
               className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-50"
             >
@@ -101,19 +192,27 @@ function Row({ item }: { item: FixkostenItem }) {
             🔗 verknüpft
           </span>
         )}
+        {item.linkedDetail && <div className="mt-0.5 text-xs font-normal text-gray-500">{item.linkedDetail}</div>}
       </td>
       <td className="px-4 py-2.5 text-right text-gray-600">{fmtEur(item.monthlyAmount)}</td>
+      <td className="px-4 py-2.5 text-gray-600">
+        {item.accountNumber ? (
+          <span>
+            {item.accountNumber} – {item.accountName}
+          </span>
+        ) : (
+          <span className="text-gray-400">kein Konto</span>
+        )}
+      </td>
       <td className="px-4 py-2.5 text-right">
         <div className="flex items-center justify-end gap-2">
-          {!item.linkedSource && (
-            <button
-              type="button"
-              onClick={() => setEditing(true)}
-              className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-50"
-            >
-              Bearbeiten
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-50"
+          >
+            Bearbeiten
+          </button>
           <button
             type="button"
             onClick={remove}
@@ -128,16 +227,24 @@ function Row({ item }: { item: FixkostenItem }) {
   );
 }
 
-export default function FixkostenClient({ items }: { items: FixkostenItem[] }) {
+const LINK_BUTTONS: { source: FixkostenLinkSource; label: string }[] = [
+  { source: "fahrzeug_leasing", label: "🔗 Fahrzeug Leasing verknüpfen" },
+  { source: "lohnkosten", label: "🔗 Lohnkosten verknüpfen" },
+];
+
+export default function FixkostenClient({ items, accounts }: { items: FixkostenItem[]; accounts: BookAccount[] }) {
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [linkPending, startLinkTransition] = useTransition();
+  const [newAccount, setNewAccount] = useState<{ number: string; name: string } | null>(null);
+  const [linkPendingSource, setLinkPendingSource] = useState<FixkostenLinkSource | null>(null);
   const [linkError, setLinkError] = useState<string | null>(null);
+  const [linkTransitionPending, startLinkTransition] = useTransition();
 
   const total = items.reduce((sum, i) => sum + i.monthlyAmount, 0);
-  const hasLeasingLink = items.some((i) => i.linkedSource === "fahrzeug_leasing");
+  const linkedSources = new Set(items.map((i) => i.linkedSource).filter(Boolean));
+  const availableLinks = LINK_BUTTONS.filter((l) => !linkedSources.has(l.source));
 
   const submit = (formData: FormData) => {
     setError(null);
@@ -148,14 +255,16 @@ export default function FixkostenClient({ items }: { items: FixkostenItem[] }) {
         return;
       }
       formRef.current?.reset();
+      setNewAccount(null);
       router.refresh();
     });
   };
 
-  const addLeasingLink = () => {
+  const addLink = (source: FixkostenLinkSource) => {
     setLinkError(null);
+    setLinkPendingSource(source);
     startLinkTransition(async () => {
-      const res = await createLinkedFixkostenAction("fahrzeug_leasing");
+      const res = await createLinkedFixkostenAction(source);
       if (!res.ok) {
         setLinkError(res.error ?? "Fehler beim Verknüpfen");
         return;
@@ -166,39 +275,52 @@ export default function FixkostenClient({ items }: { items: FixkostenItem[] }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <form ref={formRef} action={submit} className="flex flex-wrap items-end gap-2 border border-line bg-white p-4">
-        <div className="min-w-[220px] flex-1">
+      <form
+        ref={formRef}
+        action={submit}
+        className="grid grid-cols-1 gap-2 border border-line bg-white p-4 sm:grid-cols-2 sm:items-end"
+      >
+        <div>
           <label className="mb-1 block text-xs text-gray-500">Bezeichnung *</label>
           <input name="name" placeholder="z. B. Miete Halle" className={inputClass} required />
         </div>
-        <div className="w-40">
+        <div>
           <label className="mb-1 block text-xs text-gray-500">Monatlicher Betrag € *</label>
           <input name="monthlyAmount" inputMode="decimal" placeholder="0,00" className={inputClass} required />
         </div>
-        <button
-          type="submit"
-          disabled={pending}
-          className="rounded-md bg-brand-red px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
-        >
-          {pending ? "Legt an …" : "Hinzufügen"}
-        </button>
-        {error && <span className="text-xs text-rose-600">{error}</span>}
+        <div className="sm:col-span-2">
+          <label className="mb-1 block text-xs text-gray-500">GuV-Konto (optional)</label>
+          <AccountPicker accounts={accounts} value={newAccount} onChange={setNewAccount} />
+        </div>
+        <div className="flex items-center gap-2 sm:col-span-2">
+          <button
+            type="submit"
+            disabled={pending}
+            className="rounded-md bg-brand-red px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+          >
+            {pending ? "Legt an …" : "Hinzufügen"}
+          </button>
+          {error && <span className="text-xs text-rose-600">{error}</span>}
+        </div>
       </form>
 
-      {!hasLeasingLink && (
+      {availableLinks.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 border border-dashed border-sky-300 bg-sky-50/50 p-3">
           <span className="text-sm text-gray-700">
             Statt einen Betrag selbst einzutragen, kann eine Position auch automatisch aus einem anderen Modul
             berechnet werden:
           </span>
-          <button
-            type="button"
-            onClick={addLeasingLink}
-            disabled={linkPending}
-            className="rounded-md border border-sky-300 bg-white px-3 py-1.5 text-xs font-semibold text-sky-700 hover:bg-sky-100 disabled:opacity-50"
-          >
-            {linkPending ? "Verknüpft …" : "🔗 Fahrzeug Leasing verknüpfen"}
-          </button>
+          {availableLinks.map((l) => (
+            <button
+              key={l.source}
+              type="button"
+              onClick={() => addLink(l.source)}
+              disabled={linkTransitionPending}
+              className="rounded-md border border-sky-300 bg-white px-3 py-1.5 text-xs font-semibold text-sky-700 hover:bg-sky-100 disabled:opacity-50"
+            >
+              {linkTransitionPending && linkPendingSource === l.source ? "Verknüpft …" : l.label}
+            </button>
+          ))}
           {linkError && <span className="text-xs text-rose-600">{linkError}</span>}
         </div>
       )}
@@ -209,18 +331,19 @@ export default function FixkostenClient({ items }: { items: FixkostenItem[] }) {
             <tr className="border-b border-gray-200 bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
               <th className="px-4 py-2.5">Bezeichnung</th>
               <th className="px-4 py-2.5 text-right">Monatlicher Betrag</th>
+              <th className="px-4 py-2.5">GuV-Konto</th>
               <th className="px-4 py-2.5" />
             </tr>
           </thead>
           <tbody>
             {items.length === 0 ? (
               <tr>
-                <td colSpan={3} className="px-4 py-6 text-center text-sm text-gray-500">
+                <td colSpan={4} className="px-4 py-6 text-center text-sm text-gray-500">
                   Noch keine Fixkosten erfasst.
                 </td>
               </tr>
             ) : (
-              items.map((item) => <Row key={item.id} item={item} />)
+              items.map((item) => <Row key={item.id} item={item} accounts={accounts} />)
             )}
           </tbody>
           {items.length > 0 && (
@@ -228,7 +351,7 @@ export default function FixkostenClient({ items }: { items: FixkostenItem[] }) {
               <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold text-gray-900">
                 <td className="px-4 py-2.5">Summe pro Monat</td>
                 <td className="px-4 py-2.5 text-right">{fmtEur(total)}</td>
-                <td className="px-4 py-2.5" />
+                <td className="px-4 py-2.5" colSpan={2} />
               </tr>
             </tfoot>
           )}
