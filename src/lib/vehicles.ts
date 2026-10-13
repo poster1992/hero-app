@@ -305,16 +305,25 @@ export async function getVehicleDocumentFile(
   }
 }
 
-/** true, sobald das Fälligkeitsdatum der Restrate erreicht/überschritten ist. */
-export function isLeasingDue(dueDate: string | null): boolean {
+/**
+ * true, sobald das Fälligkeitsdatum der Restrate zum Stichtag (Default: heute)
+ * erreicht/überschritten ist. `asOfIso` erlaubt die Prüfung für ein beliebiges
+ * (auch künftiges) Datum, z. B. für Zukunftsprojektionen.
+ */
+export function isLeasingDue(dueDate: string | null, asOfIso?: string): boolean {
   if (!dueDate) return false;
-  return dueDate <= new Date().toISOString().slice(0, 10);
+  return dueDate <= (asOfIso ?? new Date().toISOString().slice(0, 10));
 }
 
-/** Monatliche Gesamtrate aller aktuell laufenden (nicht fälligen) Leasing-Fahrzeuge. */
-export async function getRunningLeasingMonthlySum(): Promise<number> {
+/**
+ * Monatliche Gesamtrate aller zum Stichtag laufenden (nicht fälligen)
+ * Leasing-Fahrzeuge. Ohne `asOfIso` = heute; mit einem künftigen Datum lässt
+ * sich so z. B. berechnen, welche Fahrzeuge in einem bestimmten Zukunftsmonat
+ * voraussichtlich noch laufen.
+ */
+export async function getRunningLeasingMonthlySum(asOfIso?: string): Promise<number> {
   const vehicles = await listVehicles();
   return vehicles
-    .filter((v) => v.leasingRate != null && !isLeasingDue(v.leasingFinalDueDate))
+    .filter((v) => v.leasingRate != null && !isLeasingDue(v.leasingFinalDueDate, asOfIso))
     .reduce((sum, v) => sum + (v.leasingRate ?? 0), 0);
 }

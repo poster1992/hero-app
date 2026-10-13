@@ -15,6 +15,7 @@ import {
   addReceiptToFixkosten,
   removeFixkostenReceiptLink,
   saveFixkostenSnapshot,
+  setFixkostenOverride,
   type FixkostenReceiptOption,
 } from "@/lib/fixkosten";
 import { getLineReceiptFileUrl } from "@/lib/kontoauszuege";
@@ -160,6 +161,33 @@ export async function saveFixkostenSnapshotAction(): Promise<ActionResult> {
     await saveFixkostenSnapshot(now.getFullYear(), now.getMonth() + 1, user.id, false);
   } catch {
     return { ok: false, error: "Stand konnte nicht gesichert werden." };
+  }
+  revalidatePath(PATH);
+  return { ok: true };
+}
+
+/**
+ * Setzt/entfernt einen manuellen Wert für eine Position in einem Zukunftsmonat
+ * (z. B. Lohnkosten reduzieren, weil ein Mitarbeiter gekündigt hat).
+ * `amountRaw` leer = Übersteuerung wieder entfernen (zurück zur Projektion).
+ */
+export async function setFixkostenOverrideAction(
+  name: string,
+  year: number,
+  month: number,
+  amountRaw: string
+): Promise<ActionResult> {
+  if (!(await requireAccess())) return { ok: false, error: "Kein Zugriff." };
+  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
+    return { ok: false, error: "Ungültiger Monat." };
+  }
+  const trimmed = amountRaw.trim();
+  const amount = trimmed ? parseAmount(trimmed) : null;
+  if (trimmed && amount == null) return { ok: false, error: "Bitte einen gültigen Betrag angeben." };
+  try {
+    await setFixkostenOverride(name, year, month, amount);
+  } catch {
+    return { ok: false, error: "Konnte nicht gespeichert werden." };
   }
   revalidatePath(PATH);
   return { ok: true };
