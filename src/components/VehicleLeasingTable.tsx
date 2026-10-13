@@ -20,6 +20,9 @@ function isDue(dueDate: string | null): boolean {
  * automatisch grün markiert (kein manuelles Abhaken mehr nötig).
  */
 export default function VehicleLeasingTable({ vehicles }: { vehicles: Vehicle[] }) {
+  const running = vehicles.filter((v) => !isDue(v.leasingFinalDueDate));
+  const runningSum = running.reduce((sum, v) => sum + (v.leasingRate ?? 0), 0);
+
   return (
     <div className="overflow-x-auto border border-line bg-white">
       <table className="w-full text-sm">
@@ -66,6 +69,15 @@ export default function VehicleLeasingTable({ vehicles }: { vehicles: Vehicle[] 
             );
           })}
         </tbody>
+        <tfoot>
+          <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold text-gray-900">
+            <td className="px-4 py-2.5" colSpan={2}>
+              Summe laufende Leasing-Fahrzeuge ({running.length})
+            </td>
+            <td className="px-4 py-2.5">{fmtEur(runningSum)}</td>
+            <td className="px-4 py-2.5" colSpan={3} />
+          </tr>
+        </tfoot>
       </table>
     </div>
   );
