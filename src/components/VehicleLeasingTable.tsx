@@ -45,9 +45,12 @@ interface LeasingSummary {
  * abgeleitet; ohne beide Daten lässt sich nur der bisher bezahlte Betrag
  * zeigen, aber keine Gesamtsumme/Restschuld/Zinsen.
  *
- * Zinsanteil: Gesamtzinsen = Vertragswert − Kaufpreis, gleichmäßig über die
- * Laufzeit verteilt angenommen (kein Tilgungsplan/Zinssatz hinterlegt, daher
- * nur eine grobe Näherung, keine exakte Zinsberechnung).
+ * Zinsanteil (Nutzervorgabe, gegen eine echte Leasingabrechnung geprüft):
+ * Kaufpreis fällt linear bis zur Restrate (Restwert) über die Laufzeit ab
+ * → Tilgungsanteil/Monat = (Kaufpreis − Restrate) / Laufzeit. Monatliche
+ * Rate abzüglich dieses Tilgungsanteils ergibt den Zinsanteil/Monat. Da kein
+ * echter Zinssatz/Tilgungsplan der Bank hinterlegt ist, bleibt das eine
+ * Näherung, keine exakte Abrechnung.
  */
 function leasingSummary(v: Vehicle): LeasingSummary | null {
   if (v.leasingRate == null) return null;
@@ -65,8 +68,9 @@ function leasingSummary(v: Vehicle): LeasingSummary | null {
 
   let interestPaid: number | null = null;
   if (v.purchasePrice != null && termMonths > 0) {
-    const totalInterest = Math.max(0, total - v.purchasePrice);
-    interestPaid = (totalInterest * paidMonths) / termMonths;
+    const principalPerMonth = (v.purchasePrice - (v.leasingFinalRate ?? 0)) / termMonths;
+    const interestPerMonth = v.leasingRate - principalPerMonth;
+    interestPaid = interestPerMonth * paidMonths;
   }
 
   return { paid, total, remaining, pct, interestPaid };
@@ -89,7 +93,7 @@ export default function VehicleLeasingTable({ vehicles }: { vehicles: Vehicle[] 
     <div className="overflow-x-auto border border-line bg-white">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-gray-200 bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+          <tr className="whitespace-nowrap border-b border-gray-200 bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
             <th className="px-4 py-2.5">Fahrzeug</th>
             <th className="px-4 py-2.5">Kennzeichen</th>
             <th className="px-4 py-2.5">Monatliche Rate</th>
@@ -107,7 +111,10 @@ export default function VehicleLeasingTable({ vehicles }: { vehicles: Vehicle[] 
             const due = isDue(v.leasingFinalDueDate);
             const summary = leasingSummary(v);
             return (
-              <tr key={v.id} className={`border-b border-gray-100 last:border-0 ${due ? "bg-emerald-50" : ""}`}>
+              <tr
+                key={v.id}
+                className={`whitespace-nowrap border-b border-gray-100 last:border-0 ${due ? "bg-emerald-50" : ""}`}
+              >
                 <td className="px-4 py-2.5 font-medium text-gray-900">{v.name}</td>
                 <td className="px-4 py-2.5 text-gray-600">{v.plate ?? "—"}</td>
                 <td className="px-4 py-2.5 text-gray-600">{v.leasingRate != null ? fmtEur(v.leasingRate) : "—"}</td>
@@ -154,7 +161,7 @@ export default function VehicleLeasingTable({ vehicles }: { vehicles: Vehicle[] 
           })}
         </tbody>
         <tfoot>
-          <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold text-gray-900">
+          <tr className="whitespace-nowrap border-t-2 border-gray-200 bg-gray-50 font-semibold text-gray-900">
             <td className="px-4 py-2.5" colSpan={2}>
               Summe laufende Leasing-Fahrzeuge ({running.length})
             </td>
