@@ -62,8 +62,20 @@ export async function createVehicleAction(
   const leasingRate = parseAmount(formData.get("leasingRate"));
   const leasingFinalRate = parseAmount(formData.get("leasingFinalRate"));
   const leasingFinalDueDate = parseDate(formData.get("leasingFinalDueDate"));
+  const purchasePrice = parseAmount(formData.get("purchasePrice"));
+  const leasingStartDate = parseDate(formData.get("leasingStartDate"));
   try {
-    await createVehicle({ name, plate, driver, note, leasingRate, leasingFinalRate, leasingFinalDueDate });
+    await createVehicle({
+      name,
+      plate,
+      driver,
+      note,
+      leasingRate,
+      leasingFinalRate,
+      leasingFinalDueDate,
+      purchasePrice,
+      leasingStartDate,
+    });
   } catch {
     return { error: "Fahrzeug konnte nicht angelegt werden." };
   }
@@ -86,8 +98,21 @@ export async function updateVehicleAction(
   const leasingRate = parseAmount(formData.get("leasingRate"));
   const leasingFinalRate = parseAmount(formData.get("leasingFinalRate"));
   const leasingFinalDueDate = parseDate(formData.get("leasingFinalDueDate"));
+  const purchasePrice = parseAmount(formData.get("purchasePrice"));
+  const leasingStartDate = parseDate(formData.get("leasingStartDate"));
   try {
-    await updateVehicle({ id, name, plate, driver, note, leasingRate, leasingFinalRate, leasingFinalDueDate });
+    await updateVehicle({
+      id,
+      name,
+      plate,
+      driver,
+      note,
+      leasingRate,
+      leasingFinalRate,
+      leasingFinalDueDate,
+      purchasePrice,
+      leasingStartDate,
+    });
   } catch {
     return { error: "Fahrzeug konnte nicht gespeichert werden." };
   }

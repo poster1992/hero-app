@@ -21,6 +21,10 @@ export interface Vehicle {
   leasingFinalRate: number | null;
   /** Datum, an dem die Restrate fällig wird (yyyy-mm-dd), falls bekannt. */
   leasingFinalDueDate: string | null;
+  /** Kaufpreis/Gesamtwert des Fahrzeugs in EUR, falls hinterlegt. */
+  purchasePrice: number | null;
+  /** Beginn des Leasings (yyyy-mm-dd), für die Berechnung der bereits bezahlten Rate. */
+  leasingStartDate: string | null;
 }
 
 export interface VehicleDocument {
@@ -44,11 +48,14 @@ interface VehicleRow extends RowDataPacket {
   leasing_rate: string | number | null;
   leasing_final_rate: string | number | null;
   leasing_final_due_date: string | null;
+  purchase_price: string | number | null;
+  leasing_start_date: string | null;
 }
 
 /**
  * Self-healing: Leasing-Spalten auf `vehicles` nachrüsten (monatliche Rate,
- * einmalige Restrate nach Laufzeitende + deren Fälligkeitsdatum).
+ * einmalige Restrate nach Laufzeitende + deren Fälligkeitsdatum, Kaufpreis
+ * und Leasingbeginn für die Berechnung der bereits bezahlten Rate).
  */
 let leasingColumnsReady = false;
 async function ensureLeasingColumns(): Promise<void> {
@@ -57,7 +64,7 @@ async function ensureLeasingColumns(): Promise<void> {
   const [rows] = await pool.query<RowDataPacket[]>(
     `SELECT COLUMN_NAME FROM information_schema.COLUMNS
       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'vehicles'
-        AND COLUMN_NAME IN ('leasing_rate', 'leasing_final_rate', 'leasing_final_due_date')`
+        AND COLUMN_NAME IN ('leasing_rate', 'leasing_final_rate', 'leasing_final_due_date', 'purchase_price', 'leasing_start_date')`
   );
   const existing = new Set(rows.map((r) => String(r.COLUMN_NAME)));
   if (!existing.has("leasing_rate")) {
@@ -68,6 +75,12 @@ async function ensureLeasingColumns(): Promise<void> {
   }
   if (!existing.has("leasing_final_due_date")) {
     await pool.query("ALTER TABLE vehicles ADD COLUMN leasing_final_due_date DATE NULL").catch(() => {});
+  }
+  if (!existing.has("purchase_price")) {
+    await pool.query("ALTER TABLE vehicles ADD COLUMN purchase_price DECIMAL(10,2) NULL").catch(() => {});
+  }
+  if (!existing.has("leasing_start_date")) {
+    await pool.query("ALTER TABLE vehicles ADD COLUMN leasing_start_date DATE NULL").catch(() => {});
   }
   leasingColumnsReady = true;
 }
@@ -88,12 +101,12 @@ export async function listVehicles(): Promise<Vehicle[]> {
   await ensureLeasingColumns();
   const [rows] = await getPool().query<VehicleRow[]>(
     `SELECT v.id, v.name, v.plate, v.driver, v.note,
-            v.leasing_rate, v.leasing_final_rate, v.leasing_final_due_date,
+            v.leasing_rate, v.leasing_final_rate, v.leasing_final_due_date, v.purchase_price, v.leasing_start_date,
             COUNT(d.id) AS doc_count
      FROM vehicles v
      LEFT JOIN vehicle_documents d ON d.vehicle_id = v.id
      GROUP BY v.id, v.name, v.plate, v.driver, v.note,
-              v.leasing_rate, v.leasing_final_rate, v.leasing_final_due_date
+              v.leasing_rate, v.leasing_final_rate, v.leasing_final_due_date, v.purchase_price, v.leasing_start_date
      ORDER BY v.name`
   );
   return rows.map((r) => ({
@@ -106,6 +119,8 @@ export async function listVehicles(): Promise<Vehicle[]> {
     leasingRate: r.leasing_rate != null ? Number(r.leasing_rate) : null,
     leasingFinalRate: r.leasing_final_rate != null ? Number(r.leasing_final_rate) : null,
     leasingFinalDueDate: r.leasing_final_due_date ? String(r.leasing_final_due_date).slice(0, 10) : null,
+    purchasePrice: r.purchase_price != null ? Number(r.purchase_price) : null,
+    leasingStartDate: r.leasing_start_date ? String(r.leasing_start_date).slice(0, 10) : null,
   }));
 }
 
@@ -117,12 +132,16 @@ export async function createVehicle(input: {
   leasingRate?: number | null;
   leasingFinalRate?: number | null;
   leasingFinalDueDate?: string | null;
+  purchasePrice?: number | null;
+  leasingStartDate?: string | null;
 }): Promise<number | null> {
   await ensureLeasingColumns();
   const name = input.name.trim();
   if (!name) return null;
   const [res] = await getPool().query(
-    "INSERT INTO vehicles (name, plate, driver, note, leasing_rate, leasing_final_rate, leasing_final_due_date) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    `INSERT INTO vehicles
+       (name, plate, driver, note, leasing_rate, leasing_final_rate, leasing_final_due_date, purchase_price, leasing_start_date)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       name.slice(0, 191),
       input.plate?.trim().slice(0, 64) || null,
@@ -131,6 +150,8 @@ export async function createVehicle(input: {
       input.leasingRate ?? null,
       input.leasingFinalRate ?? null,
       input.leasingFinalDueDate ?? null,
+      input.purchasePrice ?? null,
+      input.leasingStartDate ?? null,
     ]
   );
   return (res as { insertId: number }).insertId;
@@ -145,12 +166,17 @@ export async function updateVehicle(input: {
   leasingRate?: number | null;
   leasingFinalRate?: number | null;
   leasingFinalDueDate?: string | null;
+  purchasePrice?: number | null;
+  leasingStartDate?: string | null;
 }): Promise<void> {
   await ensureLeasingColumns();
   const name = input.name.trim();
   if (!name) return;
   await getPool().query(
-    "UPDATE vehicles SET name = ?, plate = ?, driver = ?, note = ?, leasing_rate = ?, leasing_final_rate = ?, leasing_final_due_date = ? WHERE id = ?",
+    `UPDATE vehicles
+        SET name = ?, plate = ?, driver = ?, note = ?, leasing_rate = ?, leasing_final_rate = ?,
+            leasing_final_due_date = ?, purchase_price = ?, leasing_start_date = ?
+      WHERE id = ?`,
     [
       name.slice(0, 191),
       input.plate?.trim().slice(0, 64) || null,
@@ -159,6 +185,8 @@ export async function updateVehicle(input: {
       input.leasingRate ?? null,
       input.leasingFinalRate ?? null,
       input.leasingFinalDueDate ?? null,
+      input.purchasePrice ?? null,
+      input.leasingStartDate ?? null,
       input.id,
     ]
   );

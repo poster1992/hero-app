@@ -176,6 +176,18 @@ function VehicleList({
             <label className="mb-1 block text-xs text-gray-500">Restrate fällig am (optional)</label>
             <input name="leasingFinalDueDate" type="date" className={inputClass} />
           </div>
+          <div className="flex gap-2">
+            <input
+              name="purchasePrice"
+              inputMode="decimal"
+              placeholder="Kaufpreis € (optional)"
+              className={inputClass}
+            />
+            <div className="flex-1">
+              <label className="mb-1 block text-xs text-gray-500">Leasingbeginn (optional)</label>
+              <input name="leasingStartDate" type="date" className={inputClass} />
+            </div>
+          </div>
           <div className="flex items-center gap-2">
             <button
               type="submit"
@@ -446,6 +458,22 @@ function VehiclePanel({
               name="leasingFinalDueDate"
               type="date"
               defaultValue={vehicle.leasingFinalDueDate ?? ""}
+              className={inputClass}
+            />
+          </div>
+          <input
+            name="purchasePrice"
+            inputMode="decimal"
+            defaultValue={vehicle.purchasePrice != null ? String(vehicle.purchasePrice).replace(".", ",") : ""}
+            placeholder="Kaufpreis €"
+            className={inputClass}
+          />
+          <div>
+            <label className="mb-1 block text-xs text-gray-500">Leasingbeginn</label>
+            <input
+              name="leasingStartDate"
+              type="date"
+              defaultValue={vehicle.leasingStartDate ?? ""}
               className={inputClass}
             />
           </div>
