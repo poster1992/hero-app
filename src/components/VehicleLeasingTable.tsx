@@ -30,7 +30,12 @@ interface LeasingSummary {
   paid: number;
   /** Gesamter Vertragswert (alle Monatsraten der Laufzeit + Restrate) – nur wenn Laufzeit bekannt. */
   total: number | null;
-  /** Noch offener Restbetrag bis Vertragsende – nur wenn Laufzeit bekannt. */
+  /**
+   * Noch offene Kapitalschuld (vergleichbar mit dem „CRD" der Bank) – fällt
+   * linear vom Kaufpreis auf die Restrate, nach deren Zahlung auf 0. Das ist
+   * NICHT dasselbe wie „Vertragswert minus Bezahlt" (das würde noch alle
+   * künftigen Zinsen mit einrechnen) – nur mit hinterlegtem Kaufpreis bekannt.
+   */
   remaining: number | null;
   pct: number | null;
   /** Bereits gezahlter Zinsanteil – nur wenn Laufzeit UND Kaufpreis bekannt. */
@@ -45,32 +50,38 @@ interface LeasingSummary {
  * abgeleitet; ohne beide Daten lässt sich nur der bisher bezahlte Betrag
  * zeigen, aber keine Gesamtsumme/Restschuld/Zinsen.
  *
- * Zinsanteil (Nutzervorgabe, gegen eine echte Leasingabrechnung geprüft):
- * Kaufpreis fällt linear bis zur Restrate (Restwert) über die Laufzeit ab
- * → Tilgungsanteil/Monat = (Kaufpreis − Restrate) / Laufzeit. Monatliche
- * Rate abzüglich dieses Tilgungsanteils ergibt den Zinsanteil/Monat. Da kein
- * echter Zinssatz/Tilgungsplan der Bank hinterlegt ist, bleibt das eine
- * Näherung, keine exakte Abrechnung.
+ * Zins- und Kapitalanteil (Nutzervorgabe, gegen eine echte Leasingabrechnung
+ * geprüft): Kaufpreis fällt linear bis zur Restrate (Restwert) über die
+ * Laufzeit ab → Tilgungsanteil/Monat = (Kaufpreis − Restrate) / Laufzeit.
+ * Monatliche Rate abzüglich dieses Tilgungsanteils ergibt den Zinsanteil/
+ * Monat. „Noch offen" ist die noch offene Kapitalschuld nach diesem Modell
+ * (Kaufpreis − bisher getilgter Anteil), NICHT die Summe aller künftigen
+ * Monatsraten (die würde zusätzlich noch nicht fällige Zinsen enthalten).
+ * Da kein echter Zinssatz/Tilgungsplan der Bank hinterlegt ist, bleibt das
+ * eine Näherung, keine exakte Abrechnung.
  */
 function leasingSummary(v: Vehicle): LeasingSummary | null {
   if (v.leasingRate == null) return null;
+  const due = isDue(v.leasingFinalDueDate);
   const elapsed = monthsBetween(v.leasingStartDate, new Date().toISOString().slice(0, 10)) ?? 0;
   const termMonths = monthsBetween(v.leasingStartDate, v.leasingFinalDueDate);
   const paidMonths = termMonths != null ? Math.min(elapsed, termMonths) : elapsed;
+  const finalRate = v.leasingFinalRate ?? 0;
   let paid = paidMonths * v.leasingRate;
-  if (isDue(v.leasingFinalDueDate) && v.leasingFinalRate != null) paid += v.leasingFinalRate;
+  if (due && v.leasingFinalRate != null) paid += finalRate;
 
   if (termMonths == null) return { paid, total: null, remaining: null, pct: null, interestPaid: null };
 
-  const total = termMonths * v.leasingRate + (v.leasingFinalRate ?? 0);
-  const remaining = Math.max(0, total - paid);
+  const total = termMonths * v.leasingRate + finalRate;
   const pct = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : null;
 
   let interestPaid: number | null = null;
+  let remaining: number | null = null;
   if (v.purchasePrice != null && termMonths > 0) {
-    const principalPerMonth = (v.purchasePrice - (v.leasingFinalRate ?? 0)) / termMonths;
+    const principalPerMonth = (v.purchasePrice - finalRate) / termMonths;
     const interestPerMonth = v.leasingRate - principalPerMonth;
     interestPaid = interestPerMonth * paidMonths;
+    remaining = due ? 0 : Math.max(0, v.purchasePrice - principalPerMonth * paidMonths);
   }
 
   return { paid, total, remaining, pct, interestPaid };
