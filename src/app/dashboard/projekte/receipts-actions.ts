@@ -362,7 +362,9 @@ export async function getProjectHoursByEmployee(
           partner { name }
         }
       }`,
-      { pid: projectId, first: pageSize, offset: page * pageSize }
+      { pid: projectId, first: pageSize, offset: page * pageSize },
+      3,
+      true // firmenweite Arbeitszeiten aller Mitarbeiter → Firmen-Token
     );
     const entries = data.tracking_times ?? [];
     for (const e of entries) {

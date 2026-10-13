@@ -1341,7 +1341,9 @@ export async function getAbsences(from: string, to: string): Promise<AbsenceLite
           partner { id name role }
         }
       }`,
-      { start: from, end: to, first: pageSize, offset }
+      { start: from, end: to, first: pageSize, offset },
+      3,
+      true // firmenweite Abwesenheiten aller Mitarbeiter → Firmen-Token
     );
     const absences = data.absences ?? [];
     for (const a of absences) {
@@ -1463,7 +1465,9 @@ export async function getHoursByProject(): Promise<Map<number, number>> {
           end
         }
       }`,
-      { first: pageSize, offset }
+      { first: pageSize, offset },
+      3,
+      true // firmenweite Arbeitszeiten aller Mitarbeiter → Firmen-Token
     );
     const entries = data.tracking_times ?? [];
     for (const e of entries) {
@@ -1511,7 +1515,9 @@ export async function getHoursByProjectAndEmployee(): Promise<HoursByProjectEmpl
           partner { id name }
         }
       }`,
-      { first: pageSize, offset }
+      { first: pageSize, offset },
+      3,
+      true // firmenweite Arbeitszeiten aller Mitarbeiter → Firmen-Token
     );
     const entries = data.tracking_times ?? [];
     for (const e of entries) {
@@ -1570,7 +1576,9 @@ export async function getProjectHourDetails(): Promise<Map<number, ProjectHourDe
           partner { id name }
         }
       }`,
-      { first: pageSize, offset }
+      { first: pageSize, offset },
+      3,
+      true // firmenweite Arbeitszeiten aller Mitarbeiter → Firmen-Token
     );
     const entries = data.tracking_times ?? [];
     for (const e of entries) {
