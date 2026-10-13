@@ -61,6 +61,7 @@ const NAV_ITEMS: NavItem[] = [
     module: "cockpit",
     children: [
       { href: "/dashboard/cockpit", label: "Unternehmensübersicht", module: "cockpit_uebersicht" },
+      { href: "/dashboard/fixkosten", label: "Fixkosten", module: "cockpit_fixkosten" },
       { href: "/dashboard/aktivitaet", label: "Aktivitäts-Logbuch", module: "cockpit_aktivitaet" },
       { href: "/dashboard/planung", label: "Arbeitsplanung", module: "cockpit_planung" },
       { href: "/dashboard/belege", label: "Belege", module: "cockpit_belege", modulesAny: ["cockpit_belege", "cockpit_belege_basis"] },
@@ -81,7 +82,6 @@ const NAV_ITEMS: NavItem[] = [
       { href: "/dashboard/versicherungen", label: "Versicherungen", module: "cockpit_versicherungen" },
       { href: "/dashboard/arbeitsvertrag", label: "Arbeitsvertrag erstellen", module: "cockpit_arbeitsvertrag" },
       { href: "/dashboard/aufmass", label: "Aufmaß", module: "cockpit_aufmass" },
-      { href: "/dashboard/fixkosten", label: "Fixkosten", module: "cockpit_fixkosten" },
     ],
   },
   {
