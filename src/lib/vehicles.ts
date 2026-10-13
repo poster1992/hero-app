@@ -19,9 +19,8 @@ export interface Vehicle {
   leasingRate: number | null;
   /** Einmalige Restrate (Schlussrate) nach Laufzeitende, falls vereinbart. */
   leasingFinalRate: number | null;
-  /** true, sobald die Restrate als bezahlt markiert wurde. */
-  leasingFinalPaid: boolean;
-  leasingFinalPaidDate: string | null;
+  /** Datum, an dem die Restrate fällig wird (yyyy-mm-dd), falls bekannt. */
+  leasingFinalDueDate: string | null;
 }
 
 export interface VehicleDocument {
@@ -44,13 +43,12 @@ interface VehicleRow extends RowDataPacket {
   doc_count: number;
   leasing_rate: string | number | null;
   leasing_final_rate: string | number | null;
-  leasing_final_paid: number | null;
-  leasing_final_paid_date: string | null;
+  leasing_final_due_date: string | null;
 }
 
 /**
  * Self-healing: Leasing-Spalten auf `vehicles` nachrüsten (monatliche Rate,
- * einmalige Restrate nach Laufzeitende + deren Bezahlt-Status).
+ * einmalige Restrate nach Laufzeitende + deren Fälligkeitsdatum).
  */
 let leasingColumnsReady = false;
 async function ensureLeasingColumns(): Promise<void> {
@@ -59,7 +57,7 @@ async function ensureLeasingColumns(): Promise<void> {
   const [rows] = await pool.query<RowDataPacket[]>(
     `SELECT COLUMN_NAME FROM information_schema.COLUMNS
       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'vehicles'
-        AND COLUMN_NAME IN ('leasing_rate', 'leasing_final_rate', 'leasing_final_paid', 'leasing_final_paid_date')`
+        AND COLUMN_NAME IN ('leasing_rate', 'leasing_final_rate', 'leasing_final_due_date')`
   );
   const existing = new Set(rows.map((r) => String(r.COLUMN_NAME)));
   if (!existing.has("leasing_rate")) {
@@ -68,11 +66,8 @@ async function ensureLeasingColumns(): Promise<void> {
   if (!existing.has("leasing_final_rate")) {
     await pool.query("ALTER TABLE vehicles ADD COLUMN leasing_final_rate DECIMAL(10,2) NULL").catch(() => {});
   }
-  if (!existing.has("leasing_final_paid")) {
-    await pool.query("ALTER TABLE vehicles ADD COLUMN leasing_final_paid TINYINT NOT NULL DEFAULT 0").catch(() => {});
-  }
-  if (!existing.has("leasing_final_paid_date")) {
-    await pool.query("ALTER TABLE vehicles ADD COLUMN leasing_final_paid_date DATE NULL").catch(() => {});
+  if (!existing.has("leasing_final_due_date")) {
+    await pool.query("ALTER TABLE vehicles ADD COLUMN leasing_final_due_date DATE NULL").catch(() => {});
   }
   leasingColumnsReady = true;
 }
@@ -93,12 +88,12 @@ export async function listVehicles(): Promise<Vehicle[]> {
   await ensureLeasingColumns();
   const [rows] = await getPool().query<VehicleRow[]>(
     `SELECT v.id, v.name, v.plate, v.driver, v.note,
-            v.leasing_rate, v.leasing_final_rate, v.leasing_final_paid, v.leasing_final_paid_date,
+            v.leasing_rate, v.leasing_final_rate, v.leasing_final_due_date,
             COUNT(d.id) AS doc_count
      FROM vehicles v
      LEFT JOIN vehicle_documents d ON d.vehicle_id = v.id
      GROUP BY v.id, v.name, v.plate, v.driver, v.note,
-              v.leasing_rate, v.leasing_final_rate, v.leasing_final_paid, v.leasing_final_paid_date
+              v.leasing_rate, v.leasing_final_rate, v.leasing_final_due_date
      ORDER BY v.name`
   );
   return rows.map((r) => ({
@@ -110,8 +105,7 @@ export async function listVehicles(): Promise<Vehicle[]> {
     docCount: Number(r.doc_count),
     leasingRate: r.leasing_rate != null ? Number(r.leasing_rate) : null,
     leasingFinalRate: r.leasing_final_rate != null ? Number(r.leasing_final_rate) : null,
-    leasingFinalPaid: Number(r.leasing_final_paid) === 1,
-    leasingFinalPaidDate: r.leasing_final_paid_date ? String(r.leasing_final_paid_date).slice(0, 10) : null,
+    leasingFinalDueDate: r.leasing_final_due_date ? String(r.leasing_final_due_date).slice(0, 10) : null,
   }));
 }
 
@@ -122,12 +116,13 @@ export async function createVehicle(input: {
   note: string | null;
   leasingRate?: number | null;
   leasingFinalRate?: number | null;
+  leasingFinalDueDate?: string | null;
 }): Promise<number | null> {
   await ensureLeasingColumns();
   const name = input.name.trim();
   if (!name) return null;
   const [res] = await getPool().query(
-    "INSERT INTO vehicles (name, plate, driver, note, leasing_rate, leasing_final_rate) VALUES (?, ?, ?, ?, ?, ?)",
+    "INSERT INTO vehicles (name, plate, driver, note, leasing_rate, leasing_final_rate, leasing_final_due_date) VALUES (?, ?, ?, ?, ?, ?, ?)",
     [
       name.slice(0, 191),
       input.plate?.trim().slice(0, 64) || null,
@@ -135,6 +130,7 @@ export async function createVehicle(input: {
       input.note?.trim().slice(0, 5000) || null,
       input.leasingRate ?? null,
       input.leasingFinalRate ?? null,
+      input.leasingFinalDueDate ?? null,
     ]
   );
   return (res as { insertId: number }).insertId;
@@ -148,12 +144,13 @@ export async function updateVehicle(input: {
   note: string | null;
   leasingRate?: number | null;
   leasingFinalRate?: number | null;
+  leasingFinalDueDate?: string | null;
 }): Promise<void> {
   await ensureLeasingColumns();
   const name = input.name.trim();
   if (!name) return;
   await getPool().query(
-    "UPDATE vehicles SET name = ?, plate = ?, driver = ?, note = ?, leasing_rate = ?, leasing_final_rate = ? WHERE id = ?",
+    "UPDATE vehicles SET name = ?, plate = ?, driver = ?, note = ?, leasing_rate = ?, leasing_final_rate = ?, leasing_final_due_date = ? WHERE id = ?",
     [
       name.slice(0, 191),
       input.plate?.trim().slice(0, 64) || null,
@@ -161,17 +158,9 @@ export async function updateVehicle(input: {
       input.note?.trim().slice(0, 5000) || null,
       input.leasingRate ?? null,
       input.leasingFinalRate ?? null,
+      input.leasingFinalDueDate ?? null,
       input.id,
     ]
-  );
-}
-
-/** Markiert/entmarkiert die einmalige Restrate (Schlussrate) eines Fahrzeugs als bezahlt. */
-export async function setVehicleLeasingFinalPaid(id: number, paid: boolean): Promise<void> {
-  await ensureLeasingColumns();
-  await getPool().query(
-    `UPDATE vehicles SET leasing_final_paid = ?, leasing_final_paid_date = ${paid ? "CURDATE()" : "NULL"} WHERE id = ?`,
-    [paid ? 1 : 0, id]
   );
 }
 
@@ -286,82 +275,4 @@ export async function getVehicleDocumentFile(
   } catch {
     return null;
   }
-}
-
-// ---------------------------------------------------------------------------
-// Fahrzeug-Leasing: monatlicher Bezahlt/läuft-noch-Status je Fahrzeug + Monat.
-// ---------------------------------------------------------------------------
-
-export interface VehicleLeasingMonth {
-  paid: boolean;
-  paidDate: string | null;
-  paidByName: string | null;
-}
-
-interface LeasingPaymentRow extends RowDataPacket {
-  vehicle_id: number;
-  is_paid: number;
-  paid_date: string | null;
-  paid_by_name: string | null;
-}
-
-let leasingPaymentsTableReady = false;
-async function ensureLeasingPaymentsTable(): Promise<void> {
-  if (leasingPaymentsTableReady) return;
-  await getPool()
-    .query(
-      `CREATE TABLE IF NOT EXISTS vehicle_leasing_payments (
-         id INT AUTO_INCREMENT PRIMARY KEY,
-         vehicle_id INT NOT NULL,
-         year INT NOT NULL,
-         month INT NOT NULL,
-         is_paid TINYINT NOT NULL DEFAULT 0,
-         paid_date DATE NULL,
-         paid_by INT NULL,
-         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-         UNIQUE KEY uq_vlp_vehicle_period (vehicle_id, year, month),
-         INDEX idx_vlp_period (year, month)
-       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
-    )
-    .catch(() => {});
-  leasingPaymentsTableReady = true;
-}
-
-/** Bezahlt-Status aller Fahrzeuge für einen Monat (keyed nach Fahrzeug-ID). */
-export async function listLeasingMonthStatus(year: number, month: number): Promise<Map<number, VehicleLeasingMonth>> {
-  await ensureLeasingPaymentsTable();
-  const [rows] = await getPool().query<LeasingPaymentRow[]>(
-    `SELECT p.vehicle_id, p.is_paid, p.paid_date,
-            COALESCE(NULLIF(u.display_name, ''), u.username) AS paid_by_name
-     FROM vehicle_leasing_payments p
-     LEFT JOIN users u ON u.id = p.paid_by
-     WHERE p.year = ? AND p.month = ?`,
-    [year, month]
-  );
-  const map = new Map<number, VehicleLeasingMonth>();
-  for (const r of rows) {
-    map.set(r.vehicle_id, {
-      paid: Number(r.is_paid) === 1,
-      paidDate: r.paid_date ? String(r.paid_date).slice(0, 10) : null,
-      paidByName: r.paid_by_name,
-    });
-  }
-  return map;
-}
-
-/** Setzt/entfernt den Bezahlt-Status eines Fahrzeugs für einen bestimmten Monat. */
-export async function setLeasingMonthPaid(
-  vehicleId: number,
-  year: number,
-  month: number,
-  paid: boolean,
-  userId: number | null
-): Promise<void> {
-  await ensureLeasingPaymentsTable();
-  await getPool().query(
-    `INSERT INTO vehicle_leasing_payments (vehicle_id, year, month, is_paid, paid_date, paid_by)
-     VALUES (?, ?, ?, ?, ${paid ? "CURDATE()" : "NULL"}, ?)
-     ON DUPLICATE KEY UPDATE is_paid = VALUES(is_paid), paid_date = VALUES(paid_date), paid_by = VALUES(paid_by)`,
-    [vehicleId, year, month, paid ? 1 : 0, paid ? userId : null]
-  );
 }

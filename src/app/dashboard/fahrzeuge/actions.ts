@@ -28,6 +28,12 @@ function parseAmount(raw: FormDataEntryValue | null): number | null {
   return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
+/** Parst ein Datumsfeld (yyyy-mm-dd aus <input type="date">) – leer/ungültig → null. */
+function parseDate(raw: FormDataEntryValue | null): string | null {
+  const s = String(raw ?? "").trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
+}
+
 async function requireAccess() {
   const session = await getSession();
   if (!session) return null;
@@ -55,8 +61,9 @@ export async function createVehicleAction(
   const note = String(formData.get("note") ?? "").trim() || null;
   const leasingRate = parseAmount(formData.get("leasingRate"));
   const leasingFinalRate = parseAmount(formData.get("leasingFinalRate"));
+  const leasingFinalDueDate = parseDate(formData.get("leasingFinalDueDate"));
   try {
-    await createVehicle({ name, plate, driver, note, leasingRate, leasingFinalRate });
+    await createVehicle({ name, plate, driver, note, leasingRate, leasingFinalRate, leasingFinalDueDate });
   } catch {
     return { error: "Fahrzeug konnte nicht angelegt werden." };
   }
@@ -78,8 +85,9 @@ export async function updateVehicleAction(
   const note = String(formData.get("note") ?? "").trim() || null;
   const leasingRate = parseAmount(formData.get("leasingRate"));
   const leasingFinalRate = parseAmount(formData.get("leasingFinalRate"));
+  const leasingFinalDueDate = parseDate(formData.get("leasingFinalDueDate"));
   try {
-    await updateVehicle({ id, name, plate, driver, note, leasingRate, leasingFinalRate });
+    await updateVehicle({ id, name, plate, driver, note, leasingRate, leasingFinalRate, leasingFinalDueDate });
   } catch {
     return { error: "Fahrzeug konnte nicht gespeichert werden." };
   }

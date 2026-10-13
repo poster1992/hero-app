@@ -172,6 +172,10 @@ function VehicleList({
               className={inputClass}
             />
           </div>
+          <div>
+            <label className="mb-1 block text-xs text-gray-500">Restrate fällig am (optional)</label>
+            <input name="leasingFinalDueDate" type="date" className={inputClass} />
+          </div>
           <div className="flex items-center gap-2">
             <button
               type="submit"
@@ -436,6 +440,15 @@ function VehiclePanel({
             placeholder="Restrate €"
             className={inputClass}
           />
+          <div>
+            <label className="mb-1 block text-xs text-gray-500">Restrate fällig am</label>
+            <input
+              name="leasingFinalDueDate"
+              type="date"
+              defaultValue={vehicle.leasingFinalDueDate ?? ""}
+              className={inputClass}
+            />
+          </div>
           <div className="sm:col-span-2 flex items-center gap-2">
             <button type="submit" className="rounded-md bg-brand-red px-3 py-2 text-sm font-semibold text-white hover:opacity-90">
               Speichern
