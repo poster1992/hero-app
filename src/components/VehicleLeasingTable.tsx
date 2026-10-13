@@ -1,4 +1,4 @@
-import type { Vehicle } from "@/lib/vehicles";
+import { isLeasingDue, type Vehicle } from "@/lib/vehicles";
 
 function fmtEur(n: number): string {
   return n.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €";
@@ -8,11 +8,7 @@ function fmtDate(iso: string): string {
   return iso.split("-").reverse().join(".");
 }
 
-/** true, sobald das Fälligkeitsdatum der Restrate erreicht/überschritten ist. */
-function isDue(dueDate: string | null): boolean {
-  if (!dueDate) return false;
-  return dueDate <= new Date().toISOString().slice(0, 10);
-}
+const isDue = isLeasingDue;
 
 /** Anzahl vollständiger Monate zwischen zwei Daten (0, falls `to` vor `from` liegt oder eines fehlt). */
 function monthsBetween(from: string | null, to: string | null): number | null {

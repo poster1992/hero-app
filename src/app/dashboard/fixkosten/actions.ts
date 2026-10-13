@@ -4,7 +4,13 @@ import { revalidatePath } from "next/cache";
 import { getSession } from "@/lib/session";
 import { getUserByUsername } from "@/lib/users";
 import { getAllowedModules } from "@/lib/role-store";
-import { createFixkosten, updateFixkosten, deleteFixkosten } from "@/lib/fixkosten";
+import {
+  createFixkosten,
+  updateFixkosten,
+  deleteFixkosten,
+  createLinkedFixkosten,
+  isFixkostenLinkSource,
+} from "@/lib/fixkosten";
 
 const PATH = "/dashboard/fixkosten";
 const MODULE = "cockpit_fixkosten";
@@ -58,6 +64,18 @@ export async function updateFixkostenAction(id: number, name: string, monthlyAmo
     await updateFixkosten(id, clean, amount);
   } catch {
     return { ok: false, error: "Konnte nicht gespeichert werden." };
+  }
+  revalidatePath(PATH);
+  return { ok: true };
+}
+
+export async function createLinkedFixkostenAction(source: string): Promise<ActionResult> {
+  if (!(await requireAccess())) return { ok: false, error: "Kein Zugriff." };
+  if (!isFixkostenLinkSource(source)) return { ok: false, error: "Unbekannte Verknüpfung." };
+  try {
+    await createLinkedFixkosten(source);
+  } catch {
+    return { ok: false, error: "Verknüpfung konnte nicht angelegt werden." };
   }
   revalidatePath(PATH);
   return { ok: true };

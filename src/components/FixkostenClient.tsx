@@ -2,7 +2,12 @@
 
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { createFixkostenAction, updateFixkostenAction, deleteFixkostenAction } from "@/app/dashboard/fixkosten/actions";
+import {
+  createFixkostenAction,
+  updateFixkostenAction,
+  deleteFixkostenAction,
+  createLinkedFixkostenAction,
+} from "@/app/dashboard/fixkosten/actions";
 import type { FixkostenItem } from "@/lib/fixkosten";
 
 const inputClass =
@@ -86,17 +91,29 @@ function Row({ item }: { item: FixkostenItem }) {
 
   return (
     <tr className="border-b border-gray-100 last:border-0">
-      <td className="px-4 py-2.5 font-medium text-gray-900">{item.name}</td>
+      <td className="px-4 py-2.5 font-medium text-gray-900">
+        {item.name}
+        {item.linkedSource && (
+          <span
+            className="ml-2 rounded-full border border-sky-300 bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-700"
+            title="Betrag wird automatisch aus einem anderen Modul berechnet"
+          >
+            🔗 verknüpft
+          </span>
+        )}
+      </td>
       <td className="px-4 py-2.5 text-right text-gray-600">{fmtEur(item.monthlyAmount)}</td>
       <td className="px-4 py-2.5 text-right">
         <div className="flex items-center justify-end gap-2">
-          <button
-            type="button"
-            onClick={() => setEditing(true)}
-            className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-50"
-          >
-            Bearbeiten
-          </button>
+          {!item.linkedSource && (
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-50"
+            >
+              Bearbeiten
+            </button>
+          )}
           <button
             type="button"
             onClick={remove}
@@ -116,8 +133,11 @@ export default function FixkostenClient({ items }: { items: FixkostenItem[] }) {
   const formRef = useRef<HTMLFormElement>(null);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [linkPending, startLinkTransition] = useTransition();
+  const [linkError, setLinkError] = useState<string | null>(null);
 
   const total = items.reduce((sum, i) => sum + i.monthlyAmount, 0);
+  const hasLeasingLink = items.some((i) => i.linkedSource === "fahrzeug_leasing");
 
   const submit = (formData: FormData) => {
     setError(null);
@@ -128,6 +148,18 @@ export default function FixkostenClient({ items }: { items: FixkostenItem[] }) {
         return;
       }
       formRef.current?.reset();
+      router.refresh();
+    });
+  };
+
+  const addLeasingLink = () => {
+    setLinkError(null);
+    startLinkTransition(async () => {
+      const res = await createLinkedFixkostenAction("fahrzeug_leasing");
+      if (!res.ok) {
+        setLinkError(res.error ?? "Fehler beim Verknüpfen");
+        return;
+      }
       router.refresh();
     });
   };
@@ -152,6 +184,24 @@ export default function FixkostenClient({ items }: { items: FixkostenItem[] }) {
         </button>
         {error && <span className="text-xs text-rose-600">{error}</span>}
       </form>
+
+      {!hasLeasingLink && (
+        <div className="flex flex-wrap items-center gap-2 border border-dashed border-sky-300 bg-sky-50/50 p-3">
+          <span className="text-sm text-gray-700">
+            Statt einen Betrag selbst einzutragen, kann eine Position auch automatisch aus einem anderen Modul
+            berechnet werden:
+          </span>
+          <button
+            type="button"
+            onClick={addLeasingLink}
+            disabled={linkPending}
+            className="rounded-md border border-sky-300 bg-white px-3 py-1.5 text-xs font-semibold text-sky-700 hover:bg-sky-100 disabled:opacity-50"
+          >
+            {linkPending ? "Verknüpft …" : "🔗 Fahrzeug Leasing verknüpfen"}
+          </button>
+          {linkError && <span className="text-xs text-rose-600">{linkError}</span>}
+        </div>
+      )}
 
       <div className="overflow-x-auto border border-line bg-white">
         <table className="w-full text-sm">

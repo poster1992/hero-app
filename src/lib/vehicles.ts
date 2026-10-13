@@ -304,3 +304,17 @@ export async function getVehicleDocumentFile(
     return null;
   }
 }
+
+/** true, sobald das Fälligkeitsdatum der Restrate erreicht/überschritten ist. */
+export function isLeasingDue(dueDate: string | null): boolean {
+  if (!dueDate) return false;
+  return dueDate <= new Date().toISOString().slice(0, 10);
+}
+
+/** Monatliche Gesamtrate aller aktuell laufenden (nicht fälligen) Leasing-Fahrzeuge. */
+export async function getRunningLeasingMonthlySum(): Promise<number> {
+  const vehicles = await listVehicles();
+  return vehicles
+    .filter((v) => v.leasingRate != null && !isLeasingDue(v.leasingFinalDueDate))
+    .reduce((sum, v) => sum + (v.leasingRate ?? 0), 0);
+}
