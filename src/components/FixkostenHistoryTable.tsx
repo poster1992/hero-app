@@ -66,8 +66,8 @@ function ProjectedCell({
 
   if (editing) {
     return (
-      <td className="bg-sky-50 px-2 py-2">
-        <div className="flex w-44 flex-col items-end gap-1">
+      <td className="relative bg-sky-50 px-2 py-2">
+        <div className="absolute right-0 top-0 z-20 flex w-64 flex-col gap-1.5 rounded-md border border-gray-200 bg-white p-2 shadow-lg">
           <input
             autoFocus
             value={draftAmount}
@@ -79,15 +79,15 @@ function ProjectedCell({
             placeholder="Betrag (Prognose, falls leer)"
             className="w-full rounded border border-gray-300 px-1.5 py-1 text-right text-xs outline-none focus:border-brand-red/60"
           />
-          <input
+          <textarea
             value={draftNote}
             onChange={(e) => setDraftNote(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") save();
               if (e.key === "Escape") setEditing(false);
             }}
-            placeholder="Notiz (z. B. Kündigung MA XY)"
-            className="w-full rounded border border-gray-300 px-1.5 py-1 text-left text-xs outline-none focus:border-brand-red/60"
+            rows={4}
+            placeholder="Notiz (z. B. Kündigung MA XY zum 31.12.)"
+            className="w-full resize-y rounded border border-gray-300 px-1.5 py-1 text-left text-xs outline-none focus:border-brand-red/60"
           />
           <div className="flex items-center gap-1.5">
             {(isOverride || note) && (
@@ -110,33 +110,27 @@ function ProjectedCell({
               Speichern
             </button>
           </div>
+          {error && <div className="text-left text-xs text-rose-600">{error}</div>}
         </div>
-        {error && <div className="text-left text-xs text-rose-600">{error}</div>}
       </td>
     );
   }
 
   return (
-    <td
-      onClick={() => setEditing(true)}
-      title={
-        [
-          isOverride ? "Manuell eingetragen" : "Prognose",
-          note ? `Notiz: ${note}` : null,
-          "– klicken zum Bearbeiten",
-        ]
-          .filter(Boolean)
-          .join(" · ")
-      }
-      className={`cursor-pointer px-2 py-2 hover:bg-sky-50 ${
-        isOverride ? "font-semibold not-italic text-sky-700" : "italic text-gray-400"
-      }`}
-    >
-      <div className="flex items-center justify-end gap-1 whitespace-nowrap">
+    <td onClick={() => setEditing(true)} className="group relative cursor-pointer px-2 py-2 hover:bg-sky-50">
+      <div
+        className={`flex items-center justify-end gap-1 whitespace-nowrap ${
+          isOverride ? "font-semibold not-italic text-sky-700" : "italic text-gray-400"
+        }`}
+      >
         {note && <span className="text-sky-500">📝</span>}
         <span>{value == null ? "–" : fmtEur(value)}</span>
       </div>
-      {note && <div className="mt-0.5 max-w-[10rem] truncate text-left text-[11px] font-normal not-italic text-gray-400">{note}</div>}
+      {note && (
+        <div className="pointer-events-none absolute right-0 top-full z-30 mt-1 hidden w-64 whitespace-pre-line rounded-md border border-gray-200 bg-white p-2 text-left text-xs font-normal normal-case text-gray-700 shadow-lg group-hover:block">
+          {note}
+        </div>
+      )}
     </td>
   );
 }
