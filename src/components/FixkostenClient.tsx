@@ -12,7 +12,7 @@ import type { FixkostenItem, FixkostenLinkSource } from "@/lib/fixkosten";
 import type { BookAccount } from "@/lib/hero-api";
 
 const inputClass =
-  "w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-brand-red/60";
+  "w-full rounded-md border border-gray-300 px-3 py-2.5 text-base text-gray-900 outline-none focus:border-brand-red/60";
 
 function fmtEur(n: number): string {
   return n.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €";
@@ -135,12 +135,22 @@ function Row({ item, accounts }: { item: FixkostenItem; accounts: BookAccount[] 
   if (editing) {
     return (
       <tr className="border-b border-gray-100">
-        <td className="px-4 py-2">
+        <td className="px-5 py-3">
           <input value={name} onChange={(e) => setName(e.target.value)} className={inputClass} />
         </td>
-        <td className="px-4 py-2">
+        <td className="px-5 py-3 text-sm text-gray-500">
+          {item.linkedSource && (
+            <>
+              <span className="rounded-full border border-sky-300 bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-700">
+                🔗 verknüpft
+              </span>
+              {item.linkedDetail && <div className="mt-1">{item.linkedDetail}</div>}
+            </>
+          )}
+        </td>
+        <td className="px-5 py-3">
           {item.linkedSource ? (
-            <span className="text-right text-gray-500">{fmtEur(item.monthlyAmount)} (automatisch)</span>
+            <span className="block text-right text-gray-500">{fmtEur(item.monthlyAmount)} (automatisch)</span>
           ) : (
             <input
               value={amount}
@@ -150,17 +160,17 @@ function Row({ item, accounts }: { item: FixkostenItem; accounts: BookAccount[] 
             />
           )}
         </td>
-        <td className="px-4 py-2">
+        <td className="px-5 py-3">
           <AccountPicker accounts={accounts} value={account} onChange={setAccount} />
         </td>
-        <td className="px-4 py-2 text-right">
+        <td className="px-5 py-3 text-right">
           <div className="flex items-center justify-end gap-2">
             {error && <span className="text-xs text-rose-600">{error}</span>}
             <button
               type="button"
               onClick={save}
               disabled={pending}
-              className="rounded-md bg-brand-red px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
+              className="rounded-md bg-brand-red px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
             >
               Speichern
             </button>
@@ -170,7 +180,7 @@ function Row({ item, accounts }: { item: FixkostenItem; accounts: BookAccount[] 
                 setEditing(false);
                 resetFields();
               }}
-              className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-50"
+              className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-semibold text-gray-600 hover:bg-gray-50"
             >
               Abbrechen
             </button>
@@ -182,20 +192,22 @@ function Row({ item, accounts }: { item: FixkostenItem; accounts: BookAccount[] 
 
   return (
     <tr className="border-b border-gray-100 last:border-0">
-      <td className="px-4 py-2.5 font-medium text-gray-900">
-        {item.name}
+      <td className="px-5 py-3.5 font-medium text-gray-900">{item.name}</td>
+      <td className="px-5 py-3.5 text-sm text-gray-500">
         {item.linkedSource && (
-          <span
-            className="ml-2 rounded-full border border-sky-300 bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-700"
-            title="Betrag wird automatisch aus einem anderen Modul berechnet"
-          >
-            🔗 verknüpft
-          </span>
+          <>
+            <span
+              className="rounded-full border border-sky-300 bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-700"
+              title="Betrag wird automatisch aus einem anderen Modul berechnet"
+            >
+              🔗 verknüpft
+            </span>
+            {item.linkedDetail && <div className="mt-1">{item.linkedDetail}</div>}
+          </>
         )}
-        {item.linkedDetail && <div className="mt-0.5 text-xs font-normal text-gray-500">{item.linkedDetail}</div>}
       </td>
-      <td className="px-4 py-2.5 text-right text-gray-600">{fmtEur(item.monthlyAmount)}</td>
-      <td className="px-4 py-2.5 text-gray-600">
+      <td className="px-5 py-3.5 text-right text-gray-600">{fmtEur(item.monthlyAmount)}</td>
+      <td className="px-5 py-3.5 text-gray-600">
         {item.accountNumber ? (
           <span>
             {item.accountNumber} – {item.accountName}
@@ -204,12 +216,12 @@ function Row({ item, accounts }: { item: FixkostenItem; accounts: BookAccount[] 
           <span className="text-gray-400">kein Konto</span>
         )}
       </td>
-      <td className="px-4 py-2.5 text-right">
+      <td className="px-5 py-3.5 text-right">
         <div className="flex items-center justify-end gap-2">
           <button
             type="button"
             onClick={() => setEditing(true)}
-            className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-50"
+            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-semibold text-gray-600 hover:bg-gray-50"
           >
             Bearbeiten
           </button>
@@ -217,7 +229,7 @@ function Row({ item, accounts }: { item: FixkostenItem; accounts: BookAccount[] 
             type="button"
             onClick={remove}
             disabled={pending}
-            className="rounded-md border border-rose-300 px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-50"
+            className="rounded-md border border-rose-300 px-3 py-1.5 text-sm font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-50"
           >
             Löschen
           </button>
@@ -281,15 +293,15 @@ export default function FixkostenClient({ items, accounts }: { items: FixkostenI
         className="grid grid-cols-1 gap-2 border border-line bg-white p-4 sm:grid-cols-2 sm:items-end"
       >
         <div>
-          <label className="mb-1 block text-xs text-gray-500">Bezeichnung *</label>
+          <label className="mb-1 block text-sm text-gray-500">Bezeichnung *</label>
           <input name="name" placeholder="z. B. Miete Halle" className={inputClass} required />
         </div>
         <div>
-          <label className="mb-1 block text-xs text-gray-500">Monatlicher Betrag € *</label>
+          <label className="mb-1 block text-sm text-gray-500">Monatlicher Betrag € *</label>
           <input name="monthlyAmount" inputMode="decimal" placeholder="0,00" className={inputClass} required />
         </div>
         <div className="sm:col-span-2">
-          <label className="mb-1 block text-xs text-gray-500">GuV-Konto (optional)</label>
+          <label className="mb-1 block text-sm text-gray-500">GuV-Konto (optional)</label>
           <AccountPicker accounts={accounts} value={newAccount} onChange={setNewAccount} />
         </div>
         <div className="flex items-center gap-2 sm:col-span-2">
@@ -326,19 +338,20 @@ export default function FixkostenClient({ items, accounts }: { items: FixkostenI
       )}
 
       <div className="overflow-x-auto border border-line bg-white">
-        <table className="w-full text-sm">
+        <table className="w-full text-base">
           <thead>
             <tr className="border-b border-gray-200 bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-              <th className="px-4 py-2.5">Bezeichnung</th>
-              <th className="px-4 py-2.5 text-right">Monatlicher Betrag</th>
-              <th className="px-4 py-2.5">GuV-Konto</th>
-              <th className="px-4 py-2.5" />
+              <th className="px-5 py-3">Bezeichnung</th>
+              <th className="px-5 py-3">Verknüpfung</th>
+              <th className="px-5 py-3 text-right">Monatlicher Betrag</th>
+              <th className="px-5 py-3">GuV-Konto</th>
+              <th className="px-5 py-3" />
             </tr>
           </thead>
           <tbody>
             {items.length === 0 ? (
               <tr>
-                <td colSpan={4} className="px-4 py-6 text-center text-sm text-gray-500">
+                <td colSpan={5} className="px-5 py-6 text-center text-sm text-gray-500">
                   Noch keine Fixkosten erfasst.
                 </td>
               </tr>
@@ -349,9 +362,10 @@ export default function FixkostenClient({ items, accounts }: { items: FixkostenI
           {items.length > 0 && (
             <tfoot>
               <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold text-gray-900">
-                <td className="px-4 py-2.5">Summe pro Monat</td>
-                <td className="px-4 py-2.5 text-right">{fmtEur(total)}</td>
-                <td className="px-4 py-2.5" colSpan={2} />
+                <td className="px-5 py-3">Summe pro Monat</td>
+                <td className="px-5 py-3" />
+                <td className="px-5 py-3 text-right">{fmtEur(total)}</td>
+                <td className="px-5 py-3" colSpan={2} />
               </tr>
             </tfoot>
           )}
