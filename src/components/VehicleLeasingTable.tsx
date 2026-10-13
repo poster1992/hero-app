@@ -14,37 +14,72 @@ function isDue(dueDate: string | null): boolean {
   return dueDate <= new Date().toISOString().slice(0, 10);
 }
 
-/** Anzahl vollständig abgelaufener Monate seit Leasingbeginn (0, falls kein/zukünftiges Datum). */
-function monthsPaid(startDate: string | null): number {
-  if (!startDate) return 0;
-  const start = new Date(`${startDate}T00:00:00Z`);
-  const now = new Date();
-  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  if (today < start) return 0;
-  let months = (today.getUTCFullYear() - start.getUTCFullYear()) * 12 + (today.getUTCMonth() - start.getUTCMonth());
-  if (today.getUTCDate() < start.getUTCDate()) months -= 1;
+/** Anzahl vollständiger Monate zwischen zwei Daten (0, falls `to` vor `from` liegt oder eines fehlt). */
+function monthsBetween(from: string | null, to: string | null): number | null {
+  if (!from || !to) return null;
+  const start = new Date(`${from}T00:00:00Z`);
+  const end = new Date(`${to}T00:00:00Z`);
+  if (end < start) return 0;
+  let months = (end.getUTCFullYear() - start.getUTCFullYear()) * 12 + (end.getUTCMonth() - start.getUTCMonth());
+  if (end.getUTCDate() < start.getUTCDate()) months -= 1;
   return Math.max(0, months);
 }
 
+interface LeasingSummary {
+  /** Bereits bezahlter Betrag (abgelaufene Monatsraten + fällige Restrate). */
+  paid: number;
+  /** Gesamter Vertragswert (alle Monatsraten der Laufzeit + Restrate) – nur wenn Laufzeit bekannt. */
+  total: number | null;
+  /** Noch offener Restbetrag bis Vertragsende – nur wenn Laufzeit bekannt. */
+  remaining: number | null;
+  pct: number | null;
+  /** Bereits gezahlter Zinsanteil – nur wenn Laufzeit UND Kaufpreis bekannt. */
+  interestPaid: number | null;
+}
+
 /**
- * Grobe Schätzung des bereits bezahlten Betrags: abgelaufene Monate × Monatsrate,
- * plus Restrate sobald deren Fälligkeitsdatum erreicht ist – gedeckelt auf den
- * Kaufpreis, falls hinterlegt. Keine exakte Abrechnung, sondern eine Orientierung.
+ * Schätzung auf Basis des tatsächlichen Vertragswerts (alle Monatsraten der
+ * Laufzeit + Restrate), NICHT des Kaufpreises – der Kaufpreis ist niedriger,
+ * weil im Gesamtvertragswert noch die Zinsen der Bank enthalten sind. Die
+ * Vertragslaufzeit wird aus Leasingbeginn bis Fälligkeitsdatum der Restrate
+ * abgeleitet; ohne beide Daten lässt sich nur der bisher bezahlte Betrag
+ * zeigen, aber keine Gesamtsumme/Restschuld/Zinsen.
+ *
+ * Zinsanteil: Gesamtzinsen = Vertragswert − Kaufpreis, gleichmäßig über die
+ * Laufzeit verteilt angenommen (kein Tilgungsplan/Zinssatz hinterlegt, daher
+ * nur eine grobe Näherung, keine exakte Zinsberechnung).
  */
-function paidAmount(v: Vehicle): number | null {
+function leasingSummary(v: Vehicle): LeasingSummary | null {
   if (v.leasingRate == null) return null;
-  let paid = monthsPaid(v.leasingStartDate) * v.leasingRate;
+  const elapsed = monthsBetween(v.leasingStartDate, new Date().toISOString().slice(0, 10)) ?? 0;
+  const termMonths = monthsBetween(v.leasingStartDate, v.leasingFinalDueDate);
+  const paidMonths = termMonths != null ? Math.min(elapsed, termMonths) : elapsed;
+  let paid = paidMonths * v.leasingRate;
   if (isDue(v.leasingFinalDueDate) && v.leasingFinalRate != null) paid += v.leasingFinalRate;
-  if (v.purchasePrice != null) paid = Math.min(paid, v.purchasePrice);
-  return paid;
+
+  if (termMonths == null) return { paid, total: null, remaining: null, pct: null, interestPaid: null };
+
+  const total = termMonths * v.leasingRate + (v.leasingFinalRate ?? 0);
+  const remaining = Math.max(0, total - paid);
+  const pct = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : null;
+
+  let interestPaid: number | null = null;
+  if (v.purchasePrice != null && termMonths > 0) {
+    const totalInterest = Math.max(0, total - v.purchasePrice);
+    interestPaid = (totalInterest * paidMonths) / termMonths;
+  }
+
+  return { paid, total, remaining, pct, interestPaid };
 }
 
 /**
  * Übersicht der aktuell geleasten Fahrzeuge: monatliche Rate und Restrate
  * samt Fälligkeitsdatum. Sobald die Restrate fällig ist, wird die Zeile
  * automatisch grün markiert (kein manuelles Abhaken mehr nötig). Bei
- * hinterlegtem Kaufpreis + Leasingbeginn wird zusätzlich geschätzt, wie viel
- * vom Fahrzeug bereits bezahlt wurde.
+ * hinterlegtem Leasingbeginn + Fälligkeitsdatum (= Vertragslaufzeit) wird
+ * zusätzlich geschätzt, wie viel bereits bezahlt wurde, wie viel davon
+ * Zinsanteil ist (nur mit zusätzlich hinterlegtem Kaufpreis) und wie viel
+ * bis Vertragsende noch offen ist.
  */
 export default function VehicleLeasingTable({ vehicles }: { vehicles: Vehicle[] }) {
   const running = vehicles.filter((v) => !isDue(v.leasingFinalDueDate));
@@ -62,14 +97,15 @@ export default function VehicleLeasingTable({ vehicles }: { vehicles: Vehicle[] 
             <th className="px-4 py-2.5">Fällig am</th>
             <th className="px-4 py-2.5">Kaufpreis</th>
             <th className="px-4 py-2.5">Bezahlt</th>
+            <th className="px-4 py-2.5">davon Zinsen</th>
+            <th className="px-4 py-2.5">Noch offen</th>
             <th className="px-4 py-2.5">Status</th>
           </tr>
         </thead>
         <tbody>
           {vehicles.map((v) => {
             const due = isDue(v.leasingFinalDueDate);
-            const paid = paidAmount(v);
-            const pct = paid != null && v.purchasePrice ? Math.min(100, Math.round((paid / v.purchasePrice) * 100)) : null;
+            const summary = leasingSummary(v);
             return (
               <tr key={v.id} className={`border-b border-gray-100 last:border-0 ${due ? "bg-emerald-50" : ""}`}>
                 <td className="px-4 py-2.5 font-medium text-gray-900">{v.name}</td>
@@ -83,14 +119,20 @@ export default function VehicleLeasingTable({ vehicles }: { vehicles: Vehicle[] 
                 </td>
                 <td className="px-4 py-2.5 text-gray-600">{v.purchasePrice != null ? fmtEur(v.purchasePrice) : "—"}</td>
                 <td className="px-4 py-2.5 text-gray-600">
-                  {paid != null ? (
+                  {summary ? (
                     <>
-                      {fmtEur(paid)}
-                      {pct != null && <span className="ml-1 text-xs text-gray-400">({pct} %)</span>}
+                      {fmtEur(summary.paid)}
+                      {summary.pct != null && <span className="ml-1 text-xs text-gray-400">({summary.pct} %)</span>}
                     </>
                   ) : (
                     "—"
                   )}
+                </td>
+                <td className="px-4 py-2.5 text-gray-600">
+                  {summary?.interestPaid != null ? fmtEur(summary.interestPaid) : "—"}
+                </td>
+                <td className="px-4 py-2.5 text-gray-600">
+                  {summary?.remaining != null ? fmtEur(summary.remaining) : "—"}
                 </td>
                 <td className="px-4 py-2.5">
                   {v.leasingFinalDueDate ? (
@@ -117,7 +159,7 @@ export default function VehicleLeasingTable({ vehicles }: { vehicles: Vehicle[] 
               Summe laufende Leasing-Fahrzeuge ({running.length})
             </td>
             <td className="px-4 py-2.5">{fmtEur(runningSum)}</td>
-            <td className="px-4 py-2.5" colSpan={5} />
+            <td className="px-4 py-2.5" colSpan={7} />
           </tr>
         </tfoot>
       </table>
