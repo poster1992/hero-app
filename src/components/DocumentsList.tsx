@@ -43,15 +43,24 @@ function toRow(d: CustomerInvoice): ReceiptRow {
 export default async function DocumentsList({
   title,
   typeIds,
+  initialQuery,
 }: {
   title: string;
   typeIds: number[];
+  /** Vorfilter aus der globalen Suche (?search=…) – ODER-Vergleich auf Nummer/Kunde. */
+  initialQuery?: string;
 }) {
   let rows: ReceiptRow[] | null = null;
   let error: string | null = null;
   try {
     const docs = await getCustomerDocumentsByType(typeIds);
     rows = docs.map(toRow);
+    const q = initialQuery?.trim().toLowerCase();
+    if (q) {
+      rows = rows.filter(
+        (r) => r.number.toLowerCase().includes(q) || r.party.toLowerCase().includes(q)
+      );
+    }
   } catch (e) {
     error = e instanceof Error ? e.message : "Unbekannter Fehler beim Laden der Daten.";
   }
@@ -60,7 +69,11 @@ export default async function DocumentsList({
     <>
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold text-gray-900">{title}</h1>
-        {rows && <p className="text-sm text-gray-600">{rows.length} Dokumente</p>}
+        {rows && (
+          <p className="text-sm text-gray-600">
+            {rows.length} Dokumente{initialQuery ? ` · gefiltert nach „${initialQuery}"` : ""}
+          </p>
+        )}
       </div>
 
       {error && (

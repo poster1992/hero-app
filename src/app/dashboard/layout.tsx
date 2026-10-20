@@ -48,7 +48,7 @@ export default async function DashboardLayout({
         {isPreview && <PreviewBanner role={role} />}
         {allowedModules.includes("projektsuche") && (
           <div className="flex items-center justify-center bg-paper px-4 pb-2 pt-6">
-            <GlobalSearch />
+            <GlobalSearch isAdmin={role === "administrator"} />
           </div>
         )}
         <div className="flex flex-1 flex-col">
