@@ -22,11 +22,14 @@ export async function GET(request: NextRequest) {
     if (isPreviewableMime(sniffed)) contentType = sniffed;
   }
 
+  // ?download=1 erzwingt den Speichern-Dialog des Browsers statt der Inline-Anzeige.
+  const download = request.nextUrl.searchParams.get("download") === "1";
+
   return new Response(new Uint8Array(file.data), {
     status: 200,
     headers: {
       "Content-Type": contentType || "application/octet-stream",
-      "Content-Disposition": `inline; filename="${encodeURIComponent(file.name)}"`,
+      "Content-Disposition": `${download ? "attachment" : "inline"}; filename="${encodeURIComponent(file.name)}"`,
       "Cache-Control": "private, max-age=300",
     },
   });

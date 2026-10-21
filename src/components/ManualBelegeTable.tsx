@@ -1201,7 +1201,7 @@ export default function ManualBelegeTable({
                 <tr
                   key={r.id}
                   className={`border-t border-gray-100 ${rowTint(r, todayISO)}`}
-                  title={`${rowTintLabel(r, todayISO)} · Rechtsklick für Aktionen (Ansehen / Bearbeiten / Historie / Löschen)`}
+                  title={`${rowTintLabel(r, todayISO)} · Rechtsklick für Aktionen (Ansehen / Download / Bearbeiten / Historie / Löschen)`}
                   onContextMenu={(e) => {
                     e.preventDefault();
                     setMenu({ kind: "manual", row: r, ...menuPos(e) });
@@ -1312,7 +1312,7 @@ export default function ManualBelegeTable({
                 <tr
                   key={`h-${h.id}`}
                   className="border-t border-gray-100 bg-indigo-50/50 hover:bg-indigo-50"
-                  title={`🟣 HERO-Beleg (${h.isPaid ? "bezahlt" : "offen"}) · Rechtsklick für Aktionen (${h.docUrl ? "Beleg-PDF / " : ""}Historie)`}
+                  title={`🟣 HERO-Beleg (${h.isPaid ? "bezahlt" : "offen"}) · Rechtsklick für Aktionen (${h.docUrl ? "Beleg-PDF / Download / " : ""}Historie)`}
                   onContextMenu={(e) => {
                     e.preventDefault();
                     setMenu({ kind: "hero", row: h, ...menuPos(e) });
@@ -1424,6 +1424,18 @@ export default function ManualBelegeTable({
                   👁 Ansehen
                 </button>
               )}
+              {menu.row.hasFile && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.open(`/api/beleg?id=${menu.row.id}&download=1`, "_blank", "noopener,noreferrer");
+                    setMenu(null);
+                  }}
+                  className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  ⬇ Download
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => {
@@ -1475,6 +1487,19 @@ export default function ManualBelegeTable({
                   className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
                 >
                   👁 Beleg-PDF öffnen
+                </button>
+              )}
+              {menu.row.docUrl && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const sep = (menu.row.docUrl as string).includes("?") ? "&" : "?";
+                    window.open(`${menu.row.docUrl}${sep}download=1`, "_blank", "noopener,noreferrer");
+                    setMenu(null);
+                  }}
+                  className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  ⬇ Download
                 </button>
               )}
               <button

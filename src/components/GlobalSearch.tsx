@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition, type MouseEvent } from "react";
 import { useRouter } from "next/navigation";
 import {
   listProjectsForSearch,
@@ -11,9 +11,17 @@ import {
   type GlobalSearchReceipt,
   type GlobalSearchDocument,
 } from "@/app/dashboard/search-actions";
+import { deleteBelegAction, loadBelegEditDataAction, type BelegEditData } from "@/app/dashboard/belege/manual-actions";
+import BelegDetailModal from "@/components/BelegDetailModal";
+import ReceiptHistoryModal from "@/components/ReceiptHistoryModal";
 
 function fmtEur(n: number): string {
   return n.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €";
+}
+
+/** Hängt &download=1 an eine bereits mit ?… versehene Beleg-URL an. */
+function withDownload(url: string): string {
+  return `${url}${url.includes("?") ? "&" : "?"}download=1`;
 }
 
 const DOC_KIND_LABEL: Record<GlobalSearchDocument["kind"], string> = {
@@ -36,6 +44,36 @@ export default function GlobalSearch({ isAdmin = false }: { isAdmin?: boolean })
   const [documents, setDocuments] = useState<GlobalSearchDocument[]>([]);
   const [searchingExtra, setSearchingExtra] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Rechtsklick-Kontextmenü auf einem Beleg-Treffer (Ansehen/Download/Bearbeiten/Historie/Löschen).
+  const [menu, setMenu] = useState<{ item: GlobalSearchReceipt; x: number; y: number } | null>(null);
+  const [historyFor, setHistoryFor] = useState<{
+    kind: "manual" | "hero";
+    id: number | string;
+    title: string;
+    subtitle: string;
+  } | null>(null);
+  const [editBelegId, setEditBelegId] = useState<number | null>(null);
+  const [belegEdit, setBelegEdit] = useState<BelegEditData | null>(null);
+  const [belegEditLoading, setBelegEditLoading] = useState(false);
+  const [deletePending, startDelete] = useTransition();
+
+  useEffect(() => {
+    if (editBelegId == null) return;
+    let cancelled = false;
+    setBelegEditLoading(true);
+    loadBelegEditDataAction(editBelegId)
+      .then((d) => {
+        if (!cancelled) setBelegEdit(d);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setBelegEditLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [editBelegId]);
 
   async function ensureLoaded() {
     if (loadStarted.current) return;
@@ -97,14 +135,36 @@ export default function GlobalSearch({ isAdmin = false }: { isAdmin?: boolean })
   }
 
   /** Öffnet den Beleg direkt (neuer Tab sofort geöffnet, URL erst nach Auflösung gesetzt – umgeht Popup-Blocker). */
+  function openBeleg(r: GlobalSearchReceipt, download = false) {
+    const win = window.open("", "_blank");
+    getGlobalBelegFileUrlAction(r.kind, r.ref).then((res) => {
+      if (res.url && win) win.location.href = download ? withDownload(res.url) : res.url;
+      else if (win) win.close();
+      if (res.error && !res.url) alert(res.error);
+    });
+  }
+
   function selectBeleg(r: GlobalSearchReceipt) {
     setQuery("");
     setFocused(false);
-    const win = window.open("", "_blank");
-    getGlobalBelegFileUrlAction(r.kind, r.ref).then((res) => {
-      if (res.url && win) win.location.href = res.url;
-      else if (win) win.close();
-      if (res.error && !res.url) alert(res.error);
+    openBeleg(r);
+  }
+
+  function openBelegMenu(e: MouseEvent, r: GlobalSearchReceipt) {
+    e.preventDefault();
+    setMenu({ item: r, x: e.clientX, y: e.clientY });
+  }
+
+  function doDeleteBeleg(r: GlobalSearchReceipt) {
+    setMenu(null);
+    const label = r.supplier ?? `Beleg ${r.ref}`;
+    if (!window.confirm(`Beleg „${label}" (#${r.ref}) wirklich löschen?`)) return;
+    const fd = new FormData();
+    fd.set("id", r.ref);
+    startDelete(async () => {
+      await deleteBelegAction(fd);
+      setBelege((prev) => prev.filter((x) => !(x.kind === "manual" && x.ref === r.ref)));
+      router.refresh();
     });
   }
 
@@ -172,6 +232,8 @@ export default function GlobalSearch({ isAdmin = false }: { isAdmin?: boolean })
                       type="button"
                       onMouseDown={(e) => e.preventDefault()}
                       onClick={() => selectBeleg(r)}
+                      onContextMenu={(e) => openBelegMenu(e, r)}
+                      title="Klick: öffnen · Rechtsklick: weitere Aktionen"
                       className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left text-sm hover:bg-gray-100"
                     >
                       <span className="font-medium text-gray-900">
@@ -216,6 +278,123 @@ export default function GlobalSearch({ isAdmin = false }: { isAdmin?: boolean })
             </>
           )}
         </ul>
+      )}
+
+      {/* Rechtsklick-Kontextmenü eines Beleg-Treffers. */}
+      {menu && (
+        <>
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => setMenu(null)}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setMenu(null);
+            }}
+          />
+          <div
+            className="fixed z-50 w-52 overflow-hidden rounded-md border border-gray-200 bg-white py-1 shadow-xl"
+            style={{ left: menu.x, top: menu.y }}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                openBeleg(menu.item);
+                setMenu(null);
+              }}
+              className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+            >
+              👁 Ansehen
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                openBeleg(menu.item, true);
+                setMenu(null);
+              }}
+              className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+            >
+              ⬇ Download
+            </button>
+            {menu.item.kind === "manual" && (
+              <button
+                type="button"
+                onClick={() => {
+                  setEditBelegId(Number(menu.item.ref));
+                  setMenu(null);
+                }}
+                className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+              >
+                ✏️ Bearbeiten
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                setHistoryFor({
+                  kind: menu.item.kind,
+                  id: menu.item.kind === "manual" ? Number(menu.item.ref) : menu.item.ref,
+                  title: menu.item.kind === "manual" ? `Beleg #${menu.item.ref}` : `HERO-Beleg ${menu.item.invoiceNumber || menu.item.ref}`,
+                  subtitle: [
+                    menu.item.supplier,
+                    menu.item.invoiceNumber ? `Nr. ${menu.item.invoiceNumber}` : null,
+                    fmtEur(menu.item.gross),
+                  ]
+                    .filter(Boolean)
+                    .join(" · "),
+                });
+                setMenu(null);
+              }}
+              className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+            >
+              🕘 Historie
+            </button>
+            {menu.item.kind === "manual" && (
+              <button
+                type="button"
+                disabled={deletePending}
+                onClick={() => doDeleteBeleg(menu.item)}
+                className="block w-full px-3 py-2 text-left text-sm font-medium text-brand-red hover:bg-gray-50 disabled:opacity-50"
+              >
+                🗑 Löschen
+              </button>
+            )}
+          </div>
+        </>
+      )}
+
+      {historyFor && (
+        <ReceiptHistoryModal
+          kind={historyFor.kind}
+          receiptId={historyFor.id}
+          title={historyFor.title}
+          subtitle={historyFor.subtitle}
+          onClose={() => setHistoryFor(null)}
+        />
+      )}
+
+      {editBelegId != null && (
+        <>
+          {belegEditLoading && !belegEdit?.receipt && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+              <span className="rounded-md bg-white px-4 py-2 text-sm text-gray-700 shadow-xl">Lädt …</span>
+            </div>
+          )}
+          {belegEdit?.receipt && (
+            <BelegDetailModal
+              belegId={editBelegId}
+              receipt={belegEdit.receipt}
+              accounts={belegEdit.accounts}
+              projects={belegEdit.projects}
+              suppliers={belegEdit.suppliers}
+              hasFile={belegEdit.receipt.fileName != null}
+              onClose={() => {
+                setEditBelegId(null);
+                setBelegEdit(null);
+                router.refresh();
+              }}
+            />
+          )}
+        </>
       )}
     </div>
   );

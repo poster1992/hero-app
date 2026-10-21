@@ -28,11 +28,14 @@ export async function GET(request: NextRequest) {
   }
 
   const contentType = upstream.headers.get("content-type") ?? "application/octet-stream";
+  // ?download=1 erzwingt den Speichern-Dialog des Browsers statt der Inline-Anzeige.
+  const download = request.nextUrl.searchParams.get("download") === "1";
+  const filename = src.split("/").pop() ?? "dokument";
   return new Response(upstream.body, {
     status: 200,
     headers: {
       "Content-Type": contentType,
-      "Content-Disposition": "inline",
+      "Content-Disposition": download ? `attachment; filename="${encodeURIComponent(filename)}"` : "inline",
       "Cache-Control": "private, max-age=300",
     },
   });
