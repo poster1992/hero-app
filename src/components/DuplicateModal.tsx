@@ -3,10 +3,8 @@
 import { useEffect, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import {
-  listDuplicateBelegeAction,
-  deleteBelegAction,
-} from "@/app/dashboard/belege/manual-actions";
+import { listDuplicateBelegeAction } from "@/app/dashboard/belege/manual-actions";
+import { confirmAndDeleteBeleg } from "@/lib/beleg-delete-client";
 import type { DuplicateBeleg } from "@/lib/manual-receipts";
 
 export interface HeroDuplicateMatch {
@@ -65,11 +63,9 @@ export default function DuplicateModal({
   }, [supplier, gross, date, onClose]);
 
   const remove = (id: number, label: string) => {
-    if (!window.confirm(`Beleg „${label}" (#${id}) wirklich endgültig löschen?`)) return;
-    const fd = new FormData();
-    fd.set("id", String(id));
     start(async () => {
-      await deleteBelegAction(fd);
+      const deleted = await confirmAndDeleteBeleg(id, label);
+      if (!deleted) return;
       const list = await listDuplicateBelegeAction(supplier, gross, date).catch(() => null);
       setManual(list);
       router.refresh();

@@ -287,7 +287,15 @@ function TaskCard({
     if (!window.confirm("Diesen Beleg (inkl. Dokument) und die Aufgabe endgültig löschen?")) return;
     setDeletingBeleg(true);
     try {
-      await deleteBelegAndTaskAction(task.id);
+      let res = await deleteBelegAndTaskAction(task.id);
+      if (!res.ok && res.requiresPaidConfirm) {
+        if (!window.confirm(`${res.error}`)) return;
+        res = await deleteBelegAndTaskAction(task.id, true);
+      }
+      if (!res.ok) {
+        if (res.error) alert(res.error);
+        return;
+      }
       closeBeleg();
       router.refresh();
     } finally {

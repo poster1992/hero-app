@@ -398,17 +398,44 @@ export async function saveBelegColumnsAction(hidden: string[]): Promise<void> {
   await setHiddenBelegColumns(user.id, Array.isArray(hidden) ? hidden : []);
 }
 
-export async function deleteBelegAction(formData: FormData): Promise<void> {
+export interface DeleteBelegResult {
+  ok: boolean;
+  error?: string;
+  /** true = Beleg ist bereits bezahlt; erneut mit confirmPaid="1" aufrufen, um trotzdem zu löschen. */
+  requiresPaidConfirm?: boolean;
+}
+
+const eurFmt = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
+
+/**
+ * Löscht einen manuellen Beleg. Sperre gegen versehentliches Löschen bereits
+ * bezahlter Belege: ist der Beleg als bezahlt markiert, bricht der erste
+ * Aufruf ab und meldet `requiresPaidConfirm` – erst ein zweiter Aufruf mit
+ * `confirmPaid="1"` löscht tatsächlich.
+ */
+export async function deleteBelegAction(formData: FormData): Promise<DeleteBelegResult> {
   const session = await getSession();
-  if (!session) return;
+  if (!session) return { ok: false, error: "Nicht angemeldet." };
   const id = Number(formData.get("id"));
-  if (!Number.isFinite(id) || id <= 0) return;
+  if (!Number.isFinite(id) || id <= 0) return { ok: false, error: "Ungültiger Beleg." };
+  const confirmPaid = formData.get("confirmPaid") === "1";
+
+  const receipt = await getManualReceipt(id).catch(() => null);
+  if (receipt?.isPaid && !confirmPaid) {
+    return {
+      ok: false,
+      requiresPaidConfirm: true,
+      error: `Dieser Beleg ist bereits als bezahlt markiert (${eurFmt.format(receipt.gross)}). Wirklich endgültig löschen?`,
+    };
+  }
+
   await deleteManualReceipt(id);
   // Zugehörige Aufgabe(n) mitlöschen, damit keine Aufgabe auf einen nicht mehr
   // existierenden Beleg verweist (z. B. beim Löschen eines Duplikats).
   await deleteTasksForBeleg(id).catch(() => {});
   revalidatePath(PATH);
   revalidatePath("/dashboard/aufgaben");
+  return { ok: true };
 }
 
 /** Alle manuellen Belege mit demselben Dubletten-Schlüssel (für das Dubletten-Popup). */

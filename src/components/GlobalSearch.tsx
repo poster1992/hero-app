@@ -11,7 +11,8 @@ import {
   type GlobalSearchReceipt,
   type GlobalSearchDocument,
 } from "@/app/dashboard/search-actions";
-import { deleteBelegAction, loadBelegEditDataAction, type BelegEditData } from "@/app/dashboard/belege/manual-actions";
+import { loadBelegEditDataAction, type BelegEditData } from "@/app/dashboard/belege/manual-actions";
+import { confirmAndDeleteBeleg } from "@/lib/beleg-delete-client";
 import BelegDetailModal from "@/components/BelegDetailModal";
 import ReceiptHistoryModal from "@/components/ReceiptHistoryModal";
 
@@ -158,11 +159,9 @@ export default function GlobalSearch({ isAdmin = false }: { isAdmin?: boolean })
   function doDeleteBeleg(r: GlobalSearchReceipt) {
     setMenu(null);
     const label = r.supplier ?? `Beleg ${r.ref}`;
-    if (!window.confirm(`Beleg „${label}" (#${r.ref}) wirklich löschen?`)) return;
-    const fd = new FormData();
-    fd.set("id", r.ref);
     startDelete(async () => {
-      await deleteBelegAction(fd);
+      const deleted = await confirmAndDeleteBeleg(Number(r.ref), label);
+      if (!deleted) return;
       setBelege((prev) => prev.filter((x) => !(x.kind === "manual" && x.ref === r.ref)));
       router.refresh();
     });

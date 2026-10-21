@@ -5,9 +5,9 @@ import { useRouter } from "next/navigation";
 import {
   setBelegPaidAction,
   addBelegPartialPaymentAction,
-  deleteBelegAction,
   saveBelegColumnsAction,
 } from "@/app/dashboard/belege/manual-actions";
+import { confirmAndDeleteBeleg } from "@/lib/beleg-delete-client";
 import { receiptDupKey } from "@/lib/receipt-duplicates";
 import DuplicateModal from "@/components/DuplicateModal";
 import { buildMultilineSepaAction, type SepaItem } from "@/app/dashboard/belege/sepa-actions";
@@ -986,12 +986,9 @@ export default function ManualBelegeTable({
   const doDelete = (row: BelegRow) => {
     setMenu(null);
     const label = row.supplier ?? row.description ?? `Beleg ${row.id}`;
-    if (!window.confirm(`Beleg „${label}" (#${row.id}) wirklich löschen?`)) return;
-    const fd = new FormData();
-    fd.set("id", String(row.id));
     startDelete(async () => {
-      await deleteBelegAction(fd);
-      router.refresh();
+      const deleted = await confirmAndDeleteBeleg(row.id, label);
+      if (deleted) router.refresh();
     });
   };
 

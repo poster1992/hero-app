@@ -2,11 +2,8 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
-import {
-  listUploadsAction,
-  loadEditableReceiptAction,
-  deleteBelegAction,
-} from "@/app/dashboard/belege/manual-actions";
+import { listUploadsAction, loadEditableReceiptAction } from "@/app/dashboard/belege/manual-actions";
+import { confirmAndDeleteBeleg } from "@/lib/beleg-delete-client";
 import BelegDetailModal from "@/components/BelegDetailModal";
 import type { EditableReceipt, ProjectOption, SupplierOption } from "@/components/ManualBelegeForm";
 import type { ManualReceiptUpload } from "@/lib/manual-receipts";
@@ -71,12 +68,9 @@ export default function UploadHistoryButton({
   const doDelete = (row: ManualReceiptUpload) => {
     setMenu(null);
     const label = row.supplier ?? row.invoiceNumber ?? `Beleg ${row.id}`;
-    if (!window.confirm(`Beleg „${label}" (#${row.id}) wirklich löschen?`)) return;
-    const fd = new FormData();
-    fd.set("id", String(row.id));
     startAction(async () => {
-      await deleteBelegAction(fd);
-      reload();
+      const deleted = await confirmAndDeleteBeleg(row.id, label);
+      if (deleted) reload();
     });
   };
 

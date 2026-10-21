@@ -10,7 +10,7 @@ import { buildReviewEmailHtml } from "@/lib/review-mail";
 import { wasReviewEmailSent, markReviewEmailSent } from "@/lib/review-emails";
 import { addLogbookEntry } from "@/app/dashboard/logbook-actions";
 import { startReviewChainForManualTask } from "@/lib/workflow-engine";
-import { deleteManualReceipt } from "@/lib/manual-receipts";
+import { deleteManualReceipt, getManualReceipt } from "@/lib/manual-receipts";
 import {
   createTaskNotification,
   acknowledgeNotification,
@@ -444,12 +444,22 @@ export async function taskButtonAction(formData: FormData): Promise<{ error?: st
   revalidatePath(PATH);
 }
 
+const eurFmtTasks = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
+
 /**
  * Löscht den zur Aufgabe gehörenden manuellen Beleg (inkl. Datei) UND die Aufgabe
  * selbst – z. B. bei einem erkannten Duplikat. Die Beleg-ID wird sicher aus dem
  * Aufgaben-Marker [BELEGPRUEF:id] gelesen.
+ *
+ * Sperre gegen versehentliches Löschen bereits bezahlter Belege: ist der Beleg
+ * als bezahlt markiert, bricht der erste Aufruf ab und meldet
+ * `requiresPaidConfirm` – erst ein zweiter Aufruf mit `confirmPaid=true`
+ * löscht tatsächlich.
  */
-export async function deleteBelegAndTaskAction(taskId: number): Promise<{ ok: boolean; error?: string }> {
+export async function deleteBelegAndTaskAction(
+  taskId: number,
+  confirmPaid = false
+): Promise<{ ok: boolean; error?: string; requiresPaidConfirm?: boolean }> {
   const me = await currentUser();
   if (!me) return { ok: false, error: "Nicht angemeldet." };
   if (!Number.isFinite(taskId) || taskId <= 0) return { ok: false, error: "Ungültige Aufgabe." };
@@ -461,18 +471,26 @@ export async function deleteBelegAndTaskAction(taskId: number): Promise<{ ok: bo
   if (!may) return { ok: false, error: "Kein Zugriff." };
 
   const m = task.description?.match(/\[BELEGPRUEF:(\d+)\]/);
-  if (m) {
-    const belegId = Number(m[1]);
-    if (Number.isFinite(belegId) && belegId > 0) {
-      try {
-        await deleteManualReceipt(belegId);
-      } catch {
-        /* Beleg evtl. schon weg – Aufgabe trotzdem löschen. */
+  const belegId = m ? Number(m[1]) : null;
+  if (belegId != null && Number.isFinite(belegId) && belegId > 0) {
+    if (!confirmPaid) {
+      const receipt = await getManualReceipt(belegId).catch(() => null);
+      if (receipt?.isPaid) {
+        return {
+          ok: false,
+          requiresPaidConfirm: true,
+          error: `Dieser Beleg ist bereits als bezahlt markiert (${eurFmtTasks.format(receipt.gross)}). Wirklich endgültig löschen?`,
+        };
       }
-      // Alle zum Beleg gehörenden Aufgaben mitlöschen (Buchung + Rechnungsprüfung),
-      // nicht nur die angeklickte – sonst bleibt eine Geschwister-Aufgabe zurück.
-      await deleteTasksForBeleg(belegId).catch(() => {});
     }
+    try {
+      await deleteManualReceipt(belegId);
+    } catch {
+      /* Beleg evtl. schon weg – Aufgabe trotzdem löschen. */
+    }
+    // Alle zum Beleg gehörenden Aufgaben mitlöschen (Buchung + Rechnungsprüfung),
+    // nicht nur die angeklickte – sonst bleibt eine Geschwister-Aufgabe zurück.
+    await deleteTasksForBeleg(belegId).catch(() => {});
   }
   try {
     await deleteTask(taskId);
