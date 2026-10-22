@@ -2159,9 +2159,13 @@ export async function getConfirmationInvoicedReport(year: number): Promise<Confi
     else partiallyInvoiced++;
   }
 
+  // Projekte mit noch offenem Betrag ODER (sofern nicht ohnehin als erledigt
+  // geltend) noch offenen Soll-Stunden – sonst wären die Stunden-Summen oben
+  // (über ALLE Projekte) nicht nachvollziehbar, wenn ein finanziell bereits
+  // voll verrechnetes Projekt mit offenen Stunden hier fehlen würde.
   const openProjects = [...rows.values()]
-    .filter((r) => r.openNet > 0.01)
-    .sort((a, b) => b.openNet - a.openNet);
+    .filter((r) => r.openNet > 0.01 || (!r.finalInvoiced && r.remainingHours > 0.01))
+    .sort((a, b) => b.openNet - a.openNet || b.remainingHours - a.remainingHours);
 
   return {
     year,

@@ -150,7 +150,7 @@ export default function ConfirmationEvalButton({ defaultYear }: { defaultYear: n
                 {report.openProjects.length > 0 && (
                   <div className="mt-5">
                     <h3 className="mb-2 text-sm font-semibold text-gray-900">
-                      Noch nicht (voll) verrechnete Aufträge
+                      Projekte mit offenem Betrag und/oder offenen Soll-Stunden
                     </h3>
                     <div className="max-h-72 overflow-auto rounded-md border border-gray-200">
                       <table className="w-full border-collapse text-sm">
@@ -200,7 +200,9 @@ export default function ConfirmationEvalButton({ defaultYear }: { defaultYear: n
 
                 <p className="mt-3 text-xs text-gray-400">
                   „Verrechnet“ = Rechnungen − Gutschriften − Stornos der Projekte mit AB in {report.year}{" "}
-                  (projektbezogen, über alle Zeiten).
+                  (projektbezogen, über alle Zeiten). Die Tabelle zeigt ein Projekt, sobald entweder noch ein Betrag
+                  offen ist oder noch Soll-Stunden übrig sind (auch wenn der Betrag bereits voll verrechnet ist) –
+                  daher können hier mehr Projekte stehen als „teilweise“ + „noch nicht“ zusammen.
                 </p>
               </div>
             )}
