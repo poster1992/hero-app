@@ -1786,6 +1786,8 @@ const PROJECTS_QUERY = `
 
 /** Status code of the "Abgeschlossen" project phase. */
 const PROJECT_DONE_STATUS_CODE = 2000;
+/** Status code of the "Schlussrechnung" project phase. */
+const SCHLUSSRECHNUNG_STATUS_CODE = 1201;
 
 /**
  * Ids of projects relevant for the profit evaluation in `year`: projects whose
@@ -1938,11 +1940,14 @@ export interface ConfirmationProjectRow {
   /** Verbleibende Soll-Stunden = max(Soll − Ist, 0). Mehr gearbeitet ⇒ nur Soll abgezogen. */
   remainingHours: number;
   /**
-   * true, sobald für dieses Projekt eine Abschluss-/Schlussrechnung erstellt
-   * wurde (invoice_style "full" oder "cumulative"). Ab dann gelten die
-   * verbleibenden Soll-Stunden als erledigt und werden nicht mehr ausgewiesen
-   * (unabhängig vom rechnerischen Soll−Ist, z. B. bei Nachträgen ohne
-   * Kalkulationsanpassung).
+   * true, sobald sich das PROJEKT (nicht eine einzelne Rechnung) im Status
+   * "Schlussrechnung" (status_code 1201) oder im Status-Schritt
+   * "Nachkalkulation" befindet. Ab dann gelten die verbleibenden Soll-Stunden
+   * als erledigt und werden nicht mehr ausgewiesen (unabhängig vom
+   * rechnerischen Soll−Ist, z. B. bei Nachträgen ohne Kalkulationsanpassung).
+   * Bewusst am Projekt-Status statt an einer einzelnen Rechnung festgemacht:
+   * ein Projekt kann mehrere Auftragsbestätigungen haben, von denen nur eine
+   * abschließend verrechnet wurde.
    */
   finalInvoiced: boolean;
 }
@@ -1969,6 +1974,46 @@ export interface ConfirmationInvoicedReport {
   openProjects: ConfirmationProjectRow[];
 }
 
+interface ProjectStatusInfo {
+  /** Phasen-Code des aktuellen Projekt-Status (z. B. 1201 = Schlussrechnung, 2000 = Abgeschlossen). */
+  statusCode: number | null;
+  /** Feingranularer Status-Schritt innerhalb der Phase (z. B. "Nachkalkulation"). */
+  stepName: string | null;
+}
+
+/** Aktuelle Status-Phase + -Schritt je Projekt (für "ist das Projekt stundenmäßig erledigt?"). */
+async function getProjectStatusMap(): Promise<Map<number, ProjectStatusInfo>> {
+  const pageSize = HERO_PAGE_SIZE;
+  const maxPages = HERO_MAX_PAGES;
+  const map = new Map<number, ProjectStatusInfo>();
+
+  for (let guard = 0, offset = 0; guard < maxPages; guard++) {
+    const data = await heroGraphQL<{
+      project_matches: {
+        id: number;
+        current_project_match_status: { status_code: number | null; step: { name: string | null } | null } | null;
+      }[];
+    }>(
+      `query ProjectStatusMap($first: Int, $offset: Int) {
+        project_matches(type: "project", orderBy: "id", first: $first, offset: $offset) {
+          id
+          current_project_match_status { status_code step { name } }
+        }
+      }`,
+      { first: pageSize, offset }
+    );
+    const matches = data.project_matches ?? [];
+    for (const m of matches) {
+      const s = m.current_project_match_status;
+      map.set(m.id, { statusCode: s?.status_code ?? null, stepName: s?.step?.name ?? null });
+    }
+    if (matches.length === 0) break;
+    offset += matches.length;
+  }
+
+  return map;
+}
+
 /**
  * Verrechnungsstand der Auftragsbestätigungen EINES Jahres – projektbezogen verknüpft:
  * Für alle Projekte mit einer AB (Datum im Jahr) wird gegengerechnet, wie viel für
@@ -1980,11 +2025,13 @@ export async function getConfirmationInvoicedReport(year: number): Promise<Confi
   const pageSize = HERO_PAGE_SIZE;
   const maxPages = HERO_MAX_PAGES;
 
-  // Soll-Stunden (kalkuliert) und Ist-Stunden (abgearbeitet) je Projekt – bestehende
-  // Berechnungen. Parallel laden; bei Fehler bleiben die Stunden 0.
-  const [calcByProject, workedByProject] = await Promise.all([
+  // Soll-Stunden (kalkuliert), Ist-Stunden (abgearbeitet) und Projekt-Status je
+  // Projekt – bestehende Berechnungen. Parallel laden; bei Fehler bleiben die
+  // Stunden 0 bzw. gilt kein Projekt als fertig.
+  const [calcByProject, workedByProject, statusByProject] = await Promise.all([
     getCalculatedByProject().catch(() => new Map<number, ProjectCalculation>()),
     getHoursByProject().catch(() => new Map<number, number>()),
+    getProjectStatusMap().catch(() => new Map<number, ProjectStatusInfo>()),
   ]);
 
   interface RawDoc {
@@ -1992,7 +2039,6 @@ export async function getConfirmationInvoicedReport(year: number): Promise<Confi
     value: number | null;
     status_code: number | null;
     date: string | null;
-    metadata: { invoice_style: string | null } | null;
     project_match: {
       id: number;
       relative_id: number | null;
@@ -2009,7 +2055,6 @@ export async function getConfirmationInvoicedReport(year: number): Promise<Confi
           value
           status_code
           date
-          metadata { invoice_style }
           project_match {
             id
             relative_id
@@ -2069,12 +2114,8 @@ export async function getConfirmationInvoicedReport(year: number): Promise<Confi
     if (!p) continue;
     const row = rows.get(p.id);
     if (!row) continue;
-    if (d.document_type_id === RECHNUNG_DOCUMENT_TYPE_ID) {
-      row.invoicedNet += d.value ?? 0;
-      // Abschluss-/Schlussrechnung erstellt → verbleibende Soll-Stunden gelten als erledigt.
-      const style = d.metadata?.invoice_style;
-      if (style === "full" || style === "cumulative") row.finalInvoiced = true;
-    } else if (d.document_type_id === GUTSCHRIFT_DOCUMENT_TYPE_ID || d.document_type_id === STORNO_DOCUMENT_TYPE_ID)
+    if (d.document_type_id === RECHNUNG_DOCUMENT_TYPE_ID) row.invoicedNet += d.value ?? 0;
+    else if (d.document_type_id === GUTSCHRIFT_DOCUMENT_TYPE_ID || d.document_type_id === STORNO_DOCUMENT_TYPE_ID)
       row.invoicedNet -= Math.abs(d.value ?? 0);
   }
 
@@ -2092,11 +2133,18 @@ export async function getConfirmationInvoicedReport(year: number): Promise<Confi
     row.invoicedNet = round2(row.invoicedNet);
     row.openNet = round2(row.confirmationNet - row.invoicedNet);
     // Soll-/Ist-Stunden je Projekt; verbleibend = max(Soll − Ist, 0) – aber nur,
-    // solange keine Abschluss-/Schlussrechnung existiert (danach gilt das Projekt
-    // als erledigt und zählt nicht mehr zu den offenen Soll-Stunden).
+    // solange sich das Projekt noch nicht im Status "Schlussrechnung" oder
+    // "Nachkalkulation" befindet (danach gilt es als erledigt und zählt nicht
+    // mehr zu den offenen Soll-Stunden). Bewusst am PROJEKT-Status statt an
+    // einer einzelnen Rechnung festgemacht: ein Projekt kann mehrere
+    // Auftragsbestätigungen haben, von denen nur eine abschließend verrechnet
+    // wurde – der Projekt-Status ist dafür die verlässliche, eindeutige Quelle.
     row.plannedHours = round2(calcByProject.get(row.projectId)?.hours ?? 0);
     row.workedHours = round2(workedByProject.get(row.projectId) ?? 0);
     row.remainingHours = round2(Math.max(row.plannedHours - row.workedHours, 0));
+    const status = statusByProject.get(row.projectId);
+    const stepNameLower = (status?.stepName ?? "").toLowerCase();
+    row.finalInvoiced = status?.statusCode === SCHLUSSRECHNUNG_STATUS_CODE || stepNameLower.includes("nachkalkulation");
     confirmationsNet += row.confirmationNet;
     invoicedNet += row.invoicedNet;
     plannedHoursTotal += row.plannedHours;
