@@ -10,15 +10,19 @@ const eur = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" 
 const hrs = (n: number) =>
   `${n.toLocaleString("de-DE", { maximumFractionDigits: 1 })} h`;
 
+type HourFilter = "all" | "running" | "done";
+
 export default function ConfirmationEvalButton({ defaultYear }: { defaultYear: number }) {
   const [open, setOpen] = useState(false);
   const [year, setYear] = useState<string>(String(defaultYear));
   const [state, setState] = useState<ConfirmationReportState | null>(null);
   const [pending, start] = useTransition();
+  const [hourFilter, setHourFilter] = useState<HourFilter>("all");
 
   const run = () => {
     const y = parseInt(year, 10);
     setState(null);
+    setHourFilter("all");
     start(async () => {
       const res = await evaluateConfirmationsAction(y);
       setState(res);
@@ -147,11 +151,45 @@ export default function ConfirmationEvalButton({ defaultYear }: { defaultYear: n
                   „Nachkalkulation&quot; zählen hier nicht mehr mit – für sie gelten die Soll-Stunden als erledigt.
                 </p>
 
-                {report.openProjects.length > 0 && (
+                {report.openProjects.length > 0 && (() => {
+                  const runningCount = report.openProjects.filter((p) => !p.finalInvoiced).length;
+                  const doneCount = report.openProjects.filter((p) => p.finalInvoiced).length;
+                  const filteredProjects = report.openProjects.filter((p) =>
+                    hourFilter === "all" ? true : hourFilter === "running" ? !p.finalInvoiced : p.finalInvoiced
+                  );
+                  const filterOptions: { key: HourFilter; label: string }[] = [
+                    { key: "all", label: `Alle (${report.openProjects.length})` },
+                    { key: "running", label: `Laufend – zählt zu Reststunden (${runningCount})` },
+                    { key: "done", label: `Erledigt – zählt nicht mehr (${doneCount})` },
+                  ];
+                  return (
                   <div className="mt-5">
-                    <h3 className="mb-2 text-sm font-semibold text-gray-900">
-                      Projekte mit offenem Betrag und/oder offenen Soll-Stunden
-                    </h3>
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                      <h3 className="text-sm font-semibold text-gray-900">
+                        Projekte mit offenem Betrag und/oder offenen Soll-Stunden
+                      </h3>
+                      <div className="flex flex-wrap gap-1.5">
+                        {filterOptions.map((f) => (
+                          <button
+                            key={f.key}
+                            type="button"
+                            onClick={() => setHourFilter(f.key)}
+                            className={`rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
+                              hourFilter === f.key
+                                ? "border-brand-red bg-brand-red/10 text-brand-red"
+                                : "border-gray-300 text-gray-600 hover:bg-gray-50"
+                            }`}
+                          >
+                            {f.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {filteredProjects.length === 0 ? (
+                      <p className="rounded-md border border-gray-200 px-3 py-6 text-center text-sm text-gray-400">
+                        Keine Projekte für diesen Filter.
+                      </p>
+                    ) : (
                     <div className="max-h-72 overflow-auto rounded-md border border-gray-200">
                       <table className="w-full border-collapse text-sm">
                         <thead className="sticky top-0 bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
@@ -167,7 +205,7 @@ export default function ConfirmationEvalButton({ defaultYear }: { defaultYear: n
                           </tr>
                         </thead>
                         <tbody>
-                          {report.openProjects.map((p) => (
+                          {filteredProjects.map((p) => (
                             <tr key={p.projectId} className="border-t border-gray-100">
                               <td className="px-3 py-1.5 tabular-nums text-gray-500">
                                 {p.relativeId != null ? `#${p.relativeId}` : "—"}
@@ -195,8 +233,10 @@ export default function ConfirmationEvalButton({ defaultYear }: { defaultYear: n
                         </tbody>
                       </table>
                     </div>
+                    )}
                   </div>
-                )}
+                  );
+                })()}
 
                 <p className="mt-3 text-xs text-gray-400">
                   „Verrechnet“ = Rechnungen − Gutschriften − Stornos der Projekte mit AB in {report.year}{" "}
