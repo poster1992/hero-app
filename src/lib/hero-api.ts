@@ -1937,6 +1937,14 @@ export interface ConfirmationProjectRow {
   workedHours: number;
   /** Verbleibende Soll-Stunden = max(Soll − Ist, 0). Mehr gearbeitet ⇒ nur Soll abgezogen. */
   remainingHours: number;
+  /**
+   * true, sobald für dieses Projekt eine Abschluss-/Schlussrechnung erstellt
+   * wurde (invoice_style "full" oder "cumulative"). Ab dann gelten die
+   * verbleibenden Soll-Stunden als erledigt und werden nicht mehr ausgewiesen
+   * (unabhängig vom rechnerischen Soll−Ist, z. B. bei Nachträgen ohne
+   * Kalkulationsanpassung).
+   */
+  finalInvoiced: boolean;
 }
 
 export interface ConfirmationInvoicedReport {
@@ -1984,6 +1992,7 @@ export async function getConfirmationInvoicedReport(year: number): Promise<Confi
     value: number | null;
     status_code: number | null;
     date: string | null;
+    metadata: { invoice_style: string | null } | null;
     project_match: {
       id: number;
       relative_id: number | null;
@@ -2000,6 +2009,7 @@ export async function getConfirmationInvoicedReport(year: number): Promise<Confi
           value
           status_code
           date
+          metadata { invoice_style }
           project_match {
             id
             relative_id
@@ -2046,6 +2056,7 @@ export async function getConfirmationInvoicedReport(year: number): Promise<Confi
         plannedHours: 0,
         workedHours: 0,
         remainingHours: 0,
+        finalInvoiced: false,
       };
     row.confirmationNet += d.value ?? 0;
     rows.set(p.id, row);
@@ -2058,8 +2069,12 @@ export async function getConfirmationInvoicedReport(year: number): Promise<Confi
     if (!p) continue;
     const row = rows.get(p.id);
     if (!row) continue;
-    if (d.document_type_id === RECHNUNG_DOCUMENT_TYPE_ID) row.invoicedNet += d.value ?? 0;
-    else if (d.document_type_id === GUTSCHRIFT_DOCUMENT_TYPE_ID || d.document_type_id === STORNO_DOCUMENT_TYPE_ID)
+    if (d.document_type_id === RECHNUNG_DOCUMENT_TYPE_ID) {
+      row.invoicedNet += d.value ?? 0;
+      // Abschluss-/Schlussrechnung erstellt → verbleibende Soll-Stunden gelten als erledigt.
+      const style = d.metadata?.invoice_style;
+      if (style === "full" || style === "cumulative") row.finalInvoiced = true;
+    } else if (d.document_type_id === GUTSCHRIFT_DOCUMENT_TYPE_ID || d.document_type_id === STORNO_DOCUMENT_TYPE_ID)
       row.invoicedNet -= Math.abs(d.value ?? 0);
   }
 
@@ -2076,7 +2091,9 @@ export async function getConfirmationInvoicedReport(year: number): Promise<Confi
     row.confirmationNet = round2(row.confirmationNet);
     row.invoicedNet = round2(row.invoicedNet);
     row.openNet = round2(row.confirmationNet - row.invoicedNet);
-    // Soll-/Ist-Stunden je Projekt; verbleibend = max(Soll − Ist, 0).
+    // Soll-/Ist-Stunden je Projekt; verbleibend = max(Soll − Ist, 0) – aber nur,
+    // solange keine Abschluss-/Schlussrechnung existiert (danach gilt das Projekt
+    // als erledigt und zählt nicht mehr zu den offenen Soll-Stunden).
     row.plannedHours = round2(calcByProject.get(row.projectId)?.hours ?? 0);
     row.workedHours = round2(workedByProject.get(row.projectId) ?? 0);
     row.remainingHours = round2(Math.max(row.plannedHours - row.workedHours, 0));
@@ -2084,7 +2101,7 @@ export async function getConfirmationInvoicedReport(year: number): Promise<Confi
     invoicedNet += row.invoicedNet;
     plannedHoursTotal += row.plannedHours;
     workedHoursTotal += row.workedHours;
-    remainingHoursTotal += row.remainingHours;
+    if (!row.finalInvoiced) remainingHoursTotal += row.remainingHours;
     if (row.invoicedNet <= 0.01) notInvoiced++;
     else if (row.invoicedNet + 0.01 >= row.confirmationNet) fullyInvoiced++;
     else partiallyInvoiced++;
