@@ -3,7 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import { listDuplicateBelegeAction } from "@/app/dashboard/belege/manual-actions";
+import { listDuplicateBelegeAction, confirmDuplicateAction } from "@/app/dashboard/belege/manual-actions";
 import { confirmAndDeleteBeleg } from "@/lib/beleg-delete-client";
 import type { DuplicateBeleg } from "@/lib/manual-receipts";
 
@@ -44,6 +44,8 @@ export default function DuplicateModal({
   const [mounted, setMounted] = useState(false);
   const [manual, setManual] = useState<DuplicateBeleg[] | null>(null);
   const [busy, start] = useTransition();
+  const [confirming, startConfirm] = useTransition();
+  const [confirmError, setConfirmError] = useState<string | null>(null);
 
   useEffect(() => setMounted(true), []);
 
@@ -69,6 +71,25 @@ export default function DuplicateModal({
       const list = await listDuplicateBelegeAction(supplier, gross, date).catch(() => null);
       setManual(list);
       router.refresh();
+    });
+  };
+
+  const confirmNotDuplicate = () => {
+    setConfirmError(null);
+    if (
+      !window.confirm(
+        "Bestätigen, dass dies KEINE Dublette ist (z. B. zwei unterschiedliche Rechnungen mit gleichem Artikel/Preis, aber unterschiedlicher Rechnungsnummer)? Der Warnhinweis erscheint dann für diese Kombination nicht mehr."
+      )
+    )
+      return;
+    startConfirm(async () => {
+      const res = await confirmDuplicateAction(supplier, gross, date);
+      if (!res.ok) {
+        setConfirmError(res.error ?? "Konnte nicht bestätigt werden.");
+        return;
+      }
+      router.refresh();
+      onClose();
     });
   };
 
@@ -182,13 +203,26 @@ export default function DuplicateModal({
 
               <p className="mt-3 text-xs text-gray-400">
                 Tipp: Ist ein Beleg doppelt erfasst, hier den überflüssigen manuellen Beleg löschen. HERO-Belege
-                können nur in HERO selbst gelöscht werden.
+                können nur in HERO selbst gelöscht werden. Handelt es sich dagegen um zwei echte, unterschiedliche
+                Rechnungen (z. B. gleicher Artikel/Preis, aber unterschiedliche Rechnungsnummer), unten bestätigen,
+                statt etwas zu löschen.
               </p>
             </>
           )}
         </div>
 
-        <div className="flex justify-end border-t border-gray-200 px-5 py-3">
+        <div className="flex items-center justify-between gap-2 border-t border-gray-200 px-5 py-3">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={confirming}
+              onClick={confirmNotDuplicate}
+              className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 transition-colors hover:bg-emerald-100 disabled:opacity-50"
+            >
+              {confirming ? "Bestätigt …" : "✓ Keine Dublette (bestätigen)"}
+            </button>
+            {confirmError && <span className="text-xs text-rose-600">{confirmError}</span>}
+          </div>
           <button
             type="button"
             onClick={onClose}

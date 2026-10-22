@@ -1,6 +1,6 @@
 import MonthlyReceipts, { type ReceiptsView } from "@/components/MonthlyReceipts";
 import ManualBelege from "@/components/ManualBelege";
-import { listManualReceipts } from "@/lib/manual-receipts";
+import { listManualReceipts, getConfirmedDuplicateKeys } from "@/lib/manual-receipts";
 import { getReceiptsByMonth, getCustomerName } from "@/lib/invoices";
 import { computeReceiptDuplicates } from "@/lib/receipt-duplicates";
 import { listReceiptReviews } from "@/lib/receipt-reviews";
@@ -73,15 +73,26 @@ export default async function BelegePage({
     // Ohne HERO-Belege bleibt nur die manuelle Dubletten-Prüfung.
   }
 
+  // Vom Nutzer bereits bestätigte "keine echte Dublette"-Fälle ausschließen.
+  let confirmedDuplicateKeys = new Set<string>();
+  try {
+    confirmedDuplicateKeys = await getConfirmedDuplicateKeys();
+  } catch {
+    // Optional – ohne die Liste erscheinen bestätigte Fälle einfach wieder als Dublette.
+  }
+
   // Dubletten (Lieferant + Bruttobetrag + Datum) über HERO- UND manuelle Belege.
-  const { keys: duplicateKeys, groups: duplicateGroups } = computeReceiptDuplicates([
-    ...(receiptsByMonth?.flat() ?? []).map((r) => ({
-      supplier: getCustomerName(r),
-      gross: r.value,
-      dateISO: r.receiptDate,
-    })),
-    ...manual.map((m) => ({ supplier: m.supplier, gross: m.gross, dateISO: m.date })),
-  ]);
+  const { keys: duplicateKeys, groups: duplicateGroups } = computeReceiptDuplicates(
+    [
+      ...(receiptsByMonth?.flat() ?? []).map((r) => ({
+        supplier: getCustomerName(r),
+        gross: r.value,
+        dateISO: r.receiptDate,
+      })),
+      ...manual.map((m) => ({ supplier: m.supplier, gross: m.gross, dateISO: m.date })),
+    ],
+    confirmedDuplicateKeys
+  );
 
   // Lokale Zahlstatus-Overrides (überschreiben den HERO-Status je Beleg).
   let paymentOverrides: Awaited<ReturnType<typeof getPaymentOverrideMap>> = new Map();

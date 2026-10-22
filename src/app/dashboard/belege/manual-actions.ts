@@ -12,10 +12,12 @@ import {
   getManualReceipt,
   listManualReceiptUploads,
   listManualDuplicates,
+  confirmReceiptDuplicate,
   type ManualReceiptUpload,
   type DuplicateBeleg,
   type PartialPaymentResult,
 } from "@/lib/manual-receipts";
+import { receiptDupKey } from "@/lib/receipt-duplicates";
 import {
   listReceiptHistory,
   type ReceiptHistoryEntry,
@@ -447,6 +449,32 @@ export async function listDuplicateBelegeAction(
   const session = await getSession();
   if (!session) return [];
   return listManualDuplicates(supplier, gross, date).catch(() => []);
+}
+
+export interface ConfirmDuplicateResult {
+  ok: boolean;
+  error?: string;
+}
+
+/**
+ * Bestätigt, dass ein Dubletten-Warnhinweis (Lieferant+Betrag+Datum) KEINE
+ * echte Dublette ist (z. B. zwei unterschiedliche Rechnungen mit gleichem
+ * Artikel/Preis, aber unterschiedlicher Rechnungsnummer) – blendet den
+ * Warnhinweis für diese Kombination dauerhaft aus.
+ */
+export async function confirmDuplicateAction(
+  supplier: string | null,
+  gross: number,
+  date: string | null
+): Promise<ConfirmDuplicateResult> {
+  const session = await getSession();
+  if (!session) return { ok: false, error: "Nicht angemeldet." };
+  const user = await getUserByUsername(session.username);
+  const key = receiptDupKey(supplier, gross, date);
+  if (!key) return { ok: false, error: "Ungültige Angaben." };
+  await confirmReceiptDuplicate(key, user?.id ?? null);
+  revalidatePath(PATH);
+  return { ok: true };
 }
 
 /** Markiert einen manuellen Beleg als bezahlt/offen. */

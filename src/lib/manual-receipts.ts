@@ -526,7 +526,56 @@ export async function getManualDuplicateKeys(): Promise<Set<string>> {
     const d = String(r.d).slice(0, 10);
     keys.add(`${s}|${g}|${d}`);
   }
+  // Vom Nutzer als "keine echte Dublette" bestätigte Schlüssel (z. B. zwei
+  // unterschiedliche Rechnungen mit gleichem Artikel/Preis, unterschiedlicher
+  // Rechnungsnummer) nicht erneut als Dublette melden – weder im Warnhinweis
+  // noch in der automatischen Workflow-Notiz.
+  const confirmed = await getConfirmedDuplicateKeys().catch(() => new Set<string>());
+  for (const k of confirmed) keys.delete(k);
   return keys;
+}
+
+let dupConfirmTableReady = false;
+async function ensureDuplicateConfirmTable(): Promise<void> {
+  if (dupConfirmTableReady) return;
+  await getPool()
+    .query(
+      `CREATE TABLE IF NOT EXISTS confirmed_receipt_duplicates (
+         dup_key VARCHAR(255) NOT NULL PRIMARY KEY,
+         confirmed_by INT NULL,
+         confirmed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+    )
+    .catch(() => {});
+  dupConfirmTableReady = true;
+}
+
+/** Alle vom Nutzer bestätigten "das ist keine echte Dublette"-Schlüssel. */
+export async function getConfirmedDuplicateKeys(): Promise<Set<string>> {
+  await ensureDuplicateConfirmTable();
+  const [rows] = await getPool().query<RowDataPacket[]>("SELECT dup_key FROM confirmed_receipt_duplicates");
+  return new Set(rows.map((r) => String((r as { dup_key: string }).dup_key)));
+}
+
+/**
+ * Bestätigt, dass ein Dubletten-Schlüssel (Lieferant+Betrag+Datum) KEINE echte
+ * Dublette ist (z. B. zwei unterschiedliche Rechnungen mit gleichem Artikel und
+ * Preis, aber unterschiedlicher Rechnungsnummer) – blendet den Warnhinweis für
+ * diese Kombination dauerhaft aus.
+ */
+export async function confirmReceiptDuplicate(key: string, userId: number | null): Promise<void> {
+  await ensureDuplicateConfirmTable();
+  await getPool().query(
+    `INSERT INTO confirmed_receipt_duplicates (dup_key, confirmed_by) VALUES (?, ?)
+     ON DUPLICATE KEY UPDATE confirmed_by = VALUES(confirmed_by), confirmed_at = CURRENT_TIMESTAMP`,
+    [key, userId]
+  );
+}
+
+/** Nimmt eine Dubletten-Bestätigung zurück (Warnhinweis erscheint wieder). */
+export async function unconfirmReceiptDuplicate(key: string): Promise<void> {
+  await ensureDuplicateConfirmTable();
+  await getPool().query("DELETE FROM confirmed_receipt_duplicates WHERE dup_key = ?", [key]);
 }
 
 /**

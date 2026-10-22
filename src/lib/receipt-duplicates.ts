@@ -33,16 +33,22 @@ export interface DuplicateGroup {
 
 /**
  * Baut aus einer Belegliste die Menge der Dubletten-Schlüssel (Anzahl ≥ 2) sowie
- * eine Gruppenübersicht (für einen Warnhinweis).
+ * eine Gruppenübersicht (für einen Warnhinweis). `confirmedKeys` enthält vom
+ * Nutzer als "keine echte Dublette" bestätigte Schlüssel (z. B. zwei
+ * unterschiedliche Rechnungen mit gleichem Artikel/Preis, unterschiedlicher
+ * Rechnungsnummer) – diese werden nicht als Dublette gemeldet.
  */
-export function computeReceiptDuplicates(items: DuplicateItem[]): {
+export function computeReceiptDuplicates(
+  items: DuplicateItem[],
+  confirmedKeys?: Set<string>
+): {
   keys: Set<string>;
   groups: DuplicateGroup[];
 } {
   const map = new Map<string, DuplicateGroup>();
   for (const it of items) {
     const key = receiptDupKey(it.supplier, it.gross, it.dateISO);
-    if (!key) continue;
+    if (!key || confirmedKeys?.has(key)) continue;
     const prev = map.get(key);
     if (prev) prev.count++;
     else
