@@ -151,14 +151,14 @@ export default function ConfirmationEvalButton({ defaultYear }: { defaultYear: n
                   „Nachkalkulation&quot; zählen hier nicht mehr mit – für sie gelten die Soll-Stunden als erledigt.
                 </p>
 
-                {report.openProjects.length > 0 && (() => {
-                  const runningCount = report.openProjects.filter((p) => !p.finalInvoiced).length;
-                  const doneCount = report.openProjects.filter((p) => p.finalInvoiced).length;
-                  const filteredProjects = report.openProjects.filter((p) =>
+                {report.allProjects.length > 0 && (() => {
+                  const runningCount = report.allProjects.filter((p) => !p.finalInvoiced).length;
+                  const doneCount = report.allProjects.filter((p) => p.finalInvoiced).length;
+                  const filteredProjects = report.allProjects.filter((p) =>
                     hourFilter === "all" ? true : hourFilter === "running" ? !p.finalInvoiced : p.finalInvoiced
                   );
                   const filterOptions: { key: HourFilter; label: string }[] = [
-                    { key: "all", label: `Alle (${report.openProjects.length})` },
+                    { key: "all", label: `Alle (${report.allProjects.length})` },
                     { key: "running", label: `Laufend – zählt zu Reststunden (${runningCount})` },
                     { key: "done", label: `Erledigt – zählt nicht mehr (${doneCount})` },
                   ];
@@ -166,7 +166,7 @@ export default function ConfirmationEvalButton({ defaultYear }: { defaultYear: n
                   <div className="mt-5">
                     <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                       <h3 className="text-sm font-semibold text-gray-900">
-                        Projekte mit offenem Betrag und/oder offenen Soll-Stunden
+                        Alle Projekte mit AB in {report.year}
                       </h3>
                       <div className="flex flex-wrap gap-1.5">
                         {filterOptions.map((f) => (
@@ -240,9 +240,7 @@ export default function ConfirmationEvalButton({ defaultYear }: { defaultYear: n
 
                 <p className="mt-3 text-xs text-gray-400">
                   „Verrechnet“ = Rechnungen − Gutschriften − Stornos der Projekte mit AB in {report.year}{" "}
-                  (projektbezogen, über alle Zeiten). Die Tabelle zeigt ein Projekt, sobald entweder noch ein Betrag
-                  offen ist oder noch Soll-Stunden übrig sind (auch wenn der Betrag bereits voll verrechnet ist) –
-                  daher können hier mehr Projekte stehen als „teilweise“ + „noch nicht“ zusammen.
+                  (projektbezogen, über alle Zeiten).
                 </p>
               </div>
             )}

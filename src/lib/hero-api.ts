@@ -1971,8 +1971,8 @@ export interface ConfirmationInvoicedReport {
   workedHoursTotal: number;
   /** Summe der verbleibenden Soll-Stunden = Σ max(Soll − Ist, 0). */
   remainingHoursTotal: number;
-  /** Projekte mit noch offenem AB-Betrag, absteigend nach offenem Betrag. */
-  openProjects: ConfirmationProjectRow[];
+  /** Alle Projekte mit einer AB im Jahr, absteigend nach offenem Betrag. */
+  allProjects: ConfirmationProjectRow[];
 }
 
 interface ProjectStatusInfo {
@@ -2159,13 +2159,11 @@ export async function getConfirmationInvoicedReport(year: number): Promise<Confi
     else partiallyInvoiced++;
   }
 
-  // Projekte mit noch offenem Betrag ODER (sofern nicht ohnehin als erledigt
-  // geltend) noch offenen Soll-Stunden – sonst wären die Stunden-Summen oben
-  // (über ALLE Projekte) nicht nachvollziehbar, wenn ein finanziell bereits
-  // voll verrechnetes Projekt mit offenen Stunden hier fehlen würde.
-  const openProjects = [...rows.values()]
-    .filter((r) => r.openNet > 0.01 || (!r.finalInvoiced && r.remainingHours > 0.01))
-    .sort((a, b) => b.openNet - a.openNet || b.remainingHours - a.remainingHours);
+  // Alle Projekte mit AB im Jahr (nicht nur die mit noch offenem Betrag/
+  // offenen Soll-Stunden) – die Tabelle filtert clientseitig per Status.
+  const allProjects = [...rows.values()].sort(
+    (a, b) => b.openNet - a.openNet || b.remainingHours - a.remainingHours
+  );
 
   return {
     year,
@@ -2179,7 +2177,7 @@ export async function getConfirmationInvoicedReport(year: number): Promise<Confi
     plannedHoursTotal: round2(plannedHoursTotal),
     workedHoursTotal: round2(workedHoursTotal),
     remainingHoursTotal: round2(remainingHoursTotal),
-    openProjects,
+    allProjects,
   };
 }
 
