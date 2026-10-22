@@ -62,6 +62,7 @@ const NAV_ITEMS: NavItem[] = [
     children: [
       { href: "/dashboard/cockpit", label: "Unternehmensübersicht", module: "cockpit_uebersicht" },
       { href: "/dashboard/fixkosten", label: "Fixkosten", module: "cockpit_fixkosten" },
+      { href: "/dashboard/galerie", label: "Bilder-Galerie", module: "cockpit_galerie" },
       { href: "/dashboard/aktivitaet", label: "Aktivitäts-Logbuch", module: "cockpit_aktivitaet" },
       { href: "/dashboard/planung", label: "Arbeitsplanung", module: "cockpit_planung" },
       { href: "/dashboard/belege", label: "Belege", module: "cockpit_belege", modulesAny: ["cockpit_belege", "cockpit_belege_basis"] },
