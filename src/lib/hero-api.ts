@@ -1941,13 +1941,14 @@ export interface ConfirmationProjectRow {
   remainingHours: number;
   /**
    * true, sobald sich das PROJEKT (nicht eine einzelne Rechnung) im Status
-   * "Schlussrechnung" (status_code 1201) oder im Status-Schritt
-   * "Nachkalkulation" befindet. Ab dann gelten die verbleibenden Soll-Stunden
-   * als erledigt und werden nicht mehr ausgewiesen (unabhängig vom
-   * rechnerischen Soll−Ist, z. B. bei Nachträgen ohne Kalkulationsanpassung).
-   * Bewusst am Projekt-Status statt an einer einzelnen Rechnung festgemacht:
-   * ein Projekt kann mehrere Auftragsbestätigungen haben, von denen nur eine
-   * abschließend verrechnet wurde.
+   * "Schlussrechnung" (status_code 1201), "Abgeschlossen" (status_code 2000)
+   * oder im Status-Schritt "Nachkalkulation" befindet. Ab dann gelten die
+   * verbleibenden Soll-Stunden als erledigt und werden nicht mehr ausgewiesen
+   * (unabhängig vom rechnerischen Soll−Ist, z. B. bei Nachträgen ohne
+   * Kalkulationsanpassung). Bewusst am Projekt-Status statt an einer
+   * einzelnen Rechnung festgemacht: ein Projekt kann mehrere
+   * Auftragsbestätigungen haben, von denen nur eine abschließend verrechnet
+   * wurde.
    */
   finalInvoiced: boolean;
 }
@@ -2144,7 +2145,10 @@ export async function getConfirmationInvoicedReport(year: number): Promise<Confi
     row.remainingHours = round2(Math.max(row.plannedHours - row.workedHours, 0));
     const status = statusByProject.get(row.projectId);
     const stepNameLower = (status?.stepName ?? "").toLowerCase();
-    row.finalInvoiced = status?.statusCode === SCHLUSSRECHNUNG_STATUS_CODE || stepNameLower.includes("nachkalkulation");
+    row.finalInvoiced =
+      status?.statusCode === SCHLUSSRECHNUNG_STATUS_CODE ||
+      status?.statusCode === PROJECT_DONE_STATUS_CODE ||
+      stepNameLower.includes("nachkalkulation");
     confirmationsNet += row.confirmationNet;
     invoicedNet += row.invoicedNet;
     plannedHoursTotal += row.plannedHours;

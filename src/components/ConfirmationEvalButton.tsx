@@ -143,8 +143,8 @@ export default function ConfirmationEvalButton({ defaultYear }: { defaultYear: n
                 </div>
                 <p className="mt-1 text-xs text-gray-400">
                   Verbleibend = Soll − Ist, mindestens 0 (mehr gearbeitet als geplant ⇒ nur die Soll-Stunden
-                  abgezogen). Projekte mit bereits erstellter Abschluss-/Schlussrechnung zählen hier nicht mehr mit –
-                  für sie gelten die Soll-Stunden als erledigt.
+                  abgezogen). Projekte im Status „Schlussrechnung&quot;, „Abgeschlossen&quot; oder
+                  „Nachkalkulation&quot; zählen hier nicht mehr mit – für sie gelten die Soll-Stunden als erledigt.
                 </p>
 
                 {report.openProjects.length > 0 && (
@@ -183,7 +183,7 @@ export default function ConfirmationEvalButton({ defaultYear }: { defaultYear: n
                               <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">{hrs(p.workedHours)}</td>
                               <td className="px-3 py-1.5 text-right font-medium tabular-nums text-gray-900">
                                 {p.finalInvoiced ? (
-                                  <span className="font-normal text-gray-400" title="Abschlussrechnung bereits erstellt – gilt als erledigt">
+                                  <span className="font-normal text-gray-400" title="Projekt im Status Schlussrechnung/Abgeschlossen/Nachkalkulation – gilt als erledigt">
                                     ✓ erledigt
                                   </span>
                                 ) : (
