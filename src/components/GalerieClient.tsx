@@ -1,69 +1,103 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ProjectSummary } from "@/lib/hero-api";
 import { getGalleryPhotosAction, type ProjectPhoto } from "@/app/dashboard/galerie/actions";
 import PhotoGallery from "@/components/PhotoGallery";
 
-/** Bulk-"Alle anzeigen" nur bei einer überschaubaren gefilterten Trefferzahl – sonst zu viele parallele HERO-Abfragen auf einmal. */
-const BULK_EXPAND_LIMIT = 25;
+/** Wie viele Projekte gleichzeitig abgefragt werden – 371 Projekte à ~250ms dauern damit nur wenige Sekunden. */
+const CONCURRENCY = 12;
+/** Wie oft neu eingetroffene Fotos ins UI übernommen werden (ms) – vermeidet 300+ einzelne Re-Renders. */
+const FLUSH_INTERVAL_MS = 250;
+
+interface GalleryPhoto extends ProjectPhoto {
+  projectId: number;
+  projectName: string;
+  projectRelativeId: number | null;
+  projectCustomerName: string | null;
+}
+
+async function runPool<T>(items: T[], concurrency: number, worker: (item: T) => Promise<void>) {
+  let idx = 0;
+  const runners = new Array(Math.min(concurrency, items.length)).fill(null).map(async () => {
+    while (idx < items.length) {
+      const i = idx++;
+      await worker(items[i]);
+    }
+  });
+  await Promise.all(runners);
+}
 
 export default function GalerieClient({ projects }: { projects: ProjectSummary[] }) {
+  const [photos, setPhotos] = useState<GalleryPhoto[]>([]);
+  const [progress, setProgress] = useState({ done: 0, total: projects.length });
+  const [finished, setFinished] = useState(false);
   const [query, setQuery] = useState("");
-  const [expanded, setExpanded] = useState<Set<number>>(new Set());
-  const [photosByProject, setPhotosByProject] = useState<Record<number, ProjectPhoto[]>>({});
-  const [loading, setLoading] = useState<Set<number>>(new Set());
+  const bufferRef = useRef<GalleryPhoto[]>([]);
 
-  // Neueste Projekte zuerst (höhere HERO-ID = später angelegt).
-  const sorted = useMemo(() => [...projects].sort((a, b) => b.id - a.id), [projects]);
+  useEffect(() => {
+    let cancelled = false;
+    bufferRef.current = [];
+
+    const flush = () => {
+      if (cancelled || bufferRef.current.length === 0) return;
+      const toAdd = bufferRef.current;
+      bufferRef.current = [];
+      setPhotos((prev) => {
+        const next = [...prev, ...toAdd];
+        next.sort((a, b) => (b.created ?? "").localeCompare(a.created ?? ""));
+        return next;
+      });
+    };
+    const flushTimer = setInterval(flush, FLUSH_INTERVAL_MS);
+
+    // Neueste Projekte zuerst abfragen (höhere HERO-ID = später angelegt) – so
+    // tauchen zuerst wahrscheinlich aktuelle Fotos auf, während im Hintergrund
+    // noch weiter geladen wird.
+    const sorted = [...projects].sort((a, b) => b.id - a.id);
+    let done = 0;
+
+    runPool(sorted, CONCURRENCY, async (p) => {
+      try {
+        const projectPhotos = await getGalleryPhotosAction(p.id);
+        for (const ph of projectPhotos) {
+          bufferRef.current.push({
+            ...ph,
+            projectId: p.id,
+            projectName: p.name,
+            projectRelativeId: p.relativeId,
+            projectCustomerName: p.customerName,
+          });
+        }
+      } catch {
+        // Einzelnes Projekt übersprungen – der Rest lädt trotzdem weiter.
+      } finally {
+        done++;
+        if (!cancelled) setProgress({ done, total: sorted.length });
+      }
+    }).then(() => {
+      flush();
+      clearInterval(flushTimer);
+      if (!cancelled) setFinished(true);
+    });
+
+    return () => {
+      cancelled = true;
+      clearInterval(flushTimer);
+    };
+  }, [projects]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return sorted;
-    return sorted.filter(
+    if (!q) return photos;
+    return photos.filter(
       (p) =>
-        p.name.toLowerCase().includes(q) ||
-        (p.customerName ?? "").toLowerCase().includes(q) ||
-        (p.relativeId != null && String(p.relativeId).includes(q))
+        p.projectName.toLowerCase().includes(q) ||
+        (p.projectCustomerName ?? "").toLowerCase().includes(q) ||
+        (p.projectRelativeId != null && String(p.projectRelativeId).includes(q)) ||
+        p.filename.toLowerCase().includes(q)
     );
-  }, [sorted, query]);
-
-  const loadPhotos = (projectId: number) => {
-    if (photosByProject[projectId] || loading.has(projectId)) return;
-    setLoading((prev) => new Set(prev).add(projectId));
-    getGalleryPhotosAction(projectId)
-      .then((photos) => setPhotosByProject((prev) => ({ ...prev, [projectId]: photos })))
-      .catch(() => setPhotosByProject((prev) => ({ ...prev, [projectId]: [] })))
-      .finally(() =>
-        setLoading((prev) => {
-          const next = new Set(prev);
-          next.delete(projectId);
-          return next;
-        })
-      );
-  };
-
-  const toggle = (projectId: number) => {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(projectId)) {
-        next.delete(projectId);
-      } else {
-        next.add(projectId);
-        loadPhotos(projectId);
-      }
-      return next;
-    });
-  };
-
-  const expandAllFiltered = () => {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      for (const p of filtered) next.add(p.id);
-      return next;
-    });
-    for (const p of filtered) loadPhotos(p.id);
-  };
+  }, [photos, query]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -72,70 +106,31 @@ export default function GalerieClient({ projects }: { projects: ProjectSummary[]
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Projekt, Kunde oder Nummer suchen …"
+          placeholder="Nach Projekt, Kunde oder Nummer filtern …"
           className="w-full max-w-sm rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-brand-red/60 sm:w-auto"
         />
         <span className="text-xs text-gray-500">
-          {filtered.length} von {projects.length} Projekten
+          {!finished
+            ? `Lädt … ${progress.done}/${progress.total} Projekte durchsucht · ${photos.length} Foto${photos.length === 1 ? "" : "s"} gefunden`
+            : `${filtered.length} von ${photos.length} Fotos`}
         </span>
-        {filtered.length > 0 && filtered.length <= BULK_EXPAND_LIMIT && (
-          <button
-            type="button"
-            onClick={expandAllFiltered}
-            className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:border-brand-red/50 hover:text-gray-900"
-          >
-            📷 Alle anzeigen
-          </button>
-        )}
       </div>
 
+      {!finished && (
+        <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-200">
+          <div
+            className="h-full rounded-full bg-brand-red transition-all"
+            style={{ width: `${progress.total > 0 ? Math.min((progress.done / progress.total) * 100, 100) : 0}%` }}
+          />
+        </div>
+      )}
+
       {filtered.length === 0 ? (
-        <p className="rounded-md border border-gray-200 px-3 py-6 text-center text-sm text-gray-400">
-          Keine Projekte gefunden.
+        <p className="rounded-md border border-gray-200 px-3 py-10 text-center text-sm text-gray-400">
+          {finished ? "Keine Fotos gefunden." : "Fotos werden geladen …"}
         </p>
       ) : (
-        <div className="flex flex-col gap-2">
-          {filtered.map((p) => {
-            const isOpen = expanded.has(p.id);
-            const photos = photosByProject[p.id];
-            const isLoading = loading.has(p.id);
-            return (
-              <div key={p.id} className="rounded-md border border-gray-200">
-                <button
-                  type="button"
-                  onClick={() => toggle(p.id)}
-                  className="flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left text-sm hover:bg-gray-50"
-                >
-                  <span className="min-w-0 truncate">
-                    <span className="font-medium text-gray-900">{p.name}</span>
-                    {p.customerName && <span className="text-gray-500"> — {p.customerName}</span>}
-                    {p.relativeId != null && <span className="ml-1 text-gray-400">#{p.relativeId}</span>}
-                  </span>
-                  <span className="shrink-0 text-xs text-gray-400">
-                    {photos
-                      ? `${photos.length} Foto${photos.length === 1 ? "" : "s"}`
-                      : isLoading
-                        ? "Lädt …"
-                        : isOpen
-                          ? "–"
-                          : "+"}
-                  </span>
-                </button>
-                {isOpen && (
-                  <div className="border-t border-gray-100 px-4 py-3">
-                    {isLoading ? (
-                      <p className="py-4 text-center text-sm text-gray-400">Fotos werden geladen …</p>
-                    ) : photos && photos.length > 0 ? (
-                      <PhotoGallery photos={photos} />
-                    ) : (
-                      <p className="py-4 text-center text-sm text-gray-400">Keine Fotos zu diesem Projekt.</p>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
+        <PhotoGallery photos={filtered} />
       )}
     </div>
   );

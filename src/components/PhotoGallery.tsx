@@ -14,7 +14,12 @@ function fmtDate(iso: string | null, withTime = false): string {
   return (withTime ? dateTimeFmt : dateFmt).format(d);
 }
 
-export default function PhotoGallery({ photos }: { photos: ProjectPhoto[] }) {
+type GalleryPhoto = ProjectPhoto & {
+  /** Nur gesetzt in der projektübergreifenden Galerie – zeigt den Projektnamen bei Mouseover. */
+  projectName?: string;
+};
+
+export default function PhotoGallery({ photos }: { photos: GalleryPhoto[] }) {
   const [open, setOpen] = useState<number | null>(null);
 
   useEffect(() => {
@@ -49,7 +54,7 @@ export default function PhotoGallery({ photos }: { photos: ProjectPhoto[] }) {
             type="button"
             onClick={() => setOpen(i)}
             className="group relative aspect-square overflow-hidden rounded-lg border border-gray-300 bg-black/20 text-left"
-            title={p.filename}
+            title={p.projectName ? `${p.filename} · ${p.projectName}` : p.filename}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -122,6 +127,7 @@ export default function PhotoGallery({ photos }: { photos: ProjectPhoto[] }) {
             />
             <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-sm text-white/80">
               <span className="font-medium text-white">{current.filename}</span>
+              {current.projectName && <span>📁 {current.projectName}</span>}
               {current.created && <span>📅 {fmtDate(current.created, true)}</span>}
               {current.uploaderName && <span>👤 {current.uploaderName}</span>}
               <a
