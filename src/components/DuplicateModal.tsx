@@ -139,6 +139,22 @@ export default function DuplicateModal({
                         <p className="truncate text-sm font-medium text-gray-900">
                           #{m.id} · {m.supplier ?? "—"}
                           <span className="ml-1 font-normal text-gray-500">{eur.format(m.gross)}</span>
+                          {m.isPaid ? (
+                            <span className="ml-1.5 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
+                              Bezahlt
+                            </span>
+                          ) : m.paidAmount > 0 ? (
+                            <span
+                              className="ml-1.5 rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-medium text-purple-700"
+                              title={`Bisher ${eur.format(m.paidAmount)} von ${eur.format(m.gross)} gezahlt`}
+                            >
+                              Teilw. bezahlt · Rest {eur.format(m.openAmount)}
+                            </span>
+                          ) : (
+                            <span className="ml-1.5 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700">
+                              Offen
+                            </span>
+                          )}
                         </p>
                         <p className="truncate text-xs text-gray-500">
                           {fmtDate(m.date)}

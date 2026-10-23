@@ -914,6 +914,10 @@ export interface DuplicateBeleg {
   source: string | null;
   hasFile: boolean;
   created: string | null;
+  isPaid: boolean;
+  /** Bisher gezahlter Betrag (bei isPaid = voller/skontierter Betrag). */
+  paidAmount: number;
+  openAmount: number;
 }
 
 /**
@@ -928,8 +932,9 @@ export async function listManualDuplicates(
   if (!date || !Number.isFinite(gross) || gross === 0) return [];
   const key = receiptDupKey(supplier, gross, date);
   if (!key) return [];
+  await ensurePaidAmountColumn();
   const [rows] = await getPool().query<RowDataPacket[]>(
-    `SELECT id, beleg_date, supplier, invoice_number, gross, source, stored_name, created
+    `SELECT id, beleg_date, supplier, invoice_number, gross, source, stored_name, created, is_paid, paid_amount
        FROM manual_receipts
       WHERE gross = ? AND beleg_date = ?
       ORDER BY id ASC`,
@@ -937,16 +942,24 @@ export async function listManualDuplicates(
   );
   return rows
     .filter((r) => receiptDupKey(r.supplier as string | null, Number(r.gross), date) === key)
-    .map((r) => ({
-      id: r.id as number,
-      date: r.beleg_date ? String(r.beleg_date).slice(0, 10) : null,
-      supplier: (r.supplier as string | null) ?? null,
-      invoiceNumber: (r.invoice_number as string | null) ?? null,
-      gross: Number(r.gross),
-      source: (r.source as string | null) ?? null,
-      hasFile: !!r.stored_name,
-      created: r.created ? String(r.created) : null,
-    }));
+    .map((r) => {
+      const rowGross = Number(r.gross);
+      const isPaid = r.is_paid === 1;
+      const paidAmount = num(r.paid_amount);
+      return {
+        id: r.id as number,
+        date: r.beleg_date ? String(r.beleg_date).slice(0, 10) : null,
+        supplier: (r.supplier as string | null) ?? null,
+        invoiceNumber: (r.invoice_number as string | null) ?? null,
+        gross: rowGross,
+        source: (r.source as string | null) ?? null,
+        hasFile: !!r.stored_name,
+        created: r.created ? String(r.created) : null,
+        isPaid,
+        paidAmount,
+        openAmount: isPaid ? 0 : Math.round((rowGross - paidAmount) * 100) / 100,
+      };
+    });
 }
 
 // ---------------------------------------------------------------------------
