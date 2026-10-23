@@ -239,8 +239,21 @@ export default function GlobalSearch({ isAdmin = false }: { isAdmin?: boolean })
                         {r.supplier ?? "Unbekannt"}
                         {r.invoiceNumber ? ` · ${r.invoiceNumber}` : ""}
                       </span>
-                      <span className="text-xs text-gray-500">
+                      <span className="flex items-center gap-1.5 text-xs text-gray-500">
                         {r.date ? r.date.split("-").reverse().join(".") : "—"} · {fmtEur(r.gross)}
+                        <span
+                          className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                            r.statusTone === "paid"
+                              ? "bg-emerald-100 text-emerald-700"
+                              : r.statusTone === "partial"
+                                ? "bg-purple-100 text-purple-700"
+                                : r.statusTone === "overdue"
+                                  ? "bg-rose-100 text-rose-700"
+                                  : "bg-amber-100 text-amber-700"
+                          }`}
+                        >
+                          {r.statusLabel}
+                        </span>
                       </span>
                     </button>
                   </li>

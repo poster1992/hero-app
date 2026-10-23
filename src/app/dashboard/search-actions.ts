@@ -1,12 +1,16 @@
 "use server";
 
 import { getProjects, getReceiptsInRange, getCustomerDocumentsByType } from "@/lib/hero-api";
-import { getCustomerName } from "@/lib/invoices";
+import { getCustomerName, effectiveReceiptStatus, type InvoiceStatusTone } from "@/lib/invoices";
 import { listAllManualReceipts, searchManualOcrIds } from "@/lib/manual-receipts";
 import { searchOcrHeroIds } from "@/lib/receipt-ocr";
 import { getLineReceiptFileUrl } from "@/lib/kontoauszuege";
+import { getPaymentOverrideMap } from "@/lib/receipt-payment-status";
 import { isAdmin } from "@/lib/session";
 import { DOC_KINDS, type DocKind } from "@/lib/document-kinds";
+
+/** Zahlstatus-Ton für manuelle Belege – Bezahlt/Teilw./Offen wie im Dubletten-Popup, bewusst ohne Überfällig-Unterscheidung (nur Vorschau). */
+export type SearchReceiptTone = InvoiceStatusTone | "partial";
 
 export interface SearchProject {
   id: number;
@@ -33,6 +37,8 @@ export interface GlobalSearchReceipt {
   invoiceNumber: string | null;
   date: string | null;
   gross: number;
+  statusLabel: string;
+  statusTone: SearchReceiptTone;
 }
 
 /**
@@ -57,6 +63,11 @@ export async function searchBelegeGlobalAction(query: string): Promise<GlobalSea
         (r.invoiceNumber ?? "").toLowerCase().includes(q) ||
         manualOcrIds.has(r.id);
       if (!hit) continue;
+      const status: { label: string; tone: SearchReceiptTone } = r.isPaid
+        ? { label: "Bezahlt", tone: "paid" }
+        : r.paidAmount > 0
+          ? { label: `Teilw. bezahlt · Rest ${r.openAmount.toFixed(2)} €`, tone: "partial" }
+          : { label: "Offen", tone: "open" };
       results.push({
         kind: "manual",
         ref: String(r.id),
@@ -64,6 +75,8 @@ export async function searchBelegeGlobalAction(query: string): Promise<GlobalSea
         invoiceNumber: r.invoiceNumber,
         date: r.date,
         gross: r.gross,
+        statusLabel: status.label,
+        statusTone: status.tone,
       });
     }
   } catch {
@@ -75,15 +88,17 @@ export async function searchBelegeGlobalAction(query: string): Promise<GlobalSea
     const from = new Date();
     from.setFullYear(from.getFullYear() - 3);
     const fmt = (d: Date) => d.toISOString().slice(0, 10);
-    const [heroReceipts, heroOcrIds] = await Promise.all([
+    const [heroReceipts, heroOcrIds, paymentOverrides] = await Promise.all([
       getReceiptsInRange(`${fmt(from)}T00:00:00Z`, `${fmt(to)}T23:59:59Z`),
       searchOcrHeroIds(q),
+      getPaymentOverrideMap().catch(() => new Map()),
     ]);
     for (const r of heroReceipts) {
       const supplierName = getCustomerName(r);
       const hit =
         supplierName.toLowerCase().includes(q) || (r.number ?? "").toLowerCase().includes(q) || heroOcrIds.has(r.id);
       if (!hit) continue;
+      const status = effectiveReceiptStatus(r, paymentOverrides.get(r.id)?.status ?? null);
       results.push({
         kind: "hero",
         ref: r.id,
@@ -91,6 +106,8 @@ export async function searchBelegeGlobalAction(query: string): Promise<GlobalSea
         invoiceNumber: r.number,
         date: r.receiptDate ? r.receiptDate.slice(0, 10) : null,
         gross: r.value,
+        statusLabel: status.label,
+        statusTone: status.tone,
       });
     }
   } catch {
