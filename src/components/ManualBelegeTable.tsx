@@ -64,6 +64,10 @@ export interface HeroBelegRow {
   supplierId?: number | null;
   /** Offener Betrag (für den SEPA-Zahlbetrag; sonst brutto). */
   open?: number;
+  /** Projekte aus den Rechnungspositionen (distinct) – ein Beleg kann mehrere haben. */
+  projects?: { id: number; relativeId: number | null; name: string }[];
+  /** GuV-Konten aus den Rechnungspositionen (distinct) – ein Beleg kann mehrere haben. */
+  accounts?: { num: string; name: string }[];
 }
 
 const currencyFormatter = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
@@ -666,7 +670,11 @@ export default function ManualBelegeTable({
           case "netto": hay = money(h.net); break;
           case "mwst": hay = money(h.vat); break;
           case "brutto": hay = money(h.gross); break;
-          // Spalten, die HERO-Zeilen nicht haben (ID/Konto/Projekt/Skonto…): bei aktivem Filter ausschließen.
+          case "konto": hay = (h.accounts ?? []).map((a) => `${a.num} ${a.name}`).join(" "); break;
+          case "projekt":
+            hay = (h.projects ?? []).map((p) => `${p.relativeId ?? ""} ${p.name}`).join(" ");
+            break;
+          // Spalten, die HERO-Zeilen nicht haben (ID/Skonto…): bei aktivem Filter ausschließen.
           default: return false;
         }
         if (!hay.toLowerCase().includes(q)) return false;
@@ -1366,8 +1374,48 @@ export default function ManualBelegeTable({
                       )}
                     </td>
                   )}
-                  {show("konto") && <td className="px-3 py-1.5 text-gray-400">—</td>}
-                  {show("projekt") && <td className="px-3 py-1.5 text-gray-400">—</td>}
+                  {show("konto") && (
+                    <td className="px-3 py-1.5 text-gray-700">
+                      {!h.accounts || h.accounts.length === 0 ? (
+                        <span className="text-gray-400">—</span>
+                      ) : h.accounts.length === 1 ? (
+                        `${h.accounts[0].num} ${h.accounts[0].name}`
+                      ) : (
+                        <span title={h.accounts.map((a) => `${a.num} ${a.name}`).join("\n")}>
+                          {h.accounts.length} Konten
+                        </span>
+                      )}
+                    </td>
+                  )}
+                  {show("projekt") && (
+                    <td className="px-3 py-1.5 text-gray-700">
+                      {!h.projects || h.projects.length === 0 ? (
+                        <span className="text-gray-400">—</span>
+                      ) : h.projects.length === 1 ? (
+                        (() => {
+                          const p = h.projects[0];
+                          return (
+                            <a
+                              href={`/dashboard/projekte/${p.id}?${new URLSearchParams({
+                                ...(p.name ? { name: p.name } : {}),
+                                ...(p.relativeId != null ? { nr: String(p.relativeId) } : {}),
+                              }).toString()}`}
+                              className="text-brand-red hover:underline"
+                            >
+                              {p.relativeId != null ? `#${p.relativeId} ` : ""}
+                              {p.name}
+                            </a>
+                          );
+                        })()
+                      ) : (
+                        <span
+                          title={h.projects.map((p) => `${p.relativeId != null ? `#${p.relativeId} ` : ""}${p.name}`).join("\n")}
+                        >
+                          {h.projects.length} Projekte
+                        </span>
+                      )}
+                    </td>
+                  )}
                   {show("netto") && <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">{currencyFormatter.format(h.net)}</td>}
                   {show("mwst") && <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">{currencyFormatter.format(h.vat)}</td>}
                   {show("brutto") && (

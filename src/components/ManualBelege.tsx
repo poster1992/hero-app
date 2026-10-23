@@ -180,6 +180,19 @@ export default async function ManualBelege({
     const dateIso = r.receiptDate ? r.receiptDate.slice(0, 10) : null;
     const dk = receiptDupKey(supplier, r.value, dateIso);
     const rv = reviews?.get(r.id) ?? null;
+
+    // HERO-Belege können mehrere Rechnungspositionen mit jeweils eigenem
+    // Projekt/Konto haben (z. B. Material für zwei Baustellen auf einer
+    // Rechnung) – anders als ein manueller Beleg mit genau einem projectId-
+    // Feld. Deshalb je Beleg die DISTINCT-Projekte/-Konten aus allen
+    // Positionen sammeln, statt nur die erste zu nehmen.
+    const projectsById = new Map<number, { id: number; relativeId: number | null; name: string }>();
+    const accountsByNum = new Map<string, { num: string; name: string }>();
+    for (const pos of r.receiptPositions) {
+      if (pos.projectMatch) projectsById.set(pos.projectMatch.id, pos.projectMatch);
+      if (pos.bookAccount) accountsByNum.set(pos.bookAccount.num, pos.bookAccount);
+    }
+
     return {
       id: r.id,
       number: r.number,
@@ -196,6 +209,8 @@ export default async function ManualBelege({
       paidOverride: ov,
       supplierId: r.customer?.id ?? null,
       open: r.openAmount,
+      projects: [...projectsById.values()],
+      accounts: [...accountsByNum.values()],
     };
   });
 
