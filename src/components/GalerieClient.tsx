@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ProjectSummary } from "@/lib/hero-api";
-import { getGalleryPhotosAction, type ProjectPhoto } from "@/app/dashboard/galerie/actions";
+import type { ProjectSummary, ProjectPhoto } from "@/lib/hero-api";
+import { getGalleryPhotosAction } from "@/app/dashboard/galerie/actions";
 import PhotoGallery from "@/components/PhotoGallery";
 
 /** Wie viele Projekte gleichzeitig abgefragt werden – 371 Projekte à ~250ms dauern damit nur wenige Sekunden. */
